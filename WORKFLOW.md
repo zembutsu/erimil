@@ -197,6 +197,53 @@ Managed via Swift Package Manager:
 
 ---
 
+## Development Principles
+
+### Troubleshooting Approach
+
+When encountering persistent errors:
+
+1. **Stop guessing** - Don't iterate on assumptions
+2. **Check official documentation** - Library READMEs, Apple docs
+3. **Search Issues** - GitHub issues often have solutions
+4. **Minimal reproduction** - Isolate the problem
+5. **Add debug logging** - Understand what's actually happening
+
+**Lesson learned (Phase 1)**:
+ZIPFoundation `corruptedData` errors were solved by following official examples, not by adding more workarounds.
+
+### SwiftUI State Management
+
+**Timing matters**:
+```swift
+// ❌ Wrong - sheet opens before image is set
+DispatchQueue.main.async {
+    previewImage = image
+    previewEntry = entry  // triggers sheet with nil image
+}
+
+// ✅ Correct - synchronous, image set before sheet trigger
+previewImage = image
+previewEntry = entry
+```
+
+**Parent-child state sharing**:
+- Use `@Binding` for shared mutable state
+- Parent owns the state, child receives binding
+- Callbacks (`onExportSuccess`) for child-to-parent events
+
+### macOS Sandbox
+
+Common permission issues and solutions:
+
+| Issue | Solution |
+|-------|----------|
+| Cannot write files | Use NSSavePanel + Read/Write entitlement |
+| Cannot read user files | Use NSOpenPanel |
+| Panel crashes | Check entitlements in Signing & Capabilities |
+
+---
+
 ## Project-Specific Rules
 
 ### Safety Rules

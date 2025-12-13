@@ -157,6 +157,83 @@ This document explains why the software was designed the way it was, including d
 
 ---
 
+### Decision 6: ZIPFoundation Usage Pattern
+
+**Date**: 2025-12-13
+
+**Context**: During thumbnail generation, `corruptedData` errors occurred frequently. Initial implementation held `Archive` instance as a member variable and used custom caching mechanisms.
+
+**Options Considered**:
+
+| Option | Description | Result |
+|--------|-------------|--------|
+| A) Member variable | Hold Archive instance, custom entry cache | Failed - encoding issues, stale references |
+| B) Per-operation | Open Archive fresh for each operation | Works - matches official examples |
+
+**Decision**: **Option B (Per-operation)**
+
+**Rationale**:
+- Official documentation examples show opening Archive for each operation
+- Avoids stale references and encoding issues with Japanese filenames
+- Simpler code, less state to manage
+- Reference: https://github.com/weichsel/ZIPFoundation#closure-based-reading-and-writing
+
+**Implementation**:
+```swift
+// ✅ Correct pattern
+func extractImage(for entry: ArchiveEntry) -> NSImage? {
+    guard let archive = Archive(url: zipURL, accessMode: .read) else { return nil }
+    guard let zipEntry = archive[entry.path] else { return nil }
+    // ... extract using consumer closure
+}
+```
+
+**Consequences**:
+- ✅ Reliable extraction regardless of filename encoding
+- ✅ Matches official patterns
+- ⚠️ Slightly more overhead (opening archive each time)
+- ⚠️ Acceptable tradeoff for correctness
+
+---
+
+### Decision 7: Sandbox File Access for Export
+
+**Date**: 2025-12-13
+
+**Context**: ZIP export failed with "Parent writable: false" error. macOS sandbox prevents writing to arbitrary locations.
+
+**Options Considered**:
+
+| Option | Description | UX |
+|--------|-------------|-----|
+| A) Direct write | Write to same directory as source | Fails in sandbox |
+| B) NSSavePanel | Let user choose destination | Works, standard macOS pattern |
+| C) App container | Save to app's container directory | Works but hidden from user |
+
+**Decision**: **Option B (NSSavePanel)**
+
+**Rationale**:
+- User explicitly selects save location = permission granted
+- Standard macOS UX pattern
+- System handles overwrite confirmation
+- Requires: `User Selected File: Read/Write` entitlement in Signing & Capabilities
+
+**Implementation**:
+```swift
+let savePanel = NSSavePanel()
+savePanel.nameFieldStringValue = "\(originalName)_opt.zip"
+savePanel.allowedContentTypes = [.zip]  // requires import UniformTypeIdentifiers
+guard savePanel.runModal() == .OK, let outputURL = savePanel.url else { return }
+```
+
+**Consequences**:
+- ✅ Works within sandbox
+- ✅ User has full control over destination
+- ✅ Familiar macOS experience
+- ⚠️ Extra click for user (acceptable for safety)
+
+---
+
 ## Deferred Decisions
 
 ### Export Directory Structure
