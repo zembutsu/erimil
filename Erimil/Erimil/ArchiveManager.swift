@@ -108,4 +108,91 @@ class ArchiveManager {
         
         return newImage
     }
+    
+    /// 除外リスト以外のエントリを新しいZIPに書き出す
+    /// Reference: https://github.com/weichsel/ZIPFoundation#adding-and-removing-entries
+    func exportOptimized(excluding excludedPaths: Set<String>, to destinationURL: URL) throws {
+        print("exportOptimized called")
+        print("Excluded paths: \(excludedPaths)")
+        
+        guard let sourceArchive = Archive(url: zipURL, accessMode: .read) else {
+            print("Failed to open source archive")
+            throw ArchiveError.cannotOpenSource
+        }
+        print("Source archive opened")
+        
+        guard let destinationArchive = Archive(url: destinationURL, accessMode: .create) else {
+            print("Failed to create destination archive at: \(destinationURL.path)")
+            throw ArchiveError.cannotCreateDestination
+        }
+        print("Destination archive created")
+        
+        // 除外リストにないエントリをコピー
+        for entry in sourceArchive {
+            // 除外対象はスキップ
+            if excludedPaths.contains(entry.path) {
+                print("Excluding: \(entry.path)")
+                continue
+            }
+            
+            // __MACOSX もスキップ
+            if entry.path.contains("__MACOSX/") {
+                print("Skipping __MACOSX: \(entry.path)")
+                continue
+            }
+            
+            // ディレクトリエントリはスキップ（必要に応じて）
+            if entry.type == .directory {
+                print("Skipping directory: \(entry.path)")
+                continue
+            }
+            
+            print("Copying: \(entry.path)")
+            
+            // エントリをコピー
+            var entryData = Data()
+            do {
+                _ = try sourceArchive.extract(entry) { data in
+                    entryData.append(data)
+                }
+                print("  Extracted: \(entryData.count) bytes")
+            } catch {
+                print("  Extract failed: \(error)")
+                continue  // このエントリはスキップして続行
+            }
+            
+            do {
+                try destinationArchive.addEntry(
+                    with: entry.path,
+                    type: entry.type,
+                    uncompressedSize: Int64(entryData.count),
+                    provider: { position, size in
+                        let start = Int(position)
+                        let end = min(start + size, entryData.count)
+                        return entryData.subdata(in: start..<end)
+                    }
+                )
+                print("  Added to destination")
+            } catch {
+                print("  Add failed: \(error)")
+                continue  // このエントリはスキップして続行
+            }
+        }
+        
+        print("Export completed successfully")
+    }
+    
+    enum ArchiveError: Error, LocalizedError {
+        case cannotOpenSource
+        case cannotCreateDestination
+        
+        var errorDescription: String? {
+            switch self {
+            case .cannotOpenSource:
+                return "元のZIPファイルを開けません"
+            case .cannotCreateDestination:
+                return "新しいZIPファイルを作成できません"
+            }
+        }
+    }
 }

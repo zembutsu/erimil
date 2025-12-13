@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ThumbnailGridView: View {
     let zipURL: URL
@@ -16,6 +17,9 @@ struct ThumbnailGridView: View {
     @State private var excludedPaths: Set<String> = []
     @State private var previewEntry: ArchiveEntry?
     @State private var previewImage: NSImage?
+    @State private var showExportSuccess = false
+    @State private var showExportError = false
+    @State private var exportMessage = ""
     
     private let columns = [
         GridItem(.adaptive(minimum: 120, maximum: 150), spacing: 8)
@@ -69,6 +73,27 @@ struct ThumbnailGridView: View {
                     .padding()
                 }
             }
+            
+            // フッター（除外がある場合のみ表示）
+            if !excludedPaths.isEmpty {
+                Divider()
+                
+                HStack {
+                    Button("選択をクリア") {
+                        excludedPaths.removeAll()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    
+                    Spacer()
+                    
+                    Button("確定 → _opt.zip") {
+                        confirmExport()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding()
+            }
         }
         .onChange(of: zipURL) { _, newValue in
             loadArchive(url: newValue)
@@ -98,7 +123,19 @@ struct ThumbnailGridView: View {
             .padding()
             .frame(width: 600, height: 500)
         }
+        .alert("エクスポート完了", isPresented: $showExportSuccess) {
+            Button("OK") { }
+        } message: {
+            Text(exportMessage)
+        }
+        .alert("エラー", isPresented: $showExportError) {
+            Button("OK") { }
+        } message: {
+            Text(exportMessage)
+        }
     }
+    
+    
     
     private func loadArchive(url: URL) {
         excludedPaths = []
@@ -153,6 +190,39 @@ struct ThumbnailGridView: View {
             previewEntry = entry  // これがnon-nilになるとsheetが開く
         } else {
             print("Failed to load full image")
+        }
+    }
+    
+    private func confirmExport() {
+        guard let manager = archiveManager else { return }
+        
+        // 出力ファイル名: {元名}_opt.zip
+        let originalName = zipURL.deletingPathExtension().lastPathComponent
+        let outputName = "\(originalName)_opt.zip"
+        
+        // NSSavePanelで保存先を選択
+        let savePanel = NSSavePanel()
+        savePanel.title = "最適化ZIPの保存先"
+        savePanel.nameFieldStringValue = outputName
+        savePanel.allowedContentTypes = [.zip]
+        savePanel.directoryURL = zipURL.deletingLastPathComponent()
+        
+        guard savePanel.runModal() == .OK, let outputURL = savePanel.url else {
+            return  // キャンセル
+        }
+        
+        // 既存ファイルがあれば削除（SavePanelが確認済み）
+        try? FileManager.default.removeItem(at: outputURL)
+        
+        do {
+            try manager.exportOptimized(excluding: excludedPaths, to: outputURL)
+            exportMessage = "\(outputURL.lastPathComponent) を作成しました\n除外: \(excludedPaths.count) ファイル"
+            showExportSuccess = true
+            excludedPaths.removeAll()
+        } catch {
+            print("Export error: \(error)")
+            exportMessage = error.localizedDescription
+            showExportError = true
         }
     }
 }
