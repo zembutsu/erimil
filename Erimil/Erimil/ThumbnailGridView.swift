@@ -14,6 +14,8 @@ struct ThumbnailGridView: View {
     @State private var thumbnails: [String: NSImage] = [:]
     @State private var archiveManager: ArchiveManager?
     @State private var excludedPaths: Set<String> = []
+    @State private var previewEntry: ArchiveEntry?
+    @State private var previewImage: NSImage?
     
     private let columns = [
         GridItem(.adaptive(minimum: 120, maximum: 150), spacing: 8)
@@ -53,7 +55,10 @@ struct ThumbnailGridView: View {
                                 thumbnail: thumbnails[entry.path],
                                 isExcluded: excludedPaths.contains(entry.path)
                             )
-                            .onTapGesture {
+                            .onTapGesture(count: 2) {
+                                openPreview(entry)
+                            }
+                            .onTapGesture(count: 1) {
                                 toggleExclusion(entry)
                             }
                             .onAppear {
@@ -71,11 +76,35 @@ struct ThumbnailGridView: View {
         .onAppear {
             loadArchive(url: zipURL)
         }
+        .sheet(item: $previewEntry) { entry in
+            VStack(spacing: 20) {
+                Text("Preview: \(entry.name)")
+                    .font(.headline)
+                
+                if let image = previewImage {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: 500, maxHeight: 400)
+                } else {
+                    Text("No image")
+                }
+                
+                Button("Close") {
+                    previewEntry = nil
+                }
+                .keyboardShortcut(.escape)
+            }
+            .padding()
+            .frame(width: 600, height: 500)
+        }
     }
     
     private func loadArchive(url: URL) {
         excludedPaths = []
         thumbnails = [:]
+        previewEntry = nil
+        previewImage = nil
         
         let manager = ArchiveManager(zipURL: url)
         archiveManager = manager
@@ -88,12 +117,16 @@ struct ThumbnailGridView: View {
             return
         }
         
-        // バックグラウンドでサムネイル生成
+        // 既にロード中/失敗済みをマーク（重複防止）
+        thumbnails[entry.path] = nil
+        
         DispatchQueue.global(qos: .userInitiated).async {
-            if let thumbnail = manager.thumbnail(for: entry) {
-                DispatchQueue.main.async {
+            let thumbnail = manager.thumbnail(for: entry)
+            DispatchQueue.main.async {
+                if let thumbnail = thumbnail {
                     thumbnails[entry.path] = thumbnail
                 }
+                // 失敗した場合はnilのまま（再試行しない）
             }
         }
     }
@@ -103,6 +136,23 @@ struct ThumbnailGridView: View {
             excludedPaths.remove(entry.path)
         } else {
             excludedPaths.insert(entry.path)
+        }
+    }
+    
+    private func openPreview(_ entry: ArchiveEntry) {
+        print("openPreview called for: \(entry.name)")
+        guard let manager = archiveManager else {
+            print("archiveManager is nil")
+            return
+        }
+        
+        // 先に画像を取得してからsheetを開く
+        if let image = manager.fullImage(for: entry) {
+            print("Full image loaded: \(image.size)")
+            previewImage = image
+            previewEntry = entry  // これがnon-nilになるとsheetが開く
+        } else {
+            print("Failed to load full image")
         }
     }
 }
@@ -125,7 +175,6 @@ struct ThumbnailCell: View {
                         .frame(width: 120, height: 120)
                 }
                 
-                // 除外マーク
                 if isExcluded {
                     Color.black.opacity(0.5)
                     Image(systemName: "xmark.circle.fill")

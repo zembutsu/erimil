@@ -4,6 +4,7 @@
 //
 //  Created by Masahito Zembutsu on 2025/12/13.
 //
+// Reference: https://github.com/weichsel/ZIPFoundation#closure-based-reading-and-writing
 
 import Foundation
 import ZIPFoundation
@@ -11,75 +12,76 @@ import AppKit
 
 class ArchiveManager {
     let zipURL: URL
-    private var archive: Archive?
     
     init(zipURL: URL) {
         self.zipURL = zipURL
-        // Note: Using deprecated initializer until ZIPFoundation stabilizes new API
-        self.archive = Archive(url: zipURL, accessMode: .read)
     }
     
     /// ZIPに含まれる画像エントリ一覧を取得
     func listImageEntries() -> [ArchiveEntry] {
-        guard let archive = archive else { return [] }
-        
-        return archive.compactMap { entry -> ArchiveEntry? in
-            // ディレクトリはスキップ
-            guard entry.type == .file else { return nil }
-            
-            let archiveEntry = ArchiveEntry(
-                path: entry.path,
-                size: entry.uncompressedSize
-            )
-            
-            // 画像のみ返す
-            return archiveEntry.isImage ? archiveEntry : nil
+        guard let archive = Archive(url: zipURL, accessMode: .read) else {
+            print("Failed to open archive: \(zipURL)")
+            return []
         }
-        .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+        
+        var results: [ArchiveEntry] = []
+        var index = 0
+        
+        for entry in archive {
+            if entry.type == .file {
+                let archiveEntry = ArchiveEntry(entry: entry, index: index)
+                if archiveEntry.isImage {
+                    results.append(archiveEntry)
+                }
+            }
+            index += 1
+        }
+        
+        return results.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
     
     /// 指定エントリのサムネイルを生成
     func thumbnail(for entry: ArchiveEntry, maxSize: CGFloat = 120) -> NSImage? {
-        guard let archive = archive,
-              let archiveEntry = archive[entry.path] else {
-            return nil
-        }
-        
-        var imageData = Data()
-        do {
-            _ = try archive.extract(archiveEntry) { data in
-                imageData.append(data)
-            }
-        } catch {
-            print("Failed to extract \(entry.path): \(error)")
-            return nil
-        }
-        
-        guard let image = NSImage(data: imageData) else {
-            return nil
-        }
-        
-        // サムネイルサイズにリサイズ
+        guard let image = extractImage(for: entry) else { return nil }
         return resizedImage(image, maxSize: maxSize)
     }
     
     /// フルサイズ画像を取得
     func fullImage(for entry: ArchiveEntry) -> NSImage? {
-        guard let archive = archive,
-              let archiveEntry = archive[entry.path] else {
+        return extractImage(for: entry)
+    }
+    
+    /// 画像を抽出 - 公式ドキュメントの方法に従う
+    private func extractImage(for archiveEntry: ArchiveEntry) -> NSImage? {
+        // 毎回新しくArchiveを開く（公式の例に近い形）
+        guard let archive = Archive(url: zipURL, accessMode: .read) else {
+            print("Failed to open archive")
             return nil
         }
         
+        // パスで直接アクセス（公式の例: archive["file.txt"]）
+        guard let entry = archive[archiveEntry.path] else {
+            print("Entry not found: \(archiveEntry.path)")
+            return nil
+        }
+        
+        // Consumer closureで抽出（公式の例）
         var imageData = Data()
         do {
-            _ = try archive.extract(archiveEntry) { data in
+            _ = try archive.extract(entry) { data in
                 imageData.append(data)
             }
         } catch {
+            print("Extract failed for \(archiveEntry.name): \(error)")
             return nil
         }
         
-        return NSImage(data: imageData)
+        guard let image = NSImage(data: imageData) else {
+            print("Invalid image data for: \(archiveEntry.name), size: \(imageData.count) bytes")
+            return nil
+        }
+        
+        return image
     }
     
     private func resizedImage(_ image: NSImage, maxSize: CGFloat) -> NSImage {
