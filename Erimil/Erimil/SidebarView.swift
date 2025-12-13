@@ -10,6 +10,8 @@ import SwiftUI
 struct SidebarView: View {
     @Binding var selectedFolderURL: URL?
     @Binding var selectedZipURL: URL?
+    let hasUnsavedChanges: Bool
+    let onZipSelectionAttempt: (URL) -> Void
     
     @State private var rootNode: FolderNode?
     
@@ -22,7 +24,7 @@ struct SidebarView: View {
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 if node.isZip {
-                                    selectedZipURL = node.url
+                                    onZipSelectionAttempt(node.url)
                                 }
                             }
                     }
@@ -62,7 +64,7 @@ struct SidebarView: View {
         
         if panel.runModal() == .OK {
             selectedFolderURL = panel.url
-            selectedZipURL = nil
+            // フォルダ変更時は選択をクリア（未保存確認は親で）
         }
     }
 }
@@ -93,6 +95,8 @@ struct NodeRowView: View {
 #Preview {
     SidebarView(
         selectedFolderURL: .constant(nil),
-        selectedZipURL: .constant(nil)
+        selectedZipURL: .constant(nil),
+        hasUnsavedChanges: false,
+        onZipSelectionAttempt: { _ in }
     )
 }

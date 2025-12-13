@@ -10,11 +10,11 @@ import UniformTypeIdentifiers
 
 struct ThumbnailGridView: View {
     let zipURL: URL
+    @Binding var excludedPaths: Set<String>  // @State から @Binding に変更
     
     @State private var entries: [ArchiveEntry] = []
     @State private var thumbnails: [String: NSImage] = [:]
     @State private var archiveManager: ArchiveManager?
-    @State private var excludedPaths: Set<String> = []
     @State private var previewEntry: ArchiveEntry?
     @State private var previewImage: NSImage?
     @State private var showExportSuccess = false
@@ -138,7 +138,7 @@ struct ThumbnailGridView: View {
     
     
     private func loadArchive(url: URL) {
-        excludedPaths = []
+        // excludedPaths = []  （親で管理するため）
         thumbnails = [:]
         previewEntry = nil
         previewImage = nil
@@ -270,5 +270,8 @@ struct ThumbnailCell: View {
 }
 
 #Preview {
-    ThumbnailGridView(zipURL: URL(fileURLWithPath: "/tmp/test.zip"))
+    ThumbnailGridView(
+        zipURL: URL(fileURLWithPath: "/tmp/test.zip"),
+        excludedPaths: .constant([])
+    )
 }
