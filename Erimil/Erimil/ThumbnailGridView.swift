@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 struct ThumbnailGridView: View {
     let zipURL: URL
     @Binding var excludedPaths: Set<String>  // @State から @Binding に変更
+    var onExportSuccess: (() -> Void)?
     
     @State private var entries: [ArchiveEntry] = []
     @State private var thumbnails: [String: NSImage] = [:]
@@ -219,6 +220,7 @@ struct ThumbnailGridView: View {
             exportMessage = "\(outputURL.lastPathComponent) を作成しました\n除外: \(excludedPaths.count) ファイル"
             showExportSuccess = true
             excludedPaths.removeAll()
+            onExportSuccess?()
         } catch {
             print("Export error: \(error)")
             exportMessage = error.localizedDescription
@@ -272,6 +274,7 @@ struct ThumbnailCell: View {
 #Preview {
     ThumbnailGridView(
         zipURL: URL(fileURLWithPath: "/tmp/test.zip"),
-        excludedPaths: .constant([])
+        excludedPaths: .constant([]),
+        onExportSuccess: nil
     )
 }

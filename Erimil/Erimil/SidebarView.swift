@@ -12,6 +12,7 @@ struct SidebarView: View {
     @Binding var selectedZipURL: URL?
     let hasUnsavedChanges: Bool
     let onZipSelectionAttempt: (URL) -> Void
+    let reloadTrigger: UUID
     
     @State private var rootNode: FolderNode?
     
@@ -48,11 +49,18 @@ struct SidebarView: View {
         }
         .navigationTitle("Erimil")
         .onChange(of: selectedFolderURL) { _, newValue in
-            if let url = newValue {
-                rootNode = FolderNode(url: url)
-            } else {
-                rootNode = nil
-            }
+            reloadTree()
+        }
+        .onChange(of: reloadTrigger) { _, _ in
+            reloadTree()
+        }
+    }
+    
+    private func reloadTree() {
+        if let url = selectedFolderURL {
+            rootNode = FolderNode(url: url)
+        } else {
+            rootNode = nil
         }
     }
     
@@ -64,7 +72,6 @@ struct SidebarView: View {
         
         if panel.runModal() == .OK {
             selectedFolderURL = panel.url
-            // フォルダ変更時は選択をクリア（未保存確認は親で）
         }
     }
 }
@@ -97,6 +104,7 @@ struct NodeRowView: View {
         selectedFolderURL: .constant(nil),
         selectedZipURL: .constant(nil),
         hasUnsavedChanges: false,
-        onZipSelectionAttempt: { _ in }
+        onZipSelectionAttempt: { _ in },
+        reloadTrigger: UUID()
     )
 }

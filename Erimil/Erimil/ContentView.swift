@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var selectedFolderURL: URL?
     @State private var selectedZipURL: URL?
     @State private var excludedPaths: Set<String> = []
+    @State private var folderReloadTrigger = UUID()  // リロード用トリガー
     
     // 確認ダイアログ用
     @State private var pendingZipURL: URL?
@@ -24,13 +25,17 @@ struct ContentView: View {
                 hasUnsavedChanges: !excludedPaths.isEmpty,
                 onZipSelectionAttempt: { newURL in
                     handleZipSelectionAttempt(newURL)
-                }
+                },
+                reloadTrigger: folderReloadTrigger
             )
         } detail: {
             if let zipURL = selectedZipURL {
                 ThumbnailGridView(
                     zipURL: zipURL,
-                    excludedPaths: $excludedPaths
+                    excludedPaths: $excludedPaths,
+                    onExportSuccess: {
+                        reloadFolder()
+                    }
                 )
             } else {
                 ContentUnavailableView(
@@ -54,12 +59,10 @@ struct ContentView: View {
     }
     
     private func handleZipSelectionAttempt(_ newURL: URL) {
-        // 同じZIPを選択した場合は何もしない
         if newURL == selectedZipURL {
             return
         }
         
-        // 未保存の変更がある場合は確認
         if !excludedPaths.isEmpty {
             pendingZipURL = newURL
             showUnsavedAlert = true
@@ -74,6 +77,10 @@ struct ContentView: View {
             selectedZipURL = pending
             pendingZipURL = nil
         }
+    }
+    
+    private func reloadFolder() {
+        folderReloadTrigger = UUID()
     }
 }
 
