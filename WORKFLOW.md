@@ -197,6 +197,44 @@ Managed via Swift Package Manager:
 
 ---
 
+## Document Lifecycle
+
+### When to Reference / Update Each Document
+
+| Timing | Reference | Update |
+|--------|-----------|--------|
+| **Session Start** | PROJECT.md (confirm goals) | - |
+| **Design Decisions** | DESIGN.md (check past decisions) | DESIGN.md (add new Decision) |
+| **During Implementation** | Official docs, code | - |
+| **After Problem Solved** | - | WORKFLOW.md (add learnings) |
+| **Session End** | - | DESIGN.md, WORKFLOW.md (batch update) |
+| **Phase Complete** | - | ARCHITECTURE.md (if structure changed), CHANGELOG |
+| **Release** | All docs (consistency check) | PROJECT.md (update roadmap) |
+
+### Phase Start Checklist
+
+- [ ] Read **PROJECT.md** - Confirm current Phase goals
+- [ ] Read **DESIGN.md** - Review past decisions
+- [ ] Check **ARCHITECTURE.md** - Understand current structure (if needed)
+
+### During Development
+
+| Situation | Action |
+|-----------|--------|
+| Design decision needed | Check past decisions in DESIGN.md → Add new Decision (can be deferred) |
+| Technical problem occurs | Consult official docs → Add learnings to WORKFLOW.md after resolution |
+| Actively coding | Defer documentation, focus on implementation |
+
+### Phase End Checklist
+
+- [ ] **DESIGN.md** - Add new Decisions made during the phase
+- [ ] **WORKFLOW.md** - Add learnings to Development Principles
+- [ ] **ARCHITECTURE.md** - Update if structure changed
+- [ ] **CHANGELOG.md** - Record changes (before release)
+- [ ] **PROJECT.md** - Mark Phase complete in roadmap
+
+---
+
 ## Development Principles
 
 ### Troubleshooting Approach
