@@ -11,7 +11,7 @@ struct ContentView: View {
     @State private var selectedFolderURL: URL?
     @State private var selectedSourceURL: URL?
     @State private var selectedSourceType: ImageSourceType?
-    @State private var excludedPaths: Set<String> = []
+    @State private var selectedPaths: Set<String> = []  // User's actual selections
     @State private var folderReloadTrigger = UUID()
     
     // 確認ダイアログ用
@@ -27,7 +27,7 @@ struct ContentView: View {
                     get: { selectedSourceType == .archive ? selectedSourceURL : nil },
                     set: { _ in }
                 ),
-                hasUnsavedChanges: !excludedPaths.isEmpty,
+                hasUnsavedChanges: !selectedPaths.isEmpty,  // Changed: use selectedPaths
                 onZipSelectionAttempt: { url in
                     handleSourceSelectionAttempt(url: url, type: .archive)
                 },
@@ -40,7 +40,7 @@ struct ContentView: View {
             if let sourceURL = selectedSourceURL, let sourceType = selectedSourceType {
                 ThumbnailGridView(
                     imageSource: createImageSource(url: sourceURL, type: sourceType),
-                    excludedPaths: $excludedPaths,
+                    selectedPaths: $selectedPaths,  // Changed: pass selectedPaths
                     onExportSuccess: {
                         reloadFolder()
                     }
@@ -63,7 +63,7 @@ struct ContentView: View {
                 pendingSourceType = nil
             }
         } message: {
-            Text("\(excludedPaths.count) 件の除外選択が保存されていません。破棄して別の場所に移動しますか？")
+            Text("\(selectedPaths.count) 件の選択が保存されていません。破棄して別の場所に移動しますか？")
         }
     }
     
@@ -83,19 +83,19 @@ struct ContentView: View {
         }
         
         // 未保存の変更がある場合は確認
-        if !excludedPaths.isEmpty {
+        if !selectedPaths.isEmpty {  // Changed: use selectedPaths
             pendingSourceURL = url
             pendingSourceType = type
             showUnsavedAlert = true
         } else {
             selectedSourceURL = url
             selectedSourceType = type
-            excludedPaths.removeAll()
+            selectedPaths.removeAll()
         }
     }
     
     private func discardAndNavigate() {
-        excludedPaths.removeAll()
+        selectedPaths.removeAll()
         if let url = pendingSourceURL, let type = pendingSourceType {
             selectedSourceURL = url
             selectedSourceType = type

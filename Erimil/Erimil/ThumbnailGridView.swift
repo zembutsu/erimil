@@ -10,8 +10,10 @@ import UniformTypeIdentifiers
 
 struct ThumbnailGridView: View {
     let imageSource: any ImageSource
-    @Binding var excludedPaths: Set<String>
+    @Binding var selectedPaths: Set<String>  // Changed: Binding from parent
     var onExportSuccess: (() -> Void)?
+    
+    @ObservedObject private var settings = AppSettings.shared
     
     @State private var entries: [ImageEntry] = []
     @State private var thumbnails: [String: NSImage] = [:]
@@ -29,18 +31,7 @@ struct ThumbnailGridView: View {
     var body: some View {
         VStack(spacing: 0) {
             // ヘッダー
-            HStack {
-                Text(imageSource.displayName)
-                    .font(.headline)
-                Spacer()
-                Text("\(entries.count) 画像")
-                    .foregroundStyle(.secondary)
-                if !excludedPaths.isEmpty {
-                    Text("/ \(excludedPaths.count) 除外")
-                        .foregroundStyle(.orange)
-                }
-            }
-            .padding()
+            headerView
             
             Divider()
             
@@ -58,13 +49,14 @@ struct ThumbnailGridView: View {
                             ThumbnailCell(
                                 entry: entry,
                                 thumbnail: thumbnails[entry.path],
-                                isExcluded: excludedPaths.contains(entry.path)
+                                isSelected: selectedPaths.contains(entry.path),
+                                selectionMode: settings.selectionMode
                             )
                             .onTapGesture(count: 2) {
                                 openPreview(entry)
                             }
                             .onTapGesture(count: 1) {
-                                toggleExclusion(entry)
+                                toggleSelection(entry)
                             }
                             .onAppear {
                                 loadThumbnailIfNeeded(for: entry)
@@ -75,8 +67,8 @@ struct ThumbnailGridView: View {
                 }
             }
             
-            // フッター（除外がある場合のみ表示）
-            if !excludedPaths.isEmpty {
+            // フッター（選択がある場合のみ表示）
+            if !selectedPaths.isEmpty {
                 Divider()
                 footerView
             }
@@ -88,26 +80,11 @@ struct ThumbnailGridView: View {
             loadSource()
         }
         .sheet(item: $previewEntry) { entry in
-            VStack(spacing: 20) {
-                Text("Preview: \(entry.name)")
-                    .font(.headline)
-                
-                if let image = previewImage {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: 500, maxHeight: 400)
-                } else {
-                    Text("No image")
-                }
-                
-                Button("Close") {
-                    previewEntry = nil
-                }
-                .keyboardShortcut(.escape)
-            }
-            .padding()
-            .frame(width: 600, height: 500)
+            ImagePreviewView(
+                image: previewImage ?? NSImage(),
+                entryName: entry.name,
+                onClose: { previewEntry = nil }
+            )
         }
         .alert("エクスポート完了", isPresented: $showExportSuccess) {
             Button("OK") { }
@@ -125,22 +102,68 @@ struct ThumbnailGridView: View {
                 performDelete()
             }
         } message: {
-            Text("\(excludedPaths.count) 件のファイルをゴミ箱に移動しますか？")
+            Text("\(pathsToRemove.count) 件のファイルをゴミ箱に移動しますか？")
         }
     }
     
-    // MARK: - Footer (dynamic based on source type)
+    // MARK: - Header
+    
+    @ViewBuilder
+    private var headerView: some View {
+        HStack {
+            Text(imageSource.displayName)
+                .font(.headline)
+            
+            Spacer()
+            
+            // Mode toggle button
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    settings.selectionMode = (settings.selectionMode == .exclude) ? .keep : .exclude
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: settings.selectionMode == .exclude ? "xmark.circle" : "checkmark.circle")
+                    Text(settings.selectionMode.displayName)
+                }
+                .font(.caption)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(settings.selectionMode == .exclude ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
+                .foregroundStyle(settings.selectionMode == .exclude ? .red : .green)
+                .cornerRadius(4)
+            }
+            .buttonStyle(.plain)
+            .help("クリックでモード切替")
+            
+            Text("\(entries.count) 画像")
+                .foregroundStyle(.secondary)
+            
+            if !selectedPaths.isEmpty {
+                Text("/ \(selectedPaths.count) 選択")
+                    .foregroundStyle(settings.selectionMode == .exclude ? .orange : .green)
+            }
+        }
+        .padding()
+    }
+    
+    // MARK: - Footer
     
     @ViewBuilder
     private var footerView: some View {
         HStack {
             Button("選択をクリア") {
-                excludedPaths.removeAll()
+                selectedPaths.removeAll()
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             
             Spacer()
+            
+            // Show what will be exported/deleted
+            Text(footerSummary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             
             switch imageSource.sourceType {
             case .archive:
@@ -165,10 +188,45 @@ struct ThumbnailGridView: View {
         .padding()
     }
     
+    private var footerSummary: String {
+        let keepCount = pathsToKeep.count
+        let removeCount = pathsToRemove.count
+        
+        switch settings.selectionMode {
+        case .exclude:
+            return "出力: \(keepCount)件 / 除外: \(removeCount)件"
+        case .keep:
+            return "出力: \(keepCount)件 / 除外: \(removeCount)件"
+        }
+    }
+    
+    /// Paths that will be included in output
+    private var pathsToKeep: Set<String> {
+        let allPaths = Set(entries.map { $0.path })
+        switch settings.selectionMode {
+        case .exclude:
+            return allPaths.subtracting(selectedPaths)
+        case .keep:
+            return selectedPaths
+        }
+    }
+    
+    /// Paths that will be excluded/removed
+    private var pathsToRemove: Set<String> {
+        let allPaths = Set(entries.map { $0.path })
+        switch settings.selectionMode {
+        case .exclude:
+            return selectedPaths
+        case .keep:
+            return allPaths.subtracting(selectedPaths)
+        }
+    }
+    
     // MARK: - Data Loading
     
     private func loadSource() {
         thumbnails = [:]
+        selectedPaths = []  // Clear selections when source changes
         previewEntry = nil
         previewImage = nil
         entries = imageSource.listImageEntries()
@@ -188,11 +246,11 @@ struct ThumbnailGridView: View {
     
     // MARK: - User Actions
     
-    private func toggleExclusion(_ entry: ImageEntry) {
-        if excludedPaths.contains(entry.path) {
-            excludedPaths.remove(entry.path)
+    private func toggleSelection(_ entry: ImageEntry) {
+        if selectedPaths.contains(entry.path) {
+            selectedPaths.remove(entry.path)
         } else {
-            excludedPaths.insert(entry.path)
+            selectedPaths.insert(entry.path)
         }
     }
     
@@ -220,7 +278,7 @@ struct ThumbnailGridView: View {
         savePanel.title = "最適化ZIPの保存先"
         savePanel.nameFieldStringValue = outputName
         savePanel.allowedContentTypes = [.zip]
-        savePanel.directoryURL = archiveManager.url.deletingLastPathComponent()
+        savePanel.directoryURL = settings.outputDirectory(for: archiveManager.url)
         
         guard savePanel.runModal() == .OK, let outputURL = savePanel.url else {
             return
@@ -229,10 +287,10 @@ struct ThumbnailGridView: View {
         try? FileManager.default.removeItem(at: outputURL)
         
         do {
-            try archiveManager.exportOptimized(excluding: excludedPaths, to: outputURL)
-            exportMessage = "\(outputURL.lastPathComponent) を作成しました\n除外: \(excludedPaths.count) ファイル"
+            try archiveManager.exportOptimized(excluding: pathsToRemove, to: outputURL)
+            exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(pathsToKeep.count) ファイル / 除外: \(pathsToRemove.count) ファイル"
             showExportSuccess = true
-            excludedPaths.removeAll()
+            selectedPaths.removeAll()  // Clear selections after success
             onExportSuccess?()
         } catch {
             print("Export error: \(error)")
@@ -252,7 +310,7 @@ struct ThumbnailGridView: View {
         savePanel.title = "ZIPファイルの保存先"
         savePanel.nameFieldStringValue = outputName
         savePanel.allowedContentTypes = [.zip]
-        savePanel.directoryURL = folderManager.url.deletingLastPathComponent()
+        savePanel.directoryURL = settings.outputDirectory(for: folderManager.url)
         
         guard savePanel.runModal() == .OK, let outputURL = savePanel.url else {
             return
@@ -261,11 +319,10 @@ struct ThumbnailGridView: View {
         try? FileManager.default.removeItem(at: outputURL)
         
         do {
-            try folderManager.createZip(excluding: excludedPaths, to: outputURL)
-            let includedCount = entries.count - excludedPaths.count
-            exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(includedCount) ファイル"
+            try folderManager.createZip(excluding: pathsToRemove, to: outputURL)
+            exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(pathsToKeep.count) ファイル"
             showExportSuccess = true
-            excludedPaths.removeAll()
+            selectedPaths.removeAll()  // Clear selections after success
             onExportSuccess?()
         } catch {
             print("ZIP creation error: \(error)")
@@ -278,10 +335,10 @@ struct ThumbnailGridView: View {
         guard let folderManager = imageSource as? FolderManager else { return }
         
         do {
-            let count = try folderManager.moveToTrash(paths: excludedPaths)
+            let count = try folderManager.moveToTrash(paths: pathsToRemove)
             exportMessage = "\(count) 件のファイルをゴミ箱に移動しました"
             showExportSuccess = true
-            excludedPaths.removeAll()
+            selectedPaths.removeAll()  // Clear selections after success
             loadSource()  // Refresh the list
             onExportSuccess?()
         } catch {
@@ -297,7 +354,26 @@ struct ThumbnailGridView: View {
 struct ThumbnailCell: View {
     let entry: ImageEntry
     let thumbnail: NSImage?
-    let isExcluded: Bool
+    let isSelected: Bool
+    let selectionMode: SelectionMode
+    
+    private var overlayColor: Color {
+        switch selectionMode {
+        case .exclude:
+            return .red
+        case .keep:
+            return .green
+        }
+    }
+    
+    private var overlayIcon: String {
+        switch selectionMode {
+        case .exclude:
+            return "xmark.circle.fill"
+        case .keep:
+            return "checkmark.circle.fill"
+        }
+    }
     
     var body: some View {
         VStack(spacing: 4) {
@@ -312,11 +388,11 @@ struct ThumbnailCell: View {
                         .frame(width: 120, height: 120)
                 }
                 
-                if isExcluded {
-                    Color.black.opacity(0.5)
-                    Image(systemName: "xmark.circle.fill")
+                if isSelected {
+                    Color.black.opacity(0.4)
+                    Image(systemName: overlayIcon)
                         .font(.largeTitle)
-                        .foregroundStyle(.white, .red)
+                        .foregroundStyle(.white, overlayColor)
                 }
             }
             .frame(width: 120, height: 120)
@@ -324,7 +400,7 @@ struct ThumbnailCell: View {
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(isExcluded ? Color.red : Color.clear, lineWidth: 3)
+                    .stroke(isSelected ? overlayColor : Color.clear, lineWidth: 3)
             )
             
             Text(entry.name)
@@ -339,7 +415,7 @@ struct ThumbnailCell: View {
 #Preview {
     ThumbnailGridView(
         imageSource: ArchiveManager(zipURL: URL(fileURLWithPath: "/tmp/test.zip")),
-        excludedPaths: .constant([]),
+        selectedPaths: .constant([]),
         onExportSuccess: nil
     )
 }

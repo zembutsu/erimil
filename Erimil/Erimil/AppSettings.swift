@@ -15,8 +15,8 @@ enum SelectionMode: String, CaseIterable {
     
     var displayName: String {
         switch self {
-        case .exclude: return "除外するものを選択"
-        case .keep: return "残すものを選択"
+        case .exclude: return "除外モード"
+        case .keep: return "選出モード"
         }
     }
     
