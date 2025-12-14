@@ -12,22 +12,25 @@ struct SidebarView: View {
     @Binding var selectedZipURL: URL?
     let hasUnsavedChanges: Bool
     let onZipSelectionAttempt: (URL) -> Void
+    var onFolderSelectionAttempt: ((URL) -> Void)?
     let reloadTrigger: UUID
     
     @State private var rootNode: FolderNode?
+    @State private var selectedNodeURL: URL?
     
     var body: some View {
         VStack(spacing: 0) {
             if let root = rootNode {
                 List {
                     OutlineGroup(root.children ?? [], children: \.children) { node in
-                        NodeRowView(node: node, isSelected: selectedZipURL == node.url)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if node.isZip {
-                                    onZipSelectionAttempt(node.url)
-                                }
-                            }
+                        NodeRowView(
+                            node: node,
+                            isSelected: selectedNodeURL == node.url
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            handleNodeTap(node)
+                        }
                     }
                 }
                 .listStyle(.sidebar)
@@ -48,11 +51,22 @@ struct SidebarView: View {
             .padding()
         }
         .navigationTitle("Erimil")
-        .onChange(of: selectedFolderURL) { _, newValue in
+        .onChange(of: selectedFolderURL) { _, _ in
             reloadTree()
         }
         .onChange(of: reloadTrigger) { _, _ in
             reloadTree()
+        }
+    }
+    
+    private func handleNodeTap(_ node: FolderNode) {
+        selectedNodeURL = node.url
+        
+        if node.isZip {
+            onZipSelectionAttempt(node.url)
+        } else if node.isDirectory {
+            // フォルダの場合、画像があれば右ペインに表示
+            onFolderSelectionAttempt?(node.url)
         }
     }
     
@@ -105,6 +119,7 @@ struct NodeRowView: View {
         selectedZipURL: .constant(nil),
         hasUnsavedChanges: false,
         onZipSelectionAttempt: { _ in },
+        onFolderSelectionAttempt: { _ in },
         reloadTrigger: UUID()
     )
 }
