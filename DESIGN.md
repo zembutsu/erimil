@@ -234,6 +234,127 @@ guard savePanel.runModal() == .OK, let outputURL = savePanel.url else { return }
 
 ---
 
+### Decision 8: ImageSource Abstraction
+
+**Date**: 2025-12-14
+
+**Context**: User requested folder browsing capability in addition to ZIP files. Need to support:
+- ZIP files (existing)
+- Folders containing images (new)
+
+**Options Considered**:
+
+| Option | Description | Pros | Cons |
+|--------|-------------|------|------|
+| A) Duplicate code | Separate views for ZIP/Folder | Simple | Code duplication, inconsistent UX |
+| B) Protocol abstraction | Common ImageSource protocol | Unified UX, extensible | Initial refactoring effort |
+| C) Union type | Enum with associated values | Type-safe | Complex pattern matching |
+
+**Decision**: **Option B (Protocol abstraction)**
+
+**Rationale**:
+- Enables future format support (tar.gz, 7z) with same pattern
+- Single ThumbnailGridView works with any source
+- Consistent UX regardless of source type
+
+**Implementation**:
+```swift
+protocol ImageSource {
+    var url: URL { get }
+    var displayName: String { get }
+    func listImageEntries() -> [ImageEntry]
+    func thumbnail(for entry: ImageEntry) -> NSImage?
+    func fullImage(for entry: ImageEntry) -> NSImage?
+}
+
+class ArchiveManager: ImageSource { ... }  // existing
+class FolderManager: ImageSource { ... }   // new
+```
+
+**Consequences**:
+- ✅ Single UI component for all source types
+- ✅ Easy to add new formats (Phase 3)
+- ✅ Consistent user experience
+- ⚠️ Requires refactoring existing ArchiveManager
+
+---
+
+### Decision 9: Finder-style Navigation UI
+
+**Date**: 2025-12-14
+
+**Context**: Adding folder support creates ambiguity - clicking a folder could mean "expand tree" or "show contents".
+
+**Options Considered**:
+
+| Option | Operation | Pros | Cons |
+|--------|-----------|------|------|
+| A) Double-click = show | Single=expand, Double=show | ZIP consistency | Slow for browsing |
+| B) Finder-style | ▶=expand, Row=show | Familiar, fast | Implementation change |
+| C) Right-click menu | Context menu for actions | Explicit | Discoverable issue |
+| D) Auto-show if images | Show images automatically | Intuitive | Unexpected behavior |
+
+**Decision**: **Option B (Finder-style)**
+
+**Rationale**:
+- Matches macOS Finder behavior users already know
+- Fast workflow: single click to view contents
+- Disclosure triangle (▶) clearly indicates expandable items
+- Works consistently for both folders and ZIPs
+
+**UI Specification**:
+```
+▶ data/                    ← ▶ click: expand/collapse
+    ▶ 2024/                ← Row click: show images in right pane
+        ▶ screenshots/
+    📦 archive.zip         ← Row click: show ZIP contents
+```
+
+**Consequences**:
+- ✅ Familiar macOS pattern
+- ✅ Fast navigation
+- ✅ Unified behavior for ZIP and folders
+- ⚠️ Requires SidebarView refactoring
+
+---
+
+### Decision 10: Folder Operations
+
+**Date**: 2025-12-14
+
+**Context**: When browsing folders, what actions should be available?
+
+**Options Considered**:
+
+| Action | Implementation | Risk |
+|--------|----------------|------|
+| ZIP selected images | Create new ZIP from selection | Low |
+| Delete to Trash | NSWorkspace.shared.recycle() | Medium (recoverable) |
+| Delete permanently | FileManager.removeItem() | High (data loss) |
+| Move to folder | FileManager.moveItem() | Medium |
+
+**Decision**: 
+- **ZIP creation**: Create ZIP from selected (non-excluded) images
+- **Delete**: Move to Trash only (never permanent delete)
+
+**Rationale**:
+- Follows Safety First principle (Design Goal #1)
+- Trash is recoverable - aligns with "消すのは怖い" sentiment
+- ZIP creation matches existing _opt.zip workflow
+
+**UI**:
+- Footer buttons change based on source type:
+  - ZIP: 「確定 → _opt.zip」
+  - Folder: 「ZIP化」「削除（ゴミ箱）」
+
+**Consequences**:
+- ✅ Safe operations only
+- ✅ Consistent with Phase 1 safety philosophy
+- ✅ Dynamic UI based on context
+- ⚠️ No permanent delete (intentional limitation)
+
+---
+
 ## Deferred Decisions
 
 ### Export Directory Structure
@@ -301,6 +422,42 @@ guard savePanel.runModal() == .OK, let outputURL = savePanel.url else { return }
 - "アップスケールすると容量ふえると思いますが、これぞ！というだけ残したり、前処理として、アップスケール不要なものを排除したい"
 - "消すのは怖いので" (regarding in-place editing)
 - "Quick Look の拡大表示だけ欲しい...結局Zip展開してしまっては意味が無い"
+
+---
+
+### 2025-12-14: Phase 2 Planning Session
+
+**Participants**: Zem, Claude
+
+**Topic**: Extending to folder browsing
+
+**Discussion**:
+- User requested folder image browsing in addition to ZIP files
+- Use case: Factorio screenshots organized by date, want to archive selected ones
+- Natural extension of existing workflow
+- Decision: Add FolderManager with same ImageSource protocol
+
+**Topic**: Folder operations
+
+**Discussion**:
+- Two operations needed: ZIP creation (archive selected) and delete (cleanup)
+- Delete must be Trash-only for safety
+- Dynamic footer buttons based on source type
+
+**Topic**: Navigation UI for mixed sources
+
+**Discussion**:
+- Problem: folder click could mean "expand" or "view contents"
+- Solution: Finder-style UI (▶ for expand, row click for view)
+- Consistent behavior for both ZIP and folders
+- Reference: macOS Finder sidebar behavior
+
+**Priority order**:
+1. Settings panel (enables defaults for other features)
+2. ImageSource abstraction + FolderManager
+3. Finder-style navigation
+4. Selection mode toggle
+5. Folder operations (ZIP/Delete)
 
 ---
 
