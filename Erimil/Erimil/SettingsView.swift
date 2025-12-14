@@ -9,9 +9,60 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @State private var cacheInfo: (fileCount: Int, totalSize: Int64) = (0, 0)
     
     var body: some View {
         Form {
+            // MARK: - Thumbnail Size
+            Section {
+                Picker("プリセット", selection: $settings.thumbnailSizePreset) {
+                    ForEach(ThumbnailSizePreset.allCases, id: \.self) { preset in
+                        Text("\(preset.displayName) (\(Int(preset.size))px)").tag(preset)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                
+                if settings.thumbnailSizePreset == .custom {
+                    HStack {
+                        Text("サイズ:")
+                        Slider(value: $settings.thumbnailSize, in: 60...300, step: 10)
+                        Text("\(Int(settings.thumbnailSize))px")
+                            .frame(width: 50, alignment: .trailing)
+                            .monospacedDigit()
+                    }
+                }
+            } header: {
+                Text("サムネイルサイズ")
+            }
+            
+            // MARK: - Cache Management
+            Section {
+                HStack {
+                    Text("キャッシュファイル数:")
+                    Spacer()
+                    Text("\(cacheInfo.fileCount) 件")
+                        .foregroundStyle(.secondary)
+                }
+                
+                HStack {
+                    Text("キャッシュサイズ:")
+                    Spacer()
+                    Text(formatBytes(cacheInfo.totalSize))
+                        .foregroundStyle(.secondary)
+                }
+                
+                Button("キャッシュをクリア") {
+                    CacheManager.shared.clearAllCache()
+                    updateCacheInfo()
+                }
+                .foregroundStyle(.orange)
+            } header: {
+                Text("キャッシュ")
+            } footer: {
+                Text("サムネイルのキャッシュを削除します。お気に入りは保持されます。")
+                    .font(.caption)
+            }
+            
             // MARK: - Selection Mode
             Section {
                 Picker("選択モード", selection: $settings.selectionMode) {
@@ -67,8 +118,11 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 300)
+        .frame(width: 450, height: 500)
         .navigationTitle("設定")
+        .onAppear {
+            updateCacheInfo()
+        }
     }
     
     private func selectOutputFolder() {
@@ -81,6 +135,16 @@ struct SettingsView: View {
         if panel.runModal() == .OK {
             settings.defaultOutputFolder = panel.url
         }
+    }
+    
+    private func updateCacheInfo() {
+        cacheInfo = CacheManager.shared.getCacheInfo()
+    }
+    
+    private func formatBytes(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
     }
 }
 

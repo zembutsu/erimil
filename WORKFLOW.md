@@ -215,7 +215,9 @@ Managed via Swift Package Manager:
 
 - [ ] Read **PROJECT.md** - Confirm current Phase goals
 - [ ] Read **DESIGN.md** - Review past decisions
+- [ ] Read **LOGBOOK.md** (latest entry) - Check **Handoff Bridge** for carry-forward items
 - [ ] Check **ARCHITECTURE.md** - Understand current structure (if needed)
+- [ ] Check **ARCHITECTURE.md Technical Constraints** - If implementing persistence or file access
 
 ### During Development
 
@@ -227,6 +229,7 @@ Managed via Swift Package Manager:
 
 ### Phase End Checklist
 
+- [ ] **LOGBOOK.md** - Record session: decisions, insights, learnings, **Handoff Bridge**
 - [ ] **DESIGN.md** - Add new Decisions made during the phase
 - [ ] **WORKFLOW.md** - Add learnings to Development Principles
 - [ ] **ARCHITECTURE.md** - Update if structure changed
@@ -249,6 +252,32 @@ When encountering persistent errors:
 
 **Lesson learned (Phase 1)**:
 ZIPFoundation `corruptedData` errors were solved by following official examples, not by adding more workarounds.
+
+### Step Back Before Diving Deeper (Phase 2.1)
+
+When small fixes aren't working after 2-3 attempts:
+
+1. **Stop iterating** - More tweaks often waste time
+2. **Ask "what's fundamentally different?"** - Compare working vs broken state
+3. **Question assumptions** - "Is this the right approach at all?"
+4. **Check platform constraints** - Sandbox, permissions, entitlements
+5. **Search for standard patterns** - "How is this normally done on macOS?"
+
+**Anti-pattern**:
+```
+Fix A → doesn't work → Fix B → doesn't work → Fix C → ...
+```
+
+**Better**:
+```
+Fix A → doesn't work → Fix B → doesn't work → STOP
+→ "What would an experienced macOS developer do here?"
+→ Check ARCHITECTURE.md Technical Constraints
+→ Search for standard approach
+```
+
+**Lesson learned (Phase 2.1)**:
+Folder restoration kept failing with UserDefaults. After multiple debug iterations, stepping back revealed: "Sandbox requires Security-Scoped Bookmarks" - a fundamental constraint, not a bug to fix.
 
 ### SwiftUI State Management
 
@@ -354,4 +383,4 @@ Benefits:
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2025-12-14 (Phase 2 learnings)
+> Last updated: 2025-12-14 (Phase 2.1 - Handoff Bridge, Step Back principle)

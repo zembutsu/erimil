@@ -34,8 +34,8 @@ Part of the **DDL (Do Different Lab)** tool family, designed to work alongside [
 
 ## Current Status
 
-- **Version**: 0.2.0 (unreleased)
-- **Phase**: Phase 2 Complete
+- **Version**: 0.2.0 (released)
+- **Phase**: Phase 2.1 Development
 - **Phase 1**: ✅ Completed (2025-12-13)
 - **Phase 2**: ✅ Completed (2025-12-14)
 
@@ -81,6 +81,27 @@ This project uses AI-assisted development following the WORKFLOW.md guidelines:
 - ✅ Selection mode toggle (exclude vs keep)
 - ✅ Finder-style UI (▶ for expand, row click for content view)
 - ✅ ImageSource abstraction (unified ZIP/Folder handling)
+
+### Phase 2.1 (In Progress) - UX Improvements
+- Thumbnail size adjustment (Settings + UI slider)
+- Cache infrastructure (hash-based, Application Support storage)
+- Keyboard navigation (wasd/arrows, x for selection)
+- Space key preview (full-screen option)
+- Favorite feature (★ mark, delete protection, v toggle)
+
+### Phase 2.2 (Planned) - Slide Mode
+- Full-screen presentation mode
+- a/f for previous/next image
+- z/c for previous/next favorite
+- Shift-A/F for previous/next source
+
+### Phase 2.3 (Planned) - Performance
+- Thumbnail disk cache
+- Cache settings (hash management, sharing options)
+
+### Phase 2.4 (Planned) - Customization
+- Key shortcut customization
+- Real-time folder monitoring
 
 ### Phase 3 (Planned)
 - Additional archive formats (tar.gz, 7z, rar)

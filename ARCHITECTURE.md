@@ -257,6 +257,148 @@ AppSettings.shared
 - **No Telemetry**: No data collection
 - **Original Files**: Never modified without explicit "Confirm" action
 
+---
+
+## Technical Constraints (macOS Platform)
+
+### App Sandbox
+
+macOS apps run within a sandbox with restricted file access.
+
+| Operation | Constraint | Solution |
+|-----------|------------|----------|
+| File reading | User-selected only | Use NSOpenPanel |
+| File writing | User-selected only | Use NSSavePanel |
+| Persistent folder access | Lost on app restart | Security-Scoped Bookmarks |
+| Move to Trash | Requires permission | `NSWorkspace.shared.recycle()` |
+
+### Security-Scoped Bookmarks
+
+Mechanism to maintain access rights to user-selected folders across app launches.
+
+```swift
+// Save (after NSOpenPanel selection)
+let bookmarkData = try url.bookmarkData(options: .withSecurityScope)
+
+// Restore (on app launch)
+let url = try URL(resolvingBookmarkData: bookmarkData, options: .withSecurityScope)
+url.startAccessingSecurityScopedResource()  // Start accessing
+// ...
+url.stopAccessingSecurityScopedResource()   // Stop accessing
+```
+
+**Note**: UserDefaults may not persist in Xcode debug environment. File-based storage (Application Support) is recommended.
+
+### Entitlements Requirements
+
+Required keys in `Erimil.entitlements`:
+
+```xml
+<key>com.apple.security.app-sandbox</key>
+<true/>
+<key>com.apple.security.files.user-selected.read-write</key>
+<true/>
+<key>com.apple.security.files.bookmarks.app-scope</key>
+<true/>
+```
+
+### Common Pitfalls
+
+| Problem | Symptom | Cause | Solution |
+|---------|---------|-------|----------|
+| Cannot read folder contents | `children count: 0` | No access rights | Security-Scoped Bookmarks |
+| Settings not saved | Reset on every launch | UserDefaults issue | File-based storage |
+| ZIP export fails | permission denied | No write permission | Use NSSavePanel |
+| Entitlements error | Build failure | Missing configuration | Check Build Settings |
+
+---
+
+## Development Setup
+
+### Xcode Configuration
+
+**1. Create Entitlements File**
+
+```
+1. File → New → File → Property List
+2. Filename: Erimil.entitlements
+3. Right-click → Open As → Source Code
+4. Paste content (see above)
+```
+
+**2. Register in Build Settings**
+
+```
+1. Project Navigator → Select Erimil project
+2. TARGETS → Select Erimil
+3. Build Settings tab
+4. Search: "entitlements"
+5. Set Code Signing Entitlements to "Erimil/Erimil.entitlements"
+```
+
+**3. Verify Signing & Capabilities**
+
+```
+1. Signing & Capabilities tab
+2. App Sandbox is enabled
+3. File Access → User Selected File: Read/Write
+```
+
+### Debugging
+
+**Check logs in Console.app**
+
+```
+1. Open Console.app
+2. Filter: Process name "Erimil" or search "[AppSettings]"
+3. Operate the app and check logs
+```
+
+**Common log prefixes**
+
+| Prefix | Component |
+|--------|-----------|
+| `[AppSettings]` | Settings, Bookmarks |
+| `[CacheManager]` | Cache, Favorites |
+| `[SidebarView]` | Folder tree |
+| `[ContentView]` | Main view |
+
+### Application Support Location
+
+```bash
+~/Library/Application Support/Erimil/
+├── cache/                      # Thumbnail cache
+├── index.json                  # Path → contentHash mapping
+├── favorites_hybrid.json       # Favorites data
+└── last_folder_bookmark.data   # Folder restoration bookmark
+```
+
+### Troubleshooting
+
+**Q: Folder selected but contents not displayed**
+```
+A: Security-Scoped Bookmarks issue
+   1. Verify bookmarks.app-scope in Entitlements
+   2. Check "[AppSettings]" logs in Console.app
+   3. Verify last_folder_bookmark.data is created
+```
+
+**Q: Favorites not saved**
+```
+A: Application Support directory issue
+   1. Verify ~/Library/Application Support/Erimil/ exists
+   2. Check permissions on favorites_hybrid.json
+```
+
+**Q: Build error "Entitlements file not found"**
+```
+A: Build Settings misconfiguration
+   1. Verify Code Signing Entitlements path is correct
+   2. Verify file is added to project
+```
+
+---
+
 ## Performance Considerations
 
 - **Large ZIPs (>1GB)**: Show warning, consider streaming approach
@@ -269,4 +411,4 @@ AppSettings.shared
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2025-12-14 (Phase 2 completion)
+> Last updated: 2025-12-14 (Phase 2.1 - Technical Constraints added)
