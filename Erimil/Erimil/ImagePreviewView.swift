@@ -9,16 +9,18 @@ import SwiftUI
 import AppKit
 
 struct ImagePreviewView: View {
-    let image: NSImage
-    let entryName: String
+    let imageSource: ImageSource
+    let entry: ImageEntry
     let onClose: () -> Void
+    
+    @State private var loadedImage: NSImage?
     
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
                 // ヘッダー
                 HStack {
-                    Text(entryName)
+                    Text(entry.name)
                         .font(.headline)
                         .lineLimit(1)
                     Spacer()
@@ -37,11 +39,17 @@ struct ImagePreviewView: View {
                 Divider()
                 
                 // 画像表示
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.black)
+                if let image = loadedImage {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.black)
+                } else {
+                    ProgressView("読み込み中...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.black)
+                }
             }
             
             // Key event handler for Space/Escape/Enter (transparent to clicks)
@@ -49,6 +57,18 @@ struct ImagePreviewView: View {
                 .allowsHitTesting(false)
         }
         .frame(minWidth: 600, minHeight: 500)
+        .onAppear {
+            loadImage()
+        }
+    }
+    
+    private func loadImage() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let image = imageSource.fullImage(for: entry)
+            DispatchQueue.main.async {
+                loadedImage = image
+            }
+        }
     }
 }
 
@@ -87,9 +107,6 @@ struct PreviewKeyEventHandler: NSViewRepresentable {
 }
 
 #Preview {
-    ImagePreviewView(
-        image: NSImage(systemSymbolName: "photo", accessibilityDescription: nil)!,
-        entryName: "sample.jpg",
-        onClose: {}
-    )
+    // Preview requires a mock ImageSource - skip for now
+    Text("Preview not available")
 }

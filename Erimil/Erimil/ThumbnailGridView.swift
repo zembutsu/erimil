@@ -59,7 +59,6 @@ struct ThumbnailGridView: View {
     @State private var entries: [ImageEntry] = []
     @State private var thumbnails: [String: NSImage] = [:]
     @State private var previewEntry: ImageEntry?
-    @State private var previewImage: NSImage?
     @State private var showExportSuccess = false
     @State private var showExportError = false
     @State private var showDeleteConfirm = false
@@ -177,8 +176,8 @@ struct ThumbnailGridView: View {
         }
         .sheet(item: $previewEntry) { entry in
             ImagePreviewView(
-                image: previewImage ?? NSImage(),
-                entryName: entry.name,
+                imageSource: imageSource,
+                entry: entry,
                 onClose: { previewEntry = nil }
             )
         }
@@ -367,7 +366,6 @@ struct ThumbnailGridView: View {
         selectedPaths = []  // Clear selections when source changes
         focusedIndex = nil  // Reset focus when source changes
         previewEntry = nil
-        previewImage = nil
         entries = imageSource.listImageEntries()
         
         print("[ThumbnailGridView] Loaded \(entries.count) entries:")
@@ -565,18 +563,8 @@ struct ThumbnailGridView: View {
     }
     
     private func openPreview(_ entry: ImageEntry) {
-        print("openPreview called for: \(entry.name)")
-        print("  entry.path: \(entry.path)")
-        
-        if let image = imageSource.fullImage(for: entry) {
-            print("Full image loaded: \(image.size)")
-            previewImage = image
-            previewEntry = entry
-        } else {
-            print("Failed to load full image for: \(entry.path)")
-            // Clear any stale preview image
-            previewImage = nil
-        }
+        print("[openPreview] Opening preview for: \(entry.name)")
+        previewEntry = entry
     }
     
     // MARK: - Archive Export
