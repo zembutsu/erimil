@@ -16,24 +16,23 @@ struct SidebarView: View {
     let reloadTrigger: UUID
     
     @State private var rootNode: FolderNode?
-    @State private var selectedNodeURL: URL?
+    @State private var selectedNodeID: UUID?
     
     var body: some View {
         VStack(spacing: 0) {
             if let root = rootNode {
-                List {
+                List(selection: $selectedNodeID) {
                     OutlineGroup(root.children ?? [], children: \.children) { node in
-                        NodeRowView(
-                            node: node,
-                            isSelected: selectedNodeURL == node.url
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            handleNodeTap(node)
-                        }
+                        NodeRowView(node: node)
+                            .tag(node.id)
                     }
                 }
                 .listStyle(.sidebar)
+                .onChange(of: selectedNodeID) { _, newValue in
+                    if let nodeID = newValue {
+                        handleNodeSelection(nodeID)
+                    }
+                }
             } else {
                 ContentUnavailableView(
                     "フォルダを選択",
@@ -59,18 +58,33 @@ struct SidebarView: View {
         }
     }
     
-    private func handleNodeTap(_ node: FolderNode) {
-        selectedNodeURL = node.url
+    private func handleNodeSelection(_ nodeID: UUID) {
+        guard let node = findNode(by: nodeID, in: rootNode?.children ?? []) else {
+            return
+        }
         
         if node.isZip {
             onZipSelectionAttempt(node.url)
         } else if node.isDirectory {
-            // フォルダの場合、画像があれば右ペインに表示
             onFolderSelectionAttempt?(node.url)
         }
     }
     
+    private func findNode(by id: UUID, in nodes: [FolderNode]) -> FolderNode? {
+        for node in nodes {
+            if node.id == id {
+                return node
+            }
+            if let children = node.children,
+               let found = findNode(by: id, in: children) {
+                return found
+            }
+        }
+        return nil
+    }
+    
     private func reloadTree() {
+        selectedNodeID = nil
         if let url = selectedFolderURL {
             rootNode = FolderNode(url: url)
         } else {
@@ -92,7 +106,6 @@ struct SidebarView: View {
 
 struct NodeRowView: View {
     let node: FolderNode
-    let isSelected: Bool
     
     var body: some View {
         Label {
@@ -106,10 +119,6 @@ struct NodeRowView: View {
                     .foregroundStyle(.blue)
             }
         }
-        .padding(.vertical, 2)
-        .padding(.horizontal, 4)
-        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
-        .cornerRadius(4)
     }
 }
 
