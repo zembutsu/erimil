@@ -3,81 +3,86 @@
 //  Erimil
 //
 //  Created by Masahito Zembutsu on 2025/12/13.
+//  ImageSource implementation for ZIP archives
+//  Reference: https://github.com/weichsel/ZIPFoundation#closure-based-reading-and-writing
 //
-// Reference: https://github.com/weichsel/ZIPFoundation#closure-based-reading-and-writing
 
 import Foundation
 import ZIPFoundation
 import AppKit
 
-class ArchiveManager {
-    let zipURL: URL
+class ArchiveManager: ImageSource {
+    let url: URL
+    let sourceType: ImageSourceType = .archive
+    
+    // Convenience alias
+    var zipURL: URL { url }
     
     init(zipURL: URL) {
-        self.zipURL = zipURL
+        self.url = zipURL
     }
     
-    /// ZIPに含まれる画像エントリ一覧を取得
-    func listImageEntries() -> [ArchiveEntry] {
-        guard let archive = Archive(url: zipURL, accessMode: .read) else {
-            print("Failed to open archive: \(zipURL)")
+    /// List all image entries in the ZIP
+    func listImageEntries() -> [ImageEntry] {
+        guard let archive = Archive(url: url, accessMode: .read) else {
+            print("Failed to open archive: \(url)")
             return []
         }
         
-        var results: [ArchiveEntry] = []
-        var index = 0
+        var results: [ImageEntry] = []
         
         for entry in archive {
             if entry.type == .file {
-                let archiveEntry = ArchiveEntry(entry: entry, index: index)
-                if archiveEntry.isImage {
-                    results.append(archiveEntry)
+                let imageEntry = ImageEntry(
+                    path: entry.path,
+                    size: entry.uncompressedSize
+                )
+                
+                // Filter: images only, exclude __MACOSX metadata
+                if imageEntry.isImage && !entry.path.contains("__MACOSX/") && !imageEntry.name.hasPrefix("._") {
+                    results.append(imageEntry)
                 }
             }
-            index += 1
         }
         
         return results.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
     
-    /// 指定エントリのサムネイルを生成
-    func thumbnail(for entry: ArchiveEntry, maxSize: CGFloat = 120) -> NSImage? {
+    /// Generate thumbnail for entry
+    func thumbnail(for entry: ImageEntry, maxSize: CGFloat = 120) -> NSImage? {
         guard let image = extractImage(for: entry) else { return nil }
         return resizedImage(image, maxSize: maxSize)
     }
     
-    /// フルサイズ画像を取得
-    func fullImage(for entry: ArchiveEntry) -> NSImage? {
+    /// Get full-size image
+    func fullImage(for entry: ImageEntry) -> NSImage? {
         return extractImage(for: entry)
     }
     
-    /// 画像を抽出 - 公式ドキュメントの方法に従う
-    private func extractImage(for archiveEntry: ArchiveEntry) -> NSImage? {
-        // 毎回新しくArchiveを開く（公式の例に近い形）
-        guard let archive = Archive(url: zipURL, accessMode: .read) else {
+    /// Extract image from ZIP - opens archive fresh each time per official docs
+    private func extractImage(for imageEntry: ImageEntry) -> NSImage? {
+        guard let archive = Archive(url: url, accessMode: .read) else {
             print("Failed to open archive")
             return nil
         }
         
-        // パスで直接アクセス（公式の例: archive["file.txt"]）
-        guard let entry = archive[archiveEntry.path] else {
-            print("Entry not found: \(archiveEntry.path)")
+        guard let entry = archive[imageEntry.path] else {
+            print("Entry not found: \(imageEntry.path)")
             return nil
         }
         
-        // Consumer closureで抽出（公式の例）
         var imageData = Data()
         do {
             _ = try archive.extract(entry) { data in
                 imageData.append(data)
             }
         } catch {
-            print("Extract failed for \(archiveEntry.name): \(error)")
+            print("Extract failed for \(imageEntry.name): \(error)")
             return nil
         }
         
         guard let image = NSImage(data: imageData) else {
-            print("Invalid image data for: \(archiveEntry.name), size: \(imageData.count) bytes")
+            print("Invalid image data for: \(imageEntry.name), size: \(imageData.count) bytes")
             return nil
         }
         
@@ -109,13 +114,15 @@ class ArchiveManager {
         return newImage
     }
     
-    /// 除外リスト以外のエントリを新しいZIPに書き出す
+    // MARK: - Export functionality
+    
+    /// Export excluding specified paths
     /// Reference: https://github.com/weichsel/ZIPFoundation#adding-and-removing-entries
     func exportOptimized(excluding excludedPaths: Set<String>, to destinationURL: URL) throws {
         print("exportOptimized called")
         print("Excluded paths: \(excludedPaths)")
         
-        guard let sourceArchive = Archive(url: zipURL, accessMode: .read) else {
+        guard let sourceArchive = Archive(url: url, accessMode: .read) else {
             print("Failed to open source archive")
             throw ArchiveError.cannotOpenSource
         }
@@ -127,21 +134,17 @@ class ArchiveManager {
         }
         print("Destination archive created")
         
-        // 除外リストにないエントリをコピー
         for entry in sourceArchive {
-            // 除外対象はスキップ
             if excludedPaths.contains(entry.path) {
                 print("Excluding: \(entry.path)")
                 continue
             }
             
-            // __MACOSX もスキップ
             if entry.path.contains("__MACOSX/") {
                 print("Skipping __MACOSX: \(entry.path)")
                 continue
             }
             
-            // ディレクトリエントリはスキップ（必要に応じて）
             if entry.type == .directory {
                 print("Skipping directory: \(entry.path)")
                 continue
@@ -149,7 +152,6 @@ class ArchiveManager {
             
             print("Copying: \(entry.path)")
             
-            // エントリをコピー
             var entryData = Data()
             do {
                 _ = try sourceArchive.extract(entry) { data in
@@ -158,7 +160,7 @@ class ArchiveManager {
                 print("  Extracted: \(entryData.count) bytes")
             } catch {
                 print("  Extract failed: \(error)")
-                continue  // このエントリはスキップして続行
+                continue
             }
             
             do {
@@ -175,24 +177,24 @@ class ArchiveManager {
                 print("  Added to destination")
             } catch {
                 print("  Add failed: \(error)")
-                continue  // このエントリはスキップして続行
+                continue
             }
         }
         
         print("Export completed successfully")
     }
+}
+
+enum ArchiveError: Error, LocalizedError {
+    case cannotOpenSource
+    case cannotCreateDestination
     
-    enum ArchiveError: Error, LocalizedError {
-        case cannotOpenSource
-        case cannotCreateDestination
-        
-        var errorDescription: String? {
-            switch self {
-            case .cannotOpenSource:
-                return "元のZIPファイルを開けません"
-            case .cannotCreateDestination:
-                return "新しいZIPファイルを作成できません"
-            }
+    var errorDescription: String? {
+        switch self {
+        case .cannotOpenSource:
+            return "元のZIPファイルを開けません"
+        case .cannotCreateDestination:
+            return "新しいZIPファイルを作成できません"
         }
     }
 }

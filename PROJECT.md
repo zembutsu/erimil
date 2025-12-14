@@ -34,8 +34,10 @@ Part of the **DDL (Do Different Lab)** tool family, designed to work alongside [
 
 ## Current Status
 
-- **Version**: 0.1.0 (unreleased)
-- **Phase**: MVP Development
+- **Version**: 0.2.0 (unreleased)
+- **Phase**: Phase 2 Complete
+- **Phase 1**: ✅ Completed (2025-12-13)
+- **Phase 2**: ✅ Completed (2025-12-14)
 
 ## Development Principles
 
@@ -63,18 +65,22 @@ This project uses AI-assisted development following the WORKFLOW.md guidelines:
 
 ## Roadmap
 
-### Phase 1 (MVP) - In Progress
-- Folder tree navigation with ZIP recognition
-- Thumbnail grid display
-- Click-to-enlarge preview (Quick Look style)
-- Selection for exclusion (select = exclude)
-- Confirm → generate `{name}_opt.zip`
-- Unsaved changes confirmation dialog
+### Phase 1 (MVP) - ✅ Completed (2025-12-13)
+- ✅ Folder tree navigation with ZIP recognition
+- ✅ Thumbnail grid display
+- ✅ Click-to-enlarge preview (Quick Look style)
+- ✅ Selection for exclusion (select = exclude)
+- ✅ Confirm → generate `{name}_opt.zip`
+- ✅ Unsaved changes confirmation dialog
+- ✅ Auto-reload folder tree after export
 
-### Phase 2 (Planned)
-- Export to directory (`./erimil/exclude/<name>/`)
-- Settings panel (output path, thumbnail size)
-- Selection mode toggle (exclude vs keep)
+### Phase 2 - ✅ Completed (2025-12-14)
+- ✅ Folder viewer (browse images in folders, not just ZIPs)
+- ✅ Folder operations: ZIP creation, delete to Trash
+- ✅ Settings panel (output path, selection mode default)
+- ✅ Selection mode toggle (exclude vs keep)
+- ✅ Finder-style UI (▶ for expand, row click for content view)
+- ✅ ImageSource abstraction (unified ZIP/Folder handling)
 
 ### Phase 3 (Planned)
 - Additional archive formats (tar.gz, 7z, rar)

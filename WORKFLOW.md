@@ -270,6 +270,16 @@ previewEntry = entry
 - Parent owns the state, child receives binding
 - Callbacks (`onExportSuccess`) for child-to-parent events
 
+**State ownership principle (Phase 2)**:
+When derived state (`excludedPaths`) causes false positives, use source state (`selectedPaths`) directly.
+```swift
+// ❌ Wrong - excludedPaths is calculated, mode-dependent
+hasUnsavedChanges: !excludedPaths.isEmpty
+
+// ✅ Correct - selectedPaths is user's actual action
+hasUnsavedChanges: !selectedPaths.isEmpty
+```
+
 ### macOS Sandbox
 
 Common permission issues and solutions:
@@ -279,6 +289,47 @@ Common permission issues and solutions:
 | Cannot write files | Use NSSavePanel + Read/Write entitlement |
 | Cannot read user files | Use NSOpenPanel |
 | Panel crashes | Check entitlements in Signing & Capabilities |
+| Trash files | Use FileManager.trashItem() (works in sandbox) |
+
+### Protocol Abstraction (Phase 2)
+
+When supporting multiple similar sources (ZIP, Folder):
+
+1. **Define protocol early** - Common interface before implementation
+2. **Keep protocol minimal** - Only what views actually need
+3. **Type-specific logic in implementation** - Not in views
+4. **Use `any Protocol`** - For heterogeneous storage
+
+```swift
+protocol ImageSource {
+    var url: URL { get }
+    func listImageEntries() -> [ImageEntry]
+    func thumbnail(for: ImageEntry, maxSize: CGFloat) -> NSImage?
+    func fullImage(for: ImageEntry) -> NSImage?
+}
+```
+
+### Finder-style UI (Phase 2)
+
+For tree navigation with content preview:
+
+```swift
+// Use List selection binding + OutlineGroup
+List(selection: $selectedNodeID) {
+    OutlineGroup(nodes, children: \.children) { node in
+        NodeRowView(node: node)
+            .tag(node.id)  // Required for selection
+    }
+}
+.onChange(of: selectedNodeID) { _, newValue in
+    handleSelection(newValue)
+}
+```
+
+Benefits:
+- ▶ disclosure handled automatically
+- Row click = selection (not expand)
+- Standard macOS behavior
 
 ---
 
@@ -303,3 +354,4 @@ Common permission issues and solutions:
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
+> Last updated: 2025-12-14 (Phase 2 learnings)

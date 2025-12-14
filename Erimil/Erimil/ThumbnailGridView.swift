@@ -9,17 +9,19 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ThumbnailGridView: View {
-    let zipURL: URL
-    @Binding var excludedPaths: Set<String>  // @State から @Binding に変更
+    let imageSource: any ImageSource
+    @Binding var selectedPaths: Set<String>  // Changed: Binding from parent
     var onExportSuccess: (() -> Void)?
     
-    @State private var entries: [ArchiveEntry] = []
+    @ObservedObject private var settings = AppSettings.shared
+    
+    @State private var entries: [ImageEntry] = []
     @State private var thumbnails: [String: NSImage] = [:]
-    @State private var archiveManager: ArchiveManager?
-    @State private var previewEntry: ArchiveEntry?
+    @State private var previewEntry: ImageEntry?
     @State private var previewImage: NSImage?
     @State private var showExportSuccess = false
     @State private var showExportError = false
+    @State private var showDeleteConfirm = false
     @State private var exportMessage = ""
     
     private let columns = [
@@ -29,18 +31,7 @@ struct ThumbnailGridView: View {
     var body: some View {
         VStack(spacing: 0) {
             // ヘッダー
-            HStack {
-                Text(zipURL.lastPathComponent)
-                    .font(.headline)
-                Spacer()
-                Text("\(entries.count) 画像")
-                    .foregroundStyle(.secondary)
-                if !excludedPaths.isEmpty {
-                    Text("/ \(excludedPaths.count) 除外")
-                        .foregroundStyle(.orange)
-                }
-            }
-            .padding()
+            headerView
             
             Divider()
             
@@ -49,7 +40,7 @@ struct ThumbnailGridView: View {
                 ContentUnavailableView(
                     "画像がありません",
                     systemImage: "photo",
-                    description: Text("このZIPには画像ファイルが含まれていません")
+                    description: Text("このフォルダには画像ファイルが含まれていません")
                 )
             } else {
                 ScrollView {
@@ -58,13 +49,14 @@ struct ThumbnailGridView: View {
                             ThumbnailCell(
                                 entry: entry,
                                 thumbnail: thumbnails[entry.path],
-                                isExcluded: excludedPaths.contains(entry.path)
+                                isSelected: selectedPaths.contains(entry.path),
+                                selectionMode: settings.selectionMode
                             )
                             .onTapGesture(count: 2) {
                                 openPreview(entry)
                             }
                             .onTapGesture(count: 1) {
-                                toggleExclusion(entry)
+                                toggleSelection(entry)
                             }
                             .onAppear {
                                 loadThumbnailIfNeeded(for: entry)
@@ -75,54 +67,24 @@ struct ThumbnailGridView: View {
                 }
             }
             
-            // フッター（除外がある場合のみ表示）
-            if !excludedPaths.isEmpty {
+            // フッター（選択がある場合のみ表示）
+            if !selectedPaths.isEmpty {
                 Divider()
-                
-                HStack {
-                    Button("選択をクリア") {
-                        excludedPaths.removeAll()
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    
-                    Spacer()
-                    
-                    Button("確定 → _opt.zip") {
-                        confirmExport()
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                .padding()
+                footerView
             }
         }
-        .onChange(of: zipURL) { _, newValue in
-            loadArchive(url: newValue)
+        .onChange(of: imageSource.url) { _, _ in
+            loadSource()
         }
         .onAppear {
-            loadArchive(url: zipURL)
+            loadSource()
         }
         .sheet(item: $previewEntry) { entry in
-            VStack(spacing: 20) {
-                Text("Preview: \(entry.name)")
-                    .font(.headline)
-                
-                if let image = previewImage {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: 500, maxHeight: 400)
-                } else {
-                    Text("No image")
-                }
-                
-                Button("Close") {
-                    previewEntry = nil
-                }
-                .keyboardShortcut(.escape)
-            }
-            .padding()
-            .frame(width: 600, height: 500)
+            ImagePreviewView(
+                image: previewImage ?? NSImage(),
+                entryName: entry.name,
+                onClose: { previewEntry = nil }
+            )
         }
         .alert("エクスポート完了", isPresented: $showExportSuccess) {
             Button("OK") { }
@@ -134,92 +96,201 @@ struct ThumbnailGridView: View {
         } message: {
             Text(exportMessage)
         }
+        .alert("ゴミ箱に移動", isPresented: $showDeleteConfirm) {
+            Button("キャンセル", role: .cancel) { }
+            Button("削除", role: .destructive) {
+                performDelete()
+            }
+        } message: {
+            Text("\(pathsToRemove.count) 件のファイルをゴミ箱に移動しますか？")
+        }
     }
     
+    // MARK: - Header
     
+    @ViewBuilder
+    private var headerView: some View {
+        HStack {
+            Text(imageSource.displayName)
+                .font(.headline)
+            
+            Spacer()
+            
+            // Mode toggle button
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    settings.selectionMode = (settings.selectionMode == .exclude) ? .keep : .exclude
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: settings.selectionMode == .exclude ? "xmark.circle" : "checkmark.circle")
+                    Text(settings.selectionMode.displayName)
+                }
+                .font(.caption)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(settings.selectionMode == .exclude ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
+                .foregroundStyle(settings.selectionMode == .exclude ? .red : .green)
+                .cornerRadius(4)
+            }
+            .buttonStyle(.plain)
+            .help("クリックでモード切替")
+            
+            Text("\(entries.count) 画像")
+                .foregroundStyle(.secondary)
+            
+            if !selectedPaths.isEmpty {
+                Text("/ \(selectedPaths.count) 選択")
+                    .foregroundStyle(settings.selectionMode == .exclude ? .orange : .green)
+            }
+        }
+        .padding()
+    }
     
-    private func loadArchive(url: URL) {
-        // excludedPaths = []  （親で管理するため）
+    // MARK: - Footer
+    
+    @ViewBuilder
+    private var footerView: some View {
+        HStack {
+            Button("選択をクリア") {
+                selectedPaths.removeAll()
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            
+            Spacer()
+            
+            // Show what will be exported/deleted
+            Text(footerSummary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            switch imageSource.sourceType {
+            case .archive:
+                Button("確定 → _opt.zip") {
+                    confirmExportArchive()
+                }
+                .buttonStyle(.borderedProminent)
+                
+            case .folder:
+                Button("削除（ゴミ箱）") {
+                    showDeleteConfirm = true
+                }
+                .buttonStyle(.bordered)
+                .foregroundStyle(.red)
+                
+                Button("ZIP化") {
+                    confirmCreateZip()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding()
+    }
+    
+    private var footerSummary: String {
+        let keepCount = pathsToKeep.count
+        let removeCount = pathsToRemove.count
+        
+        switch settings.selectionMode {
+        case .exclude:
+            return "出力: \(keepCount)件 / 除外: \(removeCount)件"
+        case .keep:
+            return "出力: \(keepCount)件 / 除外: \(removeCount)件"
+        }
+    }
+    
+    /// Paths that will be included in output
+    private var pathsToKeep: Set<String> {
+        let allPaths = Set(entries.map { $0.path })
+        switch settings.selectionMode {
+        case .exclude:
+            return allPaths.subtracting(selectedPaths)
+        case .keep:
+            return selectedPaths
+        }
+    }
+    
+    /// Paths that will be excluded/removed
+    private var pathsToRemove: Set<String> {
+        let allPaths = Set(entries.map { $0.path })
+        switch settings.selectionMode {
+        case .exclude:
+            return selectedPaths
+        case .keep:
+            return allPaths.subtracting(selectedPaths)
+        }
+    }
+    
+    // MARK: - Data Loading
+    
+    private func loadSource() {
         thumbnails = [:]
+        selectedPaths = []  // Clear selections when source changes
         previewEntry = nil
         previewImage = nil
-        
-        let manager = ArchiveManager(zipURL: url)
-        archiveManager = manager
-        entries = manager.listImageEntries()
+        entries = imageSource.listImageEntries()
     }
     
-    private func loadThumbnailIfNeeded(for entry: ArchiveEntry) {
-        guard thumbnails[entry.path] == nil,
-              let manager = archiveManager else {
-            return
-        }
-        
-        // 既にロード中/失敗済みをマーク（重複防止）
-        thumbnails[entry.path] = nil
+    private func loadThumbnailIfNeeded(for entry: ImageEntry) {
+        guard thumbnails[entry.path] == nil else { return }
         
         DispatchQueue.global(qos: .userInitiated).async {
-            let thumbnail = manager.thumbnail(for: entry)
-            DispatchQueue.main.async {
-                if let thumbnail = thumbnail {
+            if let thumbnail = imageSource.thumbnail(for: entry, maxSize: 120) {
+                DispatchQueue.main.async {
                     thumbnails[entry.path] = thumbnail
                 }
-                // 失敗した場合はnilのまま（再試行しない）
             }
         }
     }
     
-    private func toggleExclusion(_ entry: ArchiveEntry) {
-        if excludedPaths.contains(entry.path) {
-            excludedPaths.remove(entry.path)
+    // MARK: - User Actions
+    
+    private func toggleSelection(_ entry: ImageEntry) {
+        if selectedPaths.contains(entry.path) {
+            selectedPaths.remove(entry.path)
         } else {
-            excludedPaths.insert(entry.path)
+            selectedPaths.insert(entry.path)
         }
     }
     
-    private func openPreview(_ entry: ArchiveEntry) {
+    private func openPreview(_ entry: ImageEntry) {
         print("openPreview called for: \(entry.name)")
-        guard let manager = archiveManager else {
-            print("archiveManager is nil")
-            return
-        }
         
-        // 先に画像を取得してからsheetを開く
-        if let image = manager.fullImage(for: entry) {
+        if let image = imageSource.fullImage(for: entry) {
             print("Full image loaded: \(image.size)")
             previewImage = image
-            previewEntry = entry  // これがnon-nilになるとsheetが開く
+            previewEntry = entry
         } else {
             print("Failed to load full image")
         }
     }
     
-    private func confirmExport() {
-        guard let manager = archiveManager else { return }
+    // MARK: - Archive Export
+    
+    private func confirmExportArchive() {
+        guard let archiveManager = imageSource as? ArchiveManager else { return }
         
-        // 出力ファイル名: {元名}_opt.zip
-        let originalName = zipURL.deletingPathExtension().lastPathComponent
+        let originalName = archiveManager.url.deletingPathExtension().lastPathComponent
         let outputName = "\(originalName)_opt.zip"
         
-        // NSSavePanelで保存先を選択
         let savePanel = NSSavePanel()
         savePanel.title = "最適化ZIPの保存先"
         savePanel.nameFieldStringValue = outputName
         savePanel.allowedContentTypes = [.zip]
-        savePanel.directoryURL = zipURL.deletingLastPathComponent()
+        savePanel.directoryURL = settings.outputDirectory(for: archiveManager.url)
         
         guard savePanel.runModal() == .OK, let outputURL = savePanel.url else {
-            return  // キャンセル
+            return
         }
         
-        // 既存ファイルがあれば削除（SavePanelが確認済み）
         try? FileManager.default.removeItem(at: outputURL)
         
         do {
-            try manager.exportOptimized(excluding: excludedPaths, to: outputURL)
-            exportMessage = "\(outputURL.lastPathComponent) を作成しました\n除外: \(excludedPaths.count) ファイル"
+            try archiveManager.exportOptimized(excluding: pathsToRemove, to: outputURL)
+            exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(pathsToKeep.count) ファイル / 除外: \(pathsToRemove.count) ファイル"
             showExportSuccess = true
-            excludedPaths.removeAll()
+            selectedPaths.removeAll()  // Clear selections after success
             onExportSuccess?()
         } catch {
             print("Export error: \(error)")
@@ -227,12 +298,82 @@ struct ThumbnailGridView: View {
             showExportError = true
         }
     }
+    
+    // MARK: - Folder Operations
+    
+    private func confirmCreateZip() {
+        guard let folderManager = imageSource as? FolderManager else { return }
+        
+        let outputName = "\(folderManager.displayName).zip"
+        
+        let savePanel = NSSavePanel()
+        savePanel.title = "ZIPファイルの保存先"
+        savePanel.nameFieldStringValue = outputName
+        savePanel.allowedContentTypes = [.zip]
+        savePanel.directoryURL = settings.outputDirectory(for: folderManager.url)
+        
+        guard savePanel.runModal() == .OK, let outputURL = savePanel.url else {
+            return
+        }
+        
+        try? FileManager.default.removeItem(at: outputURL)
+        
+        do {
+            try folderManager.createZip(excluding: pathsToRemove, to: outputURL)
+            exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(pathsToKeep.count) ファイル"
+            showExportSuccess = true
+            selectedPaths.removeAll()  // Clear selections after success
+            onExportSuccess?()
+        } catch {
+            print("ZIP creation error: \(error)")
+            exportMessage = error.localizedDescription
+            showExportError = true
+        }
+    }
+    
+    private func performDelete() {
+        guard let folderManager = imageSource as? FolderManager else { return }
+        
+        do {
+            let count = try folderManager.moveToTrash(paths: pathsToRemove)
+            exportMessage = "\(count) 件のファイルをゴミ箱に移動しました"
+            showExportSuccess = true
+            selectedPaths.removeAll()  // Clear selections after success
+            loadSource()  // Refresh the list
+            onExportSuccess?()
+        } catch {
+            print("Delete error: \(error)")
+            exportMessage = error.localizedDescription
+            showExportError = true
+        }
+    }
 }
 
+// MARK: - ThumbnailCell
+
 struct ThumbnailCell: View {
-    let entry: ArchiveEntry
+    let entry: ImageEntry
     let thumbnail: NSImage?
-    let isExcluded: Bool
+    let isSelected: Bool
+    let selectionMode: SelectionMode
+    
+    private var overlayColor: Color {
+        switch selectionMode {
+        case .exclude:
+            return .red
+        case .keep:
+            return .green
+        }
+    }
+    
+    private var overlayIcon: String {
+        switch selectionMode {
+        case .exclude:
+            return "xmark.circle.fill"
+        case .keep:
+            return "checkmark.circle.fill"
+        }
+    }
     
     var body: some View {
         VStack(spacing: 4) {
@@ -247,11 +388,11 @@ struct ThumbnailCell: View {
                         .frame(width: 120, height: 120)
                 }
                 
-                if isExcluded {
-                    Color.black.opacity(0.5)
-                    Image(systemName: "xmark.circle.fill")
+                if isSelected {
+                    Color.black.opacity(0.4)
+                    Image(systemName: overlayIcon)
                         .font(.largeTitle)
-                        .foregroundStyle(.white, .red)
+                        .foregroundStyle(.white, overlayColor)
                 }
             }
             .frame(width: 120, height: 120)
@@ -259,7 +400,7 @@ struct ThumbnailCell: View {
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(isExcluded ? Color.red : Color.clear, lineWidth: 3)
+                    .stroke(isSelected ? overlayColor : Color.clear, lineWidth: 3)
             )
             
             Text(entry.name)
@@ -273,8 +414,8 @@ struct ThumbnailCell: View {
 
 #Preview {
     ThumbnailGridView(
-        zipURL: URL(fileURLWithPath: "/tmp/test.zip"),
-        excludedPaths: .constant([]),
+        imageSource: ArchiveManager(zipURL: URL(fileURLWithPath: "/tmp/test.zip")),
+        selectedPaths: .constant([]),
         onExportSuccess: nil
     )
 }

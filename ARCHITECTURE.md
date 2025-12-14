@@ -4,7 +4,7 @@ This document describes the internal architecture of Erimil.
 
 ## Overview
 
-Erimil is a macOS application built with SwiftUI that provides visual management of ZIP archive contents. Users can browse folders, select ZIP files, preview contained images, mark items for exclusion, and generate optimized archives.
+Erimil is a macOS application built with SwiftUI that provides visual management of images in ZIP archives and folders. Users can browse folders, select ZIP files or image folders, preview contained images, mark items for exclusion/selection, and generate optimized archives or manage files.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -13,103 +13,123 @@ Erimil is a macOS application built with SwiftUI that provides visual management
 │   Folder Tree   │          Thumbnail Grid                   │
 │                 │                                           │
 │  📁 Photos      │   [img1] [img2] [img3] [img4]            │
-│   ├─ 2024/      │   [img5] [img6] [img7] [img8]            │
+│   ├─ 📁 2024/   │   [img5] [img6] [img7] [img8]            │
 │   │  └─ 📦a.zip │                                           │
-│   └─ 2023/      │   Click to enlarge (Quick Look)          │
-│      └─ 📦b.zip │                                           │
-├─────────────────┴───────────────────────────────────────────┤
-│  Status: 3 items selected for exclusion                     │
-│  [Cancel]                              [Confirm → _opt.zip] │
+│   └─ 📁 2023/   │   Double-click to preview                │
+│      └─ 📦b.zip │   ┌──────────────────────┐               │
+│                 │   │ [除外モード] 8 画像  │               │
+├─────────────────┴───┴──────────────────────┴────────────────┤
+│  出力: 5件 / 除外: 3件                                      │
+│  [選択をクリア]                        [確定 → _opt.zip]    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## Core Components
 
-### 1. Navigation Layer
+### 1. ImageSource Layer (Protocol Abstraction)
 
-Handles folder browsing and ZIP file discovery.
+Unified interface for different image sources (→ DESIGN.md Decision 8).
 
-- **FolderTreeView**: SwiftUI view displaying hierarchical folder structure
-- **FolderNode**: Model representing folder/file in tree
-- **ZIPDetector**: Identifies ZIP files within folder hierarchy
+- **ImageSource**: Protocol defining common interface for image browsing
+- **ImageEntry**: Model representing single image from any source
+- **ImageSourceType**: Enum (.archive, .folder) for UI customization
 
 ### 2. Archive Layer
 
 Manages ZIP file reading and writing.
 
-- **ArchiveManager**: Wrapper around ZIPFoundation for ZIP operations
-- **ArchiveEntry**: Model representing single file within ZIP
-- **ThumbnailGenerator**: Extracts and caches image thumbnails from ZIP
+- **ArchiveManager**: ImageSource implementation for ZIP archives
+  - Uses ZIPFoundation for ZIP operations
+  - Opens Archive per-operation (official pattern)
+  - Handles export with exclusions
 
-### 3. Selection Layer
+### 3. Folder Layer
+
+Manages folder image browsing and operations.
+
+- **FolderManager**: ImageSource implementation for folders
+  - Direct FileManager access
+  - ZIP creation from selected images
+  - Delete to Trash functionality
+
+### 4. Navigation Layer
+
+Handles folder browsing and source discovery.
+
+- **SidebarView**: Finder-style tree navigation (→ DESIGN.md Decision 9)
+  - ▶ for expand/collapse
+  - Row click for content display
+- **FolderNode**: Model representing folder/ZIP in tree
+
+### 5. Selection Layer
 
 Tracks user selections and pending changes.
 
-- **SelectionState**: ObservableObject tracking excluded items
-- **ChangeTracker**: Monitors unsaved changes for confirmation dialogs
+- **selectedPaths**: Set<String> in ContentView (source of truth)
+- **AppSettings**: Selection mode (exclude/keep), output folder defaults
 
-### 4. Export Layer
+### 6. View Layer
 
-Handles output generation.
+SwiftUI views for user interaction.
 
-- **ArchiveExporter**: Creates new ZIP excluding selected items
-- **NamingStrategy**: Generates output filenames (`{name}_opt.zip`)
-
-### 5. Preview Layer
-
-Provides image preview functionality.
-
-- **ThumbnailGridView**: Grid display of archive images
-- **PreviewController**: Manages enlarged preview (Quick Look or modal)
+- **ContentView**: Main split view, owns selection state
+- **ThumbnailGridView**: Grid display with mode-aware styling
+- **ThumbnailCell**: Individual thumbnail with selection overlay
+- **ImagePreviewView**: Modal full-size preview
+- **SettingsView**: Settings panel (⌘,)
 
 ## Data Flow
 
-### Opening a ZIP
+### Opening a Source (ZIP or Folder)
 
 ```
-User selects folder
+User selects root folder
     ↓
-FolderTreeView scans directory
+SidebarView scans directory (FolderNode)
     ↓
-ZIPDetector identifies .zip files
+User clicks ZIP or folder row
     ↓
-User clicks ZIP file
+ContentView creates ImageSource:
+  - ZIP → ArchiveManager
+  - Folder → FolderManager
     ↓
-ArchiveManager reads ZIP entries
+ThumbnailGridView calls listImageEntries()
     ↓
-ThumbnailGenerator extracts previews (lazy, on-demand)
+Lazy thumbnail loading (on scroll)
     ↓
-ThumbnailGridView displays grid
+Grid displays images
 ```
 
-### Selecting Items for Exclusion
+### Selecting Items
 
 ```
 User clicks thumbnail
     ↓
-SelectionState.toggle(entry)
+toggleSelection(entry)
     ↓
-ChangeTracker.markDirty()
+selectedPaths.insert/remove (ContentView)
     ↓
-UI updates (visual exclusion marker)
+UI updates:
+  - Overlay icon (✕ or ✓)
+  - Border color (red or green)
+  - Footer summary
 ```
 
-### Confirming Changes
+### Mode-Aware Export/Delete
 
 ```
-User clicks "Confirm"
+User clicks action button
     ↓
-ArchiveExporter.export(
-    source: original.zip,
-    excluding: SelectionState.excludedItems,
-    destination: original_opt.zip
-)
+Calculate based on selectionMode:
+  - exclude: pathsToRemove = selectedPaths
+  - keep: pathsToRemove = allPaths - selectedPaths
     ↓
-ZIPFoundation creates new archive
+Perform operation:
+  - ZIP: exportOptimized(excluding: pathsToRemove)
+  - Folder ZIP: createZip(excluding: pathsToRemove)
+  - Folder Delete: moveToTrash(paths: pathsToRemove)
     ↓
-SelectionState.clear()
-    ↓
-ChangeTracker.markClean()
+selectedPaths.removeAll()
     ↓
 Success notification
 ```
@@ -117,32 +137,46 @@ Success notification
 ### Navigation with Unsaved Changes
 
 ```
-User clicks different ZIP (while dirty)
-    ↓
-ChangeTracker.isDirty == true
+User clicks different source (while selectedPaths not empty)
     ↓
 Show confirmation dialog:
-  - "Confirm" → Export, then navigate
-  - "Discard" → Clear selection, navigate
-  - "Cancel" → Stay on current ZIP
+  - "保存せず移動" → Clear selection, navigate
+  - "キャンセル" → Stay on current source
 ```
 
 ## Key Design Decisions
 
-### 1. Lazy Thumbnail Loading
+### 1. ImageSource Protocol Abstraction
 
-Thumbnails are generated on-demand as grid scrolls, not all at once. Large ZIPs may contain hundreds of images; loading all would cause memory issues and slow startup.
+ZIP files and folders are accessed through a common `ImageSource` protocol. This enables:
+- Unified UI for different source types
+- Easy addition of new formats (tar.gz, 7z in future)
+- Same selection/preview logic for all sources
 
-### 2. In-Memory Selection State
+See DESIGN.md Decision 8 for rationale.
 
-Exclusion selections are stored in memory only until confirmed. No intermediate files, no auto-save. This keeps the original ZIP completely untouched until explicit user action.
+### 2. Lazy Thumbnail Loading
 
-### 3. ZIPFoundation for Archive Operations
+Thumbnails are generated on-demand as grid scrolls, not all at once. Large sources may contain hundreds of images; loading all would cause memory issues and slow startup.
 
-Using [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) (pure Swift) rather than system `zip` command or libzip:
-- No external dependencies
-- Swift-native error handling
-- Cross-platform potential (iOS future)
+### 3. Parent-Owned Selection State
+
+`selectedPaths` lives in ContentView, not ThumbnailGridView. This enables:
+- Accurate unsaved changes detection
+- Mode-independent state (exclude/keep calculated from same data)
+- Clear ownership of truth
+
+### 4. Per-Operation Archive Opening
+
+ArchiveManager opens Archive fresh for each operation (thumbnail, preview, export). This follows ZIPFoundation's official pattern and avoids encoding issues with Japanese filenames.
+
+### 5. Selection Mode Abstraction
+
+User selections are stored as `selectedPaths`. The meaning (exclude vs keep) is calculated at action time:
+- `pathsToRemove = selectedPaths` (exclude mode)
+- `pathsToRemove = allPaths - selectedPaths` (keep mode)
+
+This allows mode switching without losing selections.
 
 ## Constants and Configuration
 
@@ -157,24 +191,18 @@ Using [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) (pure Swift) ra
 
 ```
 Erimil/
-├── ErimilApp.swift           # App entry point
-├── Models/
-│   ├── FolderNode.swift      # Folder tree model
-│   ├── ArchiveEntry.swift    # ZIP entry model
-│   └── SelectionState.swift  # Selection tracking
-├── Views/
-│   ├── ContentView.swift     # Main split view
-│   ├── FolderTreeView.swift  # Left pane
-│   ├── ThumbnailGridView.swift # Right pane
-│   └── PreviewView.swift     # Enlarged preview
-├── Services/
-│   ├── ArchiveManager.swift  # ZIP read/write
-│   ├── ThumbnailGenerator.swift # Image extraction
-│   └── ArchiveExporter.swift # Output generation
-├── Utilities/
-│   └── NamingStrategy.swift  # Filename generation
-└── Resources/
-    └── Assets.xcassets       # App icons, colors
+├── ErimilApp.swift           # App entry point, Settings scene
+├── ContentView.swift         # Main split view, owns selection state
+├── SidebarView.swift         # Folder tree navigation (Finder-style)
+├── ThumbnailGridView.swift   # Image grid with mode-aware UI
+├── ThumbnailCell.swift       # Individual thumbnail (in ThumbnailGridView)
+├── ImagePreviewView.swift    # Full-size preview modal
+├── SettingsView.swift        # Settings panel
+├── ImageSource.swift         # Protocol + ImageEntry model
+├── ArchiveManager.swift      # ZIP ImageSource implementation
+├── FolderManager.swift       # Folder ImageSource implementation
+├── FolderNode.swift          # Tree node model
+└── AppSettings.swift         # UserDefaults wrapper, SelectionMode
 ```
 
 ## External Dependencies
@@ -183,22 +211,43 @@ Erimil/
 |------------|---------|-------|
 | [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | ZIP archive handling | Swift Package, MIT license |
 | SwiftUI | UI framework | System framework |
-| QuickLook | Image preview | System framework (optional) |
+| Combine | Reactive state (AppSettings) | System framework |
+| UniformTypeIdentifiers | File type handling | System framework |
 
 ## State Management
 
 ```
 ErimilApp
-    └── ContentView
-            ├── @StateObject SelectionState (shared)
-            ├── @StateObject ChangeTracker (shared)
+    ├── Settings { SettingsView }
+    │
+    └── WindowGroup { ContentView }
             │
-            ├── FolderTreeView
-            │       └── @State selectedPath
+            ├── @State selectedPaths: Set<String>  ← Source of truth
+            ├── @State selectedSourceURL: URL?
+            ├── @State selectedSourceType: ImageSourceType?
+            │
+            ├── SidebarView
+            │       ├── @Binding selectedFolderURL
+            │       ├── @State rootNode: FolderNode?
+            │       └── @State selectedNodeID: UUID?
             │
             └── ThumbnailGridView
-                    └── reads SelectionState
-                    └── writes SelectionState on click
+                    ├── @Binding selectedPaths     ← From parent
+                    ├── @ObservedObject AppSettings.shared
+                    ├── @State entries: [ImageEntry]
+                    ├── @State thumbnails: [String: NSImage]
+                    └── imageSource: any ImageSource
+```
+
+### AppSettings (Singleton)
+
+```
+AppSettings.shared
+    ├── @Published selectionMode: SelectionMode
+    ├── @Published defaultOutputFolder: URL?
+    └── @Published useDefaultOutputFolder: Bool
+    
+    Persisted via UserDefaults
 ```
 
 ## Privacy/Security Considerations
@@ -220,3 +269,4 @@ ErimilApp
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
+> Last updated: 2025-12-14 (Phase 2 completion)

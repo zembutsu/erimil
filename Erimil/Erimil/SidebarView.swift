@@ -12,25 +12,27 @@ struct SidebarView: View {
     @Binding var selectedZipURL: URL?
     let hasUnsavedChanges: Bool
     let onZipSelectionAttempt: (URL) -> Void
+    var onFolderSelectionAttempt: ((URL) -> Void)?
     let reloadTrigger: UUID
     
     @State private var rootNode: FolderNode?
+    @State private var selectedNodeID: UUID?
     
     var body: some View {
         VStack(spacing: 0) {
             if let root = rootNode {
-                List {
+                List(selection: $selectedNodeID) {
                     OutlineGroup(root.children ?? [], children: \.children) { node in
-                        NodeRowView(node: node, isSelected: selectedZipURL == node.url)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if node.isZip {
-                                    onZipSelectionAttempt(node.url)
-                                }
-                            }
+                        NodeRowView(node: node)
+                            .tag(node.id)
                     }
                 }
                 .listStyle(.sidebar)
+                .onChange(of: selectedNodeID) { _, newValue in
+                    if let nodeID = newValue {
+                        handleNodeSelection(nodeID)
+                    }
+                }
             } else {
                 ContentUnavailableView(
                     "フォルダを選択",
@@ -48,7 +50,7 @@ struct SidebarView: View {
             .padding()
         }
         .navigationTitle("Erimil")
-        .onChange(of: selectedFolderURL) { _, newValue in
+        .onChange(of: selectedFolderURL) { _, _ in
             reloadTree()
         }
         .onChange(of: reloadTrigger) { _, _ in
@@ -56,7 +58,33 @@ struct SidebarView: View {
         }
     }
     
+    private func handleNodeSelection(_ nodeID: UUID) {
+        guard let node = findNode(by: nodeID, in: rootNode?.children ?? []) else {
+            return
+        }
+        
+        if node.isZip {
+            onZipSelectionAttempt(node.url)
+        } else if node.isDirectory {
+            onFolderSelectionAttempt?(node.url)
+        }
+    }
+    
+    private func findNode(by id: UUID, in nodes: [FolderNode]) -> FolderNode? {
+        for node in nodes {
+            if node.id == id {
+                return node
+            }
+            if let children = node.children,
+               let found = findNode(by: id, in: children) {
+                return found
+            }
+        }
+        return nil
+    }
+    
     private func reloadTree() {
+        selectedNodeID = nil
         if let url = selectedFolderURL {
             rootNode = FolderNode(url: url)
         } else {
@@ -78,7 +106,6 @@ struct SidebarView: View {
 
 struct NodeRowView: View {
     let node: FolderNode
-    let isSelected: Bool
     
     var body: some View {
         Label {
@@ -92,10 +119,6 @@ struct NodeRowView: View {
                     .foregroundStyle(.blue)
             }
         }
-        .padding(.vertical, 2)
-        .padding(.horizontal, 4)
-        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
-        .cornerRadius(4)
     }
 }
 
@@ -105,6 +128,7 @@ struct NodeRowView: View {
         selectedZipURL: .constant(nil),
         hasUnsavedChanges: false,
         onZipSelectionAttempt: { _ in },
+        onFolderSelectionAttempt: { _ in },
         reloadTrigger: UUID()
     )
 }

@@ -9,39 +9,47 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var selectedFolderURL: URL?
-    @State private var selectedZipURL: URL?
-    @State private var excludedPaths: Set<String> = []
-    @State private var folderReloadTrigger = UUID()  // リロード用トリガー
+    @State private var selectedSourceURL: URL?
+    @State private var selectedSourceType: ImageSourceType?
+    @State private var selectedPaths: Set<String> = []  // User's actual selections
+    @State private var folderReloadTrigger = UUID()
     
     // 確認ダイアログ用
-    @State private var pendingZipURL: URL?
+    @State private var pendingSourceURL: URL?
+    @State private var pendingSourceType: ImageSourceType?
     @State private var showUnsavedAlert = false
     
     var body: some View {
         NavigationSplitView {
             SidebarView(
                 selectedFolderURL: $selectedFolderURL,
-                selectedZipURL: $selectedZipURL,
-                hasUnsavedChanges: !excludedPaths.isEmpty,
-                onZipSelectionAttempt: { newURL in
-                    handleZipSelectionAttempt(newURL)
+                selectedZipURL: Binding(
+                    get: { selectedSourceType == .archive ? selectedSourceURL : nil },
+                    set: { _ in }
+                ),
+                hasUnsavedChanges: !selectedPaths.isEmpty,  // Changed: use selectedPaths
+                onZipSelectionAttempt: { url in
+                    handleSourceSelectionAttempt(url: url, type: .archive)
+                },
+                onFolderSelectionAttempt: { url in
+                    handleSourceSelectionAttempt(url: url, type: .folder)
                 },
                 reloadTrigger: folderReloadTrigger
             )
         } detail: {
-            if let zipURL = selectedZipURL {
+            if let sourceURL = selectedSourceURL, let sourceType = selectedSourceType {
                 ThumbnailGridView(
-                    zipURL: zipURL,
-                    excludedPaths: $excludedPaths,
+                    imageSource: createImageSource(url: sourceURL, type: sourceType),
+                    selectedPaths: $selectedPaths,  // Changed: pass selectedPaths
                     onExportSuccess: {
                         reloadFolder()
                     }
                 )
             } else {
                 ContentUnavailableView(
-                    "ZIPファイルを選択",
+                    "ZIPファイルまたはフォルダを選択",
                     systemImage: "archivebox",
-                    description: Text("左のツリーからZIPファイルを選んでください")
+                    description: Text("左のツリーから選んでください")
                 )
             }
         }
@@ -51,31 +59,48 @@ struct ContentView: View {
                 discardAndNavigate()
             }
             Button("キャンセル", role: .cancel) {
-                pendingZipURL = nil
+                pendingSourceURL = nil
+                pendingSourceType = nil
             }
         } message: {
-            Text("\(excludedPaths.count) 件の除外選択が保存されていません。破棄して別のZIPに移動しますか？")
+            Text("\(selectedPaths.count) 件の選択が保存されていません。破棄して別の場所に移動しますか？")
         }
     }
     
-    private func handleZipSelectionAttempt(_ newURL: URL) {
-        if newURL == selectedZipURL {
+    private func createImageSource(url: URL, type: ImageSourceType) -> any ImageSource {
+        switch type {
+        case .archive:
+            return ArchiveManager(zipURL: url)
+        case .folder:
+            return FolderManager(folderURL: url)
+        }
+    }
+    
+    private func handleSourceSelectionAttempt(url: URL, type: ImageSourceType) {
+        // 同じソースを選択した場合は何もしない
+        if url == selectedSourceURL && type == selectedSourceType {
             return
         }
         
-        if !excludedPaths.isEmpty {
-            pendingZipURL = newURL
+        // 未保存の変更がある場合は確認
+        if !selectedPaths.isEmpty {  // Changed: use selectedPaths
+            pendingSourceURL = url
+            pendingSourceType = type
             showUnsavedAlert = true
         } else {
-            selectedZipURL = newURL
+            selectedSourceURL = url
+            selectedSourceType = type
+            selectedPaths.removeAll()
         }
     }
     
     private func discardAndNavigate() {
-        excludedPaths.removeAll()
-        if let pending = pendingZipURL {
-            selectedZipURL = pending
-            pendingZipURL = nil
+        selectedPaths.removeAll()
+        if let url = pendingSourceURL, let type = pendingSourceType {
+            selectedSourceURL = url
+            selectedSourceType = type
+            pendingSourceURL = nil
+            pendingSourceType = nil
         }
     }
     
