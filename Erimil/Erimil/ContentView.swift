@@ -14,6 +14,9 @@ struct ContentView: View {
     @State private var selectedPaths: Set<String> = []  // User's actual selections
     @State private var folderReloadTrigger = UUID()
     
+    // Stable image source (not recreated on every render)
+    @State private var currentImageSource: (any ImageSource)?
+    
     // 確認ダイアログ用
     @State private var pendingSourceURL: URL?
     @State private var pendingSourceType: ImageSourceType?
@@ -37,14 +40,15 @@ struct ContentView: View {
                 reloadTrigger: folderReloadTrigger
             )
         } detail: {
-            if let sourceURL = selectedSourceURL, let sourceType = selectedSourceType {
+            if let imageSource = currentImageSource {
                 ThumbnailGridView(
-                    imageSource: createImageSource(url: sourceURL, type: sourceType),
+                    imageSource: imageSource,
                     selectedPaths: $selectedPaths,  // Changed: pass selectedPaths
                     onExportSuccess: {
                         reloadFolder()
                     }
                 )
+                .id(imageSource.url)  // Force View recreation when source changes
             } else {
                 ContentUnavailableView(
                     "ZIPファイルまたはフォルダを選択",
@@ -54,6 +58,24 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 600)
+        .onChange(of: selectedSourceURL) { oldURL, newURL in
+            print("[ContentView] onChange(URL): \(oldURL?.lastPathComponent ?? "nil") → \(newURL?.lastPathComponent ?? "nil")")
+            // Debounce: only update if both URL and Type are set
+            if let _ = newURL, let _ = selectedSourceType {
+                updateImageSource()
+            } else if newURL == nil {
+                currentImageSource = nil
+            }
+        }
+        .onChange(of: selectedSourceType) { oldType, newType in
+            print("[ContentView] onChange(Type): \(String(describing: oldType)) → \(String(describing: newType))")
+            // Debounce: only update if both URL and Type are set
+            if let _ = selectedSourceURL, let _ = newType {
+                updateImageSource()
+            } else if newType == nil {
+                currentImageSource = nil
+            }
+        }
         .alert("未保存の変更があります", isPresented: $showUnsavedAlert) {
             Button("保存せず移動", role: .destructive) {
                 discardAndNavigate()
@@ -67,18 +89,38 @@ struct ContentView: View {
         }
     }
     
-    private func createImageSource(url: URL, type: ImageSourceType) -> any ImageSource {
+    private func updateImageSource() {
+        guard let url = selectedSourceURL, let type = selectedSourceType else {
+            print("[ContentView] updateImageSource: no source selected")
+            currentImageSource = nil
+            return
+        }
+        
+        // Check if already loaded same source
+        if let current = currentImageSource, current.url == url {
+            print("[ContentView] updateImageSource: same source already loaded, skipping")
+            return
+        }
+        
+        print("[ContentView] updateImageSource: creating new source for \(url.lastPathComponent) (type: \(type))")
+        
+        // Clear selections when switching sources to prevent stale paths
+        selectedPaths.removeAll()
+        
         switch type {
         case .archive:
-            return ArchiveManager(zipURL: url)
+            currentImageSource = ArchiveManager(zipURL: url)
         case .folder:
-            return FolderManager(folderURL: url)
+            currentImageSource = FolderManager(folderURL: url)
         }
     }
     
     private func handleSourceSelectionAttempt(url: URL, type: ImageSourceType) {
+        print("[ContentView] handleSourceSelectionAttempt: \(url.lastPathComponent) (type: \(type))")
+        
         // 同じソースを選択した場合は何もしない
         if url == selectedSourceURL && type == selectedSourceType {
+            print("[ContentView] Same source, ignoring")
             return
         }
         

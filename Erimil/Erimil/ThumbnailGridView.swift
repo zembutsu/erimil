@@ -6,7 +6,48 @@
 //
 
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
+
+// MARK: - Key Event Handler (NSViewRepresentable)
+
+struct KeyEventHandlerView: NSViewRepresentable {
+    var onKeyEvent: (NSEvent) -> Bool
+    
+    func makeNSView(context: Context) -> KeyEventView {
+        let view = KeyEventView()
+        view.onKeyEvent = onKeyEvent
+        // Become first responder after a brief delay
+        DispatchQueue.main.async {
+            view.window?.makeFirstResponder(view)
+        }
+        return view
+    }
+    
+    func updateNSView(_ nsView: KeyEventView, context: Context) {
+        nsView.onKeyEvent = onKeyEvent
+        // Re-acquire first responder if needed
+        if nsView.window?.firstResponder !== nsView {
+            DispatchQueue.main.async {
+                nsView.window?.makeFirstResponder(nsView)
+            }
+        }
+    }
+    
+    class KeyEventView: NSView {
+        var onKeyEvent: ((NSEvent) -> Bool)?
+        
+        override var acceptsFirstResponder: Bool { true }
+        
+        override func keyDown(with event: NSEvent) {
+            if let handler = onKeyEvent, handler(event) {
+                // Event consumed
+            } else {
+                super.keyDown(with: event)
+            }
+        }
+    }
+}
 
 struct ThumbnailGridView: View {
     let imageSource: any ImageSource
@@ -17,7 +58,6 @@ struct ThumbnailGridView: View {
     
     @State private var entries: [ImageEntry] = []
     @State private var thumbnails: [String: NSImage] = [:]
-    @State private var contentHashes: [String: String] = [:]  // path → contentHash for favorites
     @State private var previewEntry: ImageEntry?
     @State private var previewImage: NSImage?
     @State private var showExportSuccess = false
@@ -25,7 +65,14 @@ struct ThumbnailGridView: View {
     @State private var showDeleteConfirm = false
     @State private var exportMessage = ""
     
-    private let cacheManager = CacheManager.shared
+    // Keyboard navigation
+    @State private var focusedIndex: Int? = nil
+    @State private var columnCount: Int = 4
+    
+    // Generation ID to invalidate stale async results
+    @State private var loadID: UUID = UUID()
+    // Track current source URL for change detection
+    @State private var currentSourceURL: URL?
     
     /// Dynamic columns based on thumbnail size
     private var columns: [GridItem] {
@@ -48,28 +95,63 @@ struct ThumbnailGridView: View {
                     description: Text("このフォルダには画像ファイルが含まれていません")
                 )
             } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 8) {
-                        ForEach(entries) { entry in
-                            ThumbnailCell(
-                                entry: entry,
-                                thumbnail: thumbnails[entry.path],
-                                isSelected: selectedPaths.contains(entry.path),
-                                selectionMode: settings.selectionMode,
-                                size: settings.effectiveThumbnailSize
-                            )
-                            .onTapGesture(count: 2) {
-                                openPreview(entry)
+                GeometryReader { geometry in
+                    ZStack {
+                        ScrollViewReader { scrollProxy in
+                            ScrollView {
+                                LazyVGrid(columns: columns, spacing: 8) {
+                                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                                        ThumbnailCell(
+                                            entry: entry,
+                                            thumbnail: thumbnails[entry.path],
+                                            isSelected: selectedPaths.contains(entry.path),
+                                            isFocused: focusedIndex == index,
+                                            selectionMode: settings.selectionMode,
+                                            size: settings.effectiveThumbnailSize
+                                        )
+                                        .id(index)
+                                        .onTapGesture(count: 2) {
+                                            openPreview(entry)
+                                        }
+                                        .onTapGesture(count: 1) {
+                                            focusedIndex = index
+                                            toggleSelection(entry)
+                                        }
+                                        .onAppear {
+                                            loadThumbnailIfNeeded(for: entry)
+                                        }
+                                    }
+                                }
+                                .padding()
                             }
-                            .onTapGesture(count: 1) {
-                                toggleSelection(entry)
-                            }
-                            .onAppear {
-                                loadThumbnailIfNeeded(for: entry)
+                            .onChange(of: focusedIndex) { _, newIndex in
+                                if let index = newIndex {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        scrollProxy.scrollTo(index, anchor: .center)
+                                    }
+                                }
                             }
                         }
+                        
+                        // Key event handler overlay (transparent, captures keys)
+                        KeyEventHandlerView { event in
+                            handleKeyEvent(event)
+                        }
+                        .allowsHitTesting(false)  // Let clicks pass through to grid
                     }
-                    .padding()
+                    .onAppear {
+                        updateColumnCount(for: geometry.size.width)
+                        // Initialize focus
+                        if focusedIndex == nil && !entries.isEmpty {
+                            focusedIndex = 0
+                        }
+                    }
+                    .onChange(of: geometry.size.width) { _, newWidth in
+                        updateColumnCount(for: newWidth)
+                    }
+                    .onChange(of: settings.effectiveThumbnailSize) { _, _ in
+                        updateColumnCount(for: geometry.size.width)
+                    }
                 }
             }
             
@@ -79,11 +161,19 @@ struct ThumbnailGridView: View {
                 footerView
             }
         }
-        .onChange(of: imageSource.url) { _, _ in
-            loadSource()
+        .onChange(of: imageSource.url) { oldURL, newURL in
+            print("[ThumbnailGridView] onChange(url): \(oldURL.lastPathComponent) → \(newURL.lastPathComponent)")
+            if currentSourceURL != newURL {
+                loadSource()
+            }
         }
         .onAppear {
-            loadSource()
+            print("[ThumbnailGridView] onAppear: \(imageSource.url.lastPathComponent)")
+            print("[ThumbnailGridView] currentSourceURL: \(currentSourceURL?.lastPathComponent ?? "nil")")
+            // Always load if URL changed or first appearance
+            if currentSourceURL != imageSource.url {
+                loadSource()
+            }
         }
         .sheet(item: $previewEntry) { entry in
             ImagePreviewView(
@@ -263,66 +353,205 @@ struct ThumbnailGridView: View {
     // MARK: - Data Loading
     
     private func loadSource() {
+        // Generate new load ID to invalidate any pending async operations
+        let newLoadID = UUID()
+        loadID = newLoadID
+        currentSourceURL = imageSource.url
+        
+        print("[ThumbnailGridView] loadSource called for: \(imageSource.url.lastPathComponent)")
+        print("[ThumbnailGridView] imageSource type: \(type(of: imageSource))")
+        print("[ThumbnailGridView] imageSource.url: \(imageSource.url.path)")
+        print("[ThumbnailGridView] New loadID: \(newLoadID)")
+        
         thumbnails = [:]
-        contentHashes = [:]
         selectedPaths = []  // Clear selections when source changes
+        focusedIndex = nil  // Reset focus when source changes
         previewEntry = nil
         previewImage = nil
         entries = imageSource.listImageEntries()
+        
+        print("[ThumbnailGridView] Loaded \(entries.count) entries:")
+        for (index, entry) in entries.prefix(10).enumerated() {
+            print("  [\(index)] \(entry.name) - path: \(entry.path)")
+        }
+        if entries.count > 10 {
+            print("  ... and \(entries.count - 10) more")
+        }
     }
     
     private func loadThumbnailIfNeeded(for entry: ImageEntry) {
+        // CRITICAL: Check if this call is from a stale View instance
+        // SwiftUI may trigger onAppear from old View instances with old imageSource
+        guard imageSource.url == currentSourceURL else {
+            print("[loadThumbnail] SKIP stale View call: \(entry.name) (imageSource: \(imageSource.url.lastPathComponent), current: \(currentSourceURL?.lastPathComponent ?? "nil"))")
+            return
+        }
+        
         guard thumbnails[entry.path] == nil else { return }
         
-        let maxSize = max(settings.effectiveThumbnailSize, 180)  // Load at least 180px for quality
-        let sourcePath = imageSource.uniquePath(for: entry)
+        let maxSize = max(settings.effectiveThumbnailSize, 180)
         
-        DispatchQueue.global(qos: .userInitiated).async {
-            // Use CacheManager for caching
-            let result = cacheManager.getOrCreateThumbnail(
-                sourcePath: sourcePath,
-                imageDataProvider: {
-                    imageSource.rawImageData(for: entry)
-                },
-                thumbnailGenerator: { data in
-                    guard let image = NSImage(data: data) else { return nil }
-                    return resizedImage(image, maxSize: maxSize)
+        // Capture current state for validation
+        let capturedLoadID = loadID
+        let capturedSourceURL = imageSource.url
+        let currentSource = imageSource
+        let entryPath = entry.path
+        let entryName = entry.name
+        
+        print("[loadThumbnail] Starting for \(entryName) from \(capturedSourceURL.lastPathComponent), loadID: \(capturedLoadID)")
+        
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            // FIRST: Check validity on main thread BEFORE expensive operation
+            var stillValid = false
+            DispatchQueue.main.sync {
+                stillValid = (capturedLoadID == loadID && capturedSourceURL == currentSourceURL)
+                if !stillValid {
+                    print("[loadThumbnail] SKIP async stale: \(entryName)")
                 }
-            )
+            }
             
-            if let (thumbnail, contentHash) = result {
-                DispatchQueue.main.async {
-                    thumbnails[entry.path] = thumbnail
-                    contentHashes[entry.path] = contentHash
+            guard stillValid else { return }
+            
+            // Now generate thumbnail
+            guard let thumbnail = currentSource.thumbnail(for: entry, maxSize: maxSize) else {
+                print("[loadThumbnail] Failed for: \(entryName) from \(capturedSourceURL.lastPathComponent)")
+                return
+            }
+            
+            DispatchQueue.main.async {
+                // Re-check validity after thumbnail generated
+                guard capturedLoadID == loadID else {
+                    print("[loadThumbnail] Discarding stale thumbnail: \(entryName) (loadID mismatch)")
+                    return
                 }
+                
+                guard capturedSourceURL == currentSourceURL else {
+                    print("[loadThumbnail] Discarding stale thumbnail: \(entryName) (URL mismatch)")
+                    return
+                }
+                
+                guard entries.contains(where: { $0.path == entryPath }) else {
+                    print("[loadThumbnail] Discarding thumbnail for removed entry: \(entryName)")
+                    return
+                }
+                
+                thumbnails[entryPath] = thumbnail
+                print("[loadThumbnail] Success: \(entryName)")
             }
         }
     }
     
-    /// Resize image (moved to top-level for use in closure)
-    private func resizedImage(_ image: NSImage, maxSize: CGFloat) -> NSImage {
-        let originalSize = image.size
-        guard originalSize.width > 0 && originalSize.height > 0 else {
-            return image
+    // MARK: - Keyboard Navigation
+    
+    private func updateColumnCount(for width: CGFloat) {
+        let size = settings.effectiveThumbnailSize
+        let itemWidth = size + 8  // size + spacing
+        let padding: CGFloat = 32  // padding on both sides
+        let availableWidth = width - padding
+        let count = max(1, Int(availableWidth / itemWidth))
+        columnCount = count
+    }
+    
+    private func handleKeyEvent(_ event: NSEvent) -> Bool {
+        guard !entries.isEmpty else { return false }
+        
+        // Initialize focus if not set
+        if focusedIndex == nil {
+            focusedIndex = 0
+            return true
         }
         
-        let scale = min(maxSize / originalSize.width, maxSize / originalSize.height, 1.0)
-        let newSize = NSSize(
-            width: originalSize.width * scale,
-            height: originalSize.height * scale
-        )
+        guard let currentIndex = focusedIndex else { return false }
         
-        let newImage = NSImage(size: newSize)
-        newImage.lockFocus()
-        image.draw(
-            in: NSRect(origin: .zero, size: newSize),
-            from: NSRect(origin: .zero, size: originalSize),
-            operation: .copy,
-            fraction: 1.0
-        )
-        newImage.unlockFocus()
+        // Check for special keys
+        switch event.keyCode {
+        // Arrow keys
+        case 123: // Left arrow
+            moveFocus(by: -1)
+            return true
+        case 124: // Right arrow
+            moveFocus(by: 1)
+            return true
+        case 126: // Up arrow
+            moveFocus(by: -columnCount)
+            return true
+        case 125: // Down arrow
+            moveFocus(by: columnCount)
+            return true
+            
+        // Escape
+        case 53:
+            if previewEntry != nil {
+                previewEntry = nil
+            } else {
+                focusedIndex = nil
+            }
+            return true
+            
+        // Return/Enter
+        case 36:
+            if previewEntry != nil {
+                previewEntry = nil
+            }
+            return true
+            
+        // Space
+        case 49:
+            if previewEntry != nil {
+                previewEntry = nil
+            } else {
+                let entry = entries[currentIndex]
+                openPreview(entry)
+            }
+            return true
+            
+        default:
+            break
+        }
         
-        return newImage
+        // Check for character keys
+        guard let characters = event.charactersIgnoringModifiers?.lowercased() else {
+            return false
+        }
+        
+        switch characters {
+        // WASD keys
+        case "a":
+            moveFocus(by: -1)
+            return true
+        case "d":
+            moveFocus(by: 1)
+            return true
+        case "w":
+            moveFocus(by: -columnCount)
+            return true
+        case "s":
+            moveFocus(by: columnCount)
+            return true
+            
+        // X key - toggle selection
+        case "x":
+            let entry = entries[currentIndex]
+            toggleSelection(entry)
+            return true
+            
+        default:
+            return false
+        }
+    }
+    
+    private func moveFocus(by offset: Int) {
+        guard let current = focusedIndex else {
+            focusedIndex = 0
+            return
+        }
+        
+        let newIndex = current + offset
+        
+        // Clamp to valid range
+        if newIndex >= 0 && newIndex < entries.count {
+            focusedIndex = newIndex
+        }
     }
     
     // MARK: - User Actions
@@ -337,13 +566,16 @@ struct ThumbnailGridView: View {
     
     private func openPreview(_ entry: ImageEntry) {
         print("openPreview called for: \(entry.name)")
+        print("  entry.path: \(entry.path)")
         
         if let image = imageSource.fullImage(for: entry) {
             print("Full image loaded: \(image.size)")
             previewImage = image
             previewEntry = entry
         } else {
-            print("Failed to load full image")
+            print("Failed to load full image for: \(entry.path)")
+            // Clear any stale preview image
+            previewImage = nil
         }
     }
     
@@ -436,6 +668,7 @@ struct ThumbnailCell: View {
     let entry: ImageEntry
     let thumbnail: NSImage?
     let isSelected: Bool
+    let isFocused: Bool
     let selectionMode: SelectionMode
     let size: CGFloat
     
@@ -467,6 +700,28 @@ struct ThumbnailCell: View {
         }
     }
     
+    /// Border color based on state
+    private var borderColor: Color {
+        if isFocused {
+            return .accentColor  // Blue focus ring
+        } else if isSelected {
+            return overlayColor
+        } else {
+            return .clear
+        }
+    }
+    
+    /// Border width based on state
+    private var borderWidth: CGFloat {
+        if isFocused {
+            return 3
+        } else if isSelected {
+            return 3
+        } else {
+            return 0
+        }
+    }
+    
     var body: some View {
         VStack(spacing: 4) {
             ZStack {
@@ -488,11 +743,11 @@ struct ThumbnailCell: View {
                 }
             }
             .frame(width: size, height: size)
-            .background(Color.gray.opacity(0.1))
+            .background(isFocused ? Color.accentColor.opacity(0.1) : Color.gray.opacity(0.1))
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? overlayColor : Color.clear, lineWidth: 3)
+                    .stroke(borderColor, lineWidth: borderWidth)
             )
             
             Text(entry.name)
@@ -500,6 +755,7 @@ struct ThumbnailCell: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(width: size)
+                .foregroundStyle(isFocused ? .primary : .secondary)
         }
     }
 }
