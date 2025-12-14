@@ -12,6 +12,28 @@ struct SettingsView: View {
     
     var body: some View {
         Form {
+            // MARK: - Thumbnail Size
+            Section {
+                Picker("プリセット", selection: $settings.thumbnailSizePreset) {
+                    ForEach(ThumbnailSizePreset.allCases, id: \.self) { preset in
+                        Text("\(preset.displayName) (\(Int(preset.size))px)").tag(preset)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                
+                if settings.thumbnailSizePreset == .custom {
+                    HStack {
+                        Text("サイズ:")
+                        Slider(value: $settings.thumbnailSize, in: 60...300, step: 10)
+                        Text("\(Int(settings.thumbnailSize))px")
+                            .frame(width: 50, alignment: .trailing)
+                            .monospacedDigit()
+                    }
+                }
+            } header: {
+                Text("サムネイルサイズ")
+            }
+            
             // MARK: - Selection Mode
             Section {
                 Picker("選択モード", selection: $settings.selectionMode) {
@@ -67,7 +89,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 300)
+        .frame(width: 450, height: 400)
         .navigationTitle("設定")
     }
     

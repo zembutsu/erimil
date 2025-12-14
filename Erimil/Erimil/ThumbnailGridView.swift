@@ -24,9 +24,11 @@ struct ThumbnailGridView: View {
     @State private var showDeleteConfirm = false
     @State private var exportMessage = ""
     
-    private let columns = [
-        GridItem(.adaptive(minimum: 120, maximum: 150), spacing: 8)
-    ]
+    /// Dynamic columns based on thumbnail size
+    private var columns: [GridItem] {
+        let size = settings.effectiveThumbnailSize
+        return [GridItem(.adaptive(minimum: size, maximum: size + 30), spacing: 8)]
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -50,7 +52,8 @@ struct ThumbnailGridView: View {
                                 entry: entry,
                                 thumbnail: thumbnails[entry.path],
                                 isSelected: selectedPaths.contains(entry.path),
-                                selectionMode: settings.selectionMode
+                                selectionMode: settings.selectionMode,
+                                size: settings.effectiveThumbnailSize
                             )
                             .onTapGesture(count: 2) {
                                 openPreview(entry)
@@ -110,38 +113,70 @@ struct ThumbnailGridView: View {
     
     @ViewBuilder
     private var headerView: some View {
-        HStack {
-            Text(imageSource.displayName)
-                .font(.headline)
-            
-            Spacer()
-            
-            // Mode toggle button
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    settings.selectionMode = (settings.selectionMode == .exclude) ? .keep : .exclude
+        VStack(spacing: 8) {
+            HStack {
+                Text(imageSource.displayName)
+                    .font(.headline)
+                
+                Spacer()
+                
+                // Mode toggle button
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        settings.selectionMode = (settings.selectionMode == .exclude) ? .keep : .exclude
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: settings.selectionMode == .exclude ? "xmark.circle" : "checkmark.circle")
+                        Text(settings.selectionMode.displayName)
+                    }
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(settings.selectionMode == .exclude ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
+                    .foregroundStyle(settings.selectionMode == .exclude ? .red : .green)
+                    .cornerRadius(4)
                 }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: settings.selectionMode == .exclude ? "xmark.circle" : "checkmark.circle")
-                    Text(settings.selectionMode.displayName)
+                .buttonStyle(.plain)
+                .help("クリックでモード切替")
+                
+                Text("\(entries.count) 画像")
+                    .foregroundStyle(.secondary)
+                
+                if !selectedPaths.isEmpty {
+                    Text("/ \(selectedPaths.count) 選択")
+                        .foregroundStyle(settings.selectionMode == .exclude ? .orange : .green)
                 }
-                .font(.caption)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(settings.selectionMode == .exclude ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
-                .foregroundStyle(settings.selectionMode == .exclude ? .red : .green)
-                .cornerRadius(4)
             }
-            .buttonStyle(.plain)
-            .help("クリックでモード切替")
             
-            Text("\(entries.count) 画像")
-                .foregroundStyle(.secondary)
-            
-            if !selectedPaths.isEmpty {
-                Text("/ \(selectedPaths.count) 選択")
-                    .foregroundStyle(settings.selectionMode == .exclude ? .orange : .green)
+            // Thumbnail size slider
+            HStack(spacing: 8) {
+                Image(systemName: "photo")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                Slider(
+                    value: Binding(
+                        get: { settings.effectiveThumbnailSize },
+                        set: { newValue in
+                            settings.thumbnailSizePreset = .custom
+                            settings.thumbnailSize = newValue
+                        }
+                    ),
+                    in: 60...300,
+                    step: 10
+                )
+                .frame(width: 120)
+                
+                Image(systemName: "photo.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                Text("\(Int(settings.effectiveThumbnailSize))px")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 40, alignment: .leading)
+                    .monospacedDigit()
             }
         }
         .padding()
@@ -235,8 +270,10 @@ struct ThumbnailGridView: View {
     private func loadThumbnailIfNeeded(for entry: ImageEntry) {
         guard thumbnails[entry.path] == nil else { return }
         
+        let maxSize = max(settings.effectiveThumbnailSize, 180)  // Load at least 180px for quality
+        
         DispatchQueue.global(qos: .userInitiated).async {
-            if let thumbnail = imageSource.thumbnail(for: entry, maxSize: 120) {
+            if let thumbnail = imageSource.thumbnail(for: entry, maxSize: maxSize) {
                 DispatchQueue.main.async {
                     thumbnails[entry.path] = thumbnail
                 }
@@ -356,6 +393,7 @@ struct ThumbnailCell: View {
     let thumbnail: NSImage?
     let isSelected: Bool
     let selectionMode: SelectionMode
+    let size: CGFloat
     
     private var overlayColor: Color {
         switch selectionMode {
@@ -375,6 +413,16 @@ struct ThumbnailCell: View {
         }
     }
     
+    private var iconSize: Font {
+        if size < 100 {
+            return .title2
+        } else if size < 150 {
+            return .largeTitle
+        } else {
+            return .system(size: 48)
+        }
+    }
+    
     var body: some View {
         VStack(spacing: 4) {
             ZStack {
@@ -382,20 +430,20 @@ struct ThumbnailCell: View {
                     Image(nsImage: thumbnail)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 120, height: 120)
+                        .frame(width: size, height: size)
                 } else {
                     ProgressView()
-                        .frame(width: 120, height: 120)
+                        .frame(width: size, height: size)
                 }
                 
                 if isSelected {
                     Color.black.opacity(0.4)
                     Image(systemName: overlayIcon)
-                        .font(.largeTitle)
+                        .font(iconSize)
                         .foregroundStyle(.white, overlayColor)
                 }
             }
-            .frame(width: 120, height: 120)
+            .frame(width: size, height: size)
             .background(Color.gray.opacity(0.1))
             .cornerRadius(8)
             .overlay(
@@ -407,7 +455,7 @@ struct ThumbnailCell: View {
                 .font(.caption2)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .frame(width: 120)
+                .frame(width: size)
         }
     }
 }

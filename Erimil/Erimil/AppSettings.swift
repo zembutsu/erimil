@@ -28,6 +28,32 @@ enum SelectionMode: String, CaseIterable {
     }
 }
 
+/// Thumbnail size presets
+enum ThumbnailSizePreset: String, CaseIterable {
+    case small = "small"
+    case medium = "medium"
+    case large = "large"
+    case custom = "custom"
+    
+    var displayName: String {
+        switch self {
+        case .small: return "小"
+        case .medium: return "中"
+        case .large: return "大"
+        case .custom: return "カスタム"
+        }
+    }
+    
+    var size: CGFloat {
+        switch self {
+        case .small: return 80
+        case .medium: return 120
+        case .large: return 180
+        case .custom: return 120  // Default for custom, actual value from thumbnailSize
+        }
+    }
+}
+
 /// Centralized app settings with UserDefaults
 class AppSettings: ObservableObject {
     static let shared = AppSettings()
@@ -39,6 +65,8 @@ class AppSettings: ObservableObject {
         static let defaultOutputFolder = "defaultOutputFolder"
         static let selectionMode = "selectionMode"
         static let useDefaultOutputFolder = "useDefaultOutputFolder"
+        static let thumbnailSizePreset = "thumbnailSizePreset"
+        static let thumbnailSize = "thumbnailSize"
     }
     
     // MARK: - Published Properties
@@ -68,6 +96,33 @@ class AppSettings: ObservableObject {
         }
     }
     
+    /// Thumbnail size preset
+    @Published var thumbnailSizePreset: ThumbnailSizePreset {
+        didSet {
+            defaults.set(thumbnailSizePreset.rawValue, forKey: Keys.thumbnailSizePreset)
+            if thumbnailSizePreset != .custom {
+                thumbnailSize = thumbnailSizePreset.size
+            }
+        }
+    }
+    
+    /// Custom thumbnail size (used when preset is .custom)
+    @Published var thumbnailSize: CGFloat {
+        didSet {
+            defaults.set(thumbnailSize, forKey: Keys.thumbnailSize)
+        }
+    }
+    
+    // MARK: - Computed Properties
+    
+    /// Effective thumbnail size (preset or custom)
+    var effectiveThumbnailSize: CGFloat {
+        if thumbnailSizePreset == .custom {
+            return thumbnailSize
+        }
+        return thumbnailSizePreset.size
+    }
+    
     // MARK: - Initialization
     
     private init() {
@@ -86,6 +141,16 @@ class AppSettings: ObservableObject {
         } else {
             self.selectionMode = .exclude  // Default: safer mode
         }
+        
+        if let presetString = defaults.string(forKey: Keys.thumbnailSizePreset),
+           let preset = ThumbnailSizePreset(rawValue: presetString) {
+            self.thumbnailSizePreset = preset
+        } else {
+            self.thumbnailSizePreset = .medium  // Default: 120px
+        }
+        
+        let savedSize = defaults.double(forKey: Keys.thumbnailSize)
+        self.thumbnailSize = savedSize > 0 ? savedSize : 120  // Default: 120px
     }
     
     // MARK: - Helper Methods
@@ -103,5 +168,7 @@ class AppSettings: ObservableObject {
         defaultOutputFolder = nil
         useDefaultOutputFolder = false
         selectionMode = .exclude
+        thumbnailSizePreset = .medium
+        thumbnailSize = 120
     }
 }
