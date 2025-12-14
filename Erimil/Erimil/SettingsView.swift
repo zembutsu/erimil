@@ -1,0 +1,89 @@
+//
+//  SettingsView.swift
+//  Erimil
+//
+//  Settings panel UI (accessible via Erimil > Settings or ⌘,)
+//
+
+import SwiftUI
+
+struct SettingsView: View {
+    @ObservedObject private var settings = AppSettings.shared
+    
+    var body: some View {
+        Form {
+            // MARK: - Selection Mode
+            Section {
+                Picker("選択モード", selection: $settings.selectionMode) {
+                    ForEach(SelectionMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                
+                Text(settings.selectionMode.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("選択モード")
+            }
+            
+            // MARK: - Output Folder
+            Section {
+                Toggle("デフォルトの出力先を使用", isOn: $settings.useDefaultOutputFolder)
+                
+                if settings.useDefaultOutputFolder {
+                    HStack {
+                        if let folder = settings.defaultOutputFolder {
+                            Text(folder.path)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("未設定")
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Button("選択...") {
+                            selectOutputFolder()
+                        }
+                    }
+                }
+            } header: {
+                Text("出力先")
+            } footer: {
+                Text("オフの場合、元ファイルと同じフォルダに保存されます")
+                    .font(.caption)
+            }
+            
+            // MARK: - Reset
+            Section {
+                Button("設定をリセット") {
+                    settings.resetToDefaults()
+                }
+                .foregroundStyle(.red)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 450, height: 300)
+        .navigationTitle("設定")
+    }
+    
+    private func selectOutputFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "デフォルトの出力先を選択"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        
+        if panel.runModal() == .OK {
+            settings.defaultOutputFolder = panel.url
+        }
+    }
+}
+
+#Preview {
+    SettingsView()
+}

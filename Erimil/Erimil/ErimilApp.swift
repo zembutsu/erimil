@@ -13,5 +13,10 @@ struct ErimilApp: App {
         WindowGroup {
             ContentView()
         }
+        
+        // Settings window (⌘,)
+        Settings {
+            SettingsView()
+        }
     }
 }
