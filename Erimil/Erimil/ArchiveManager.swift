@@ -2,7 +2,6 @@
 //  ArchiveManager.swift
 //  Erimil
 //
-//  Created by Masahito Zembutsu on 2025/12/13.
 //  ImageSource implementation for ZIP archives
 //  Reference: https://github.com/weichsel/ZIPFoundation#closure-based-reading-and-writing
 //
@@ -48,6 +47,31 @@ class ArchiveManager: ImageSource {
         return results.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
     
+    /// Get raw image data from ZIP
+    func rawImageData(for entry: ImageEntry) -> Data? {
+        guard let archive = Archive(url: url, accessMode: .read) else {
+            print("Failed to open archive")
+            return nil
+        }
+        
+        guard let zipEntry = archive[entry.path] else {
+            print("Entry not found: \(entry.path)")
+            return nil
+        }
+        
+        var imageData = Data()
+        do {
+            _ = try archive.extract(zipEntry) { data in
+                imageData.append(data)
+            }
+        } catch {
+            print("Extract failed for \(entry.name): \(error)")
+            return nil
+        }
+        
+        return imageData
+    }
+    
     /// Generate thumbnail for entry
     func thumbnail(for entry: ImageEntry, maxSize: CGFloat = 120) -> NSImage? {
         guard let image = extractImage(for: entry) else { return nil }
@@ -57,6 +81,11 @@ class ArchiveManager: ImageSource {
     /// Get full-size image
     func fullImage(for entry: ImageEntry) -> NSImage? {
         return extractImage(for: entry)
+    }
+    
+    /// Unique path for cache key (includes ZIP path)
+    func uniquePath(for entry: ImageEntry) -> String {
+        return url.path + ":" + entry.path
     }
     
     /// Extract image from ZIP - opens archive fresh each time per official docs

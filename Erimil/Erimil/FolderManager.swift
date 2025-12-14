@@ -53,6 +53,12 @@ class FolderManager: ImageSource {
         return results.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     
+    /// Get raw image data from file
+    func rawImageData(for entry: ImageEntry) -> Data? {
+        let fileURL = URL(fileURLWithPath: entry.path)
+        return try? Data(contentsOf: fileURL)
+    }
+    
     /// Generate thumbnail - direct file access
     func thumbnail(for entry: ImageEntry, maxSize: CGFloat = 120) -> NSImage? {
         guard let image = fullImage(for: entry) else { return nil }
@@ -63,6 +69,11 @@ class FolderManager: ImageSource {
     func fullImage(for entry: ImageEntry) -> NSImage? {
         let fileURL = URL(fileURLWithPath: entry.path)
         return NSImage(contentsOf: fileURL)
+    }
+    
+    /// Unique path for cache key (file path)
+    func uniquePath(for entry: ImageEntry) -> String {
+        return entry.path
     }
     
     private func resizedImage(_ image: NSImage, maxSize: CGFloat) -> NSImage {

@@ -54,11 +54,17 @@ protocol ImageSource {
     /// List all image entries
     func listImageEntries() -> [ImageEntry]
     
+    /// Get raw image data for entry (used for hashing and caching)
+    func rawImageData(for entry: ImageEntry) -> Data?
+    
     /// Generate thumbnail for entry
     func thumbnail(for entry: ImageEntry, maxSize: CGFloat) -> NSImage?
     
     /// Get full-size image for entry
     func fullImage(for entry: ImageEntry) -> NSImage?
+    
+    /// Unique identifier for the entry (used for cache key)
+    func uniquePath(for entry: ImageEntry) -> String
 }
 
 /// Source type for determining available actions

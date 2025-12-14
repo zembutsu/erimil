@@ -17,12 +17,15 @@ struct ThumbnailGridView: View {
     
     @State private var entries: [ImageEntry] = []
     @State private var thumbnails: [String: NSImage] = [:]
+    @State private var contentHashes: [String: String] = [:]  // path → contentHash for favorites
     @State private var previewEntry: ImageEntry?
     @State private var previewImage: NSImage?
     @State private var showExportSuccess = false
     @State private var showExportError = false
     @State private var showDeleteConfirm = false
     @State private var exportMessage = ""
+    
+    private let cacheManager = CacheManager.shared
     
     /// Dynamic columns based on thumbnail size
     private var columns: [GridItem] {
@@ -261,6 +264,7 @@ struct ThumbnailGridView: View {
     
     private func loadSource() {
         thumbnails = [:]
+        contentHashes = [:]
         selectedPaths = []  // Clear selections when source changes
         previewEntry = nil
         previewImage = nil
@@ -271,14 +275,54 @@ struct ThumbnailGridView: View {
         guard thumbnails[entry.path] == nil else { return }
         
         let maxSize = max(settings.effectiveThumbnailSize, 180)  // Load at least 180px for quality
+        let sourcePath = imageSource.uniquePath(for: entry)
         
         DispatchQueue.global(qos: .userInitiated).async {
-            if let thumbnail = imageSource.thumbnail(for: entry, maxSize: maxSize) {
+            // Use CacheManager for caching
+            let result = cacheManager.getOrCreateThumbnail(
+                sourcePath: sourcePath,
+                imageDataProvider: {
+                    imageSource.rawImageData(for: entry)
+                },
+                thumbnailGenerator: { data in
+                    guard let image = NSImage(data: data) else { return nil }
+                    return resizedImage(image, maxSize: maxSize)
+                }
+            )
+            
+            if let (thumbnail, contentHash) = result {
                 DispatchQueue.main.async {
                     thumbnails[entry.path] = thumbnail
+                    contentHashes[entry.path] = contentHash
                 }
             }
         }
+    }
+    
+    /// Resize image (moved to top-level for use in closure)
+    private func resizedImage(_ image: NSImage, maxSize: CGFloat) -> NSImage {
+        let originalSize = image.size
+        guard originalSize.width > 0 && originalSize.height > 0 else {
+            return image
+        }
+        
+        let scale = min(maxSize / originalSize.width, maxSize / originalSize.height, 1.0)
+        let newSize = NSSize(
+            width: originalSize.width * scale,
+            height: originalSize.height * scale
+        )
+        
+        let newImage = NSImage(size: newSize)
+        newImage.lockFocus()
+        image.draw(
+            in: NSRect(origin: .zero, size: newSize),
+            from: NSRect(origin: .zero, size: originalSize),
+            operation: .copy,
+            fraction: 1.0
+        )
+        newImage.unlockFocus()
+        
+        return newImage
     }
     
     // MARK: - User Actions

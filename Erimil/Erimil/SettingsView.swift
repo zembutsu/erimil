@@ -9,6 +9,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @State private var cacheInfo: (fileCount: Int, totalSize: Int64) = (0, 0)
     
     var body: some View {
         Form {
@@ -32,6 +33,34 @@ struct SettingsView: View {
                 }
             } header: {
                 Text("サムネイルサイズ")
+            }
+            
+            // MARK: - Cache Management
+            Section {
+                HStack {
+                    Text("キャッシュファイル数:")
+                    Spacer()
+                    Text("\(cacheInfo.fileCount) 件")
+                        .foregroundStyle(.secondary)
+                }
+                
+                HStack {
+                    Text("キャッシュサイズ:")
+                    Spacer()
+                    Text(formatBytes(cacheInfo.totalSize))
+                        .foregroundStyle(.secondary)
+                }
+                
+                Button("キャッシュをクリア") {
+                    CacheManager.shared.clearAllCache()
+                    updateCacheInfo()
+                }
+                .foregroundStyle(.orange)
+            } header: {
+                Text("キャッシュ")
+            } footer: {
+                Text("サムネイルのキャッシュを削除します。お気に入りは保持されます。")
+                    .font(.caption)
             }
             
             // MARK: - Selection Mode
@@ -89,8 +118,11 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 400)
+        .frame(width: 450, height: 500)
         .navigationTitle("設定")
+        .onAppear {
+            updateCacheInfo()
+        }
     }
     
     private func selectOutputFolder() {
@@ -103,6 +135,16 @@ struct SettingsView: View {
         if panel.runModal() == .OK {
             settings.defaultOutputFolder = panel.url
         }
+    }
+    
+    private func updateCacheInfo() {
+        cacheInfo = CacheManager.shared.getCacheInfo()
+    }
+    
+    private func formatBytes(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
     }
 }
 
