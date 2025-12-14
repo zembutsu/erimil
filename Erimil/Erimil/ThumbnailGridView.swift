@@ -72,6 +72,12 @@ struct ThumbnailGridView: View {
     @State private var loadID: UUID = UUID()
     // Track current source URL for change detection
     @State private var currentSourceURL: URL?
+    // Content hashes for favorite lookup (path → contentHash)
+    @State private var contentHashes: [String: String] = [:]
+    // Trigger for favorite state changes (increment to force re-render)
+    @State private var favoritesVersion: Int = 0
+    // Temporary feedback when trying to select protected item
+    @State private var protectedFeedbackPath: String? = nil
     
     /// Dynamic columns based on thumbnail size
     private var columns: [GridItem] {
@@ -105,8 +111,10 @@ struct ThumbnailGridView: View {
                                             thumbnail: thumbnails[entry.path],
                                             isSelected: selectedPaths.contains(entry.path),
                                             isFocused: focusedIndex == index,
+                                            favoriteStatus: getFavoriteStatus(entry),
                                             selectionMode: settings.selectionMode,
-                                            size: settings.effectiveThumbnailSize
+                                            size: settings.effectiveThumbnailSize,
+                                            showProtectedFeedback: protectedFeedbackPath == entry.path
                                         )
                                         .id(index)
                                         .onTapGesture(count: 2) {
@@ -318,13 +326,13 @@ struct ThumbnailGridView: View {
     private var footerSummary: String {
         let keepCount = pathsToKeep.count
         let removeCount = pathsToRemove.count
+        let protectedCount = protectedFavoriteCount
         
-        switch settings.selectionMode {
-        case .exclude:
-            return "出力: \(keepCount)件 / 除外: \(removeCount)件"
-        case .keep:
-            return "出力: \(keepCount)件 / 除外: \(removeCount)件"
+        var summary = "出力: \(keepCount)件 / 除外: \(removeCount)件"
+        if protectedCount > 0 {
+            summary += " (⭐\(protectedCount)件保護)"
         }
+        return summary
     }
     
     /// Paths that will be included in output
@@ -338,15 +346,36 @@ struct ThumbnailGridView: View {
         }
     }
     
-    /// Paths that will be excluded/removed
+    /// Paths that will be excluded/removed (favorites are excluded from removal)
     private var pathsToRemove: Set<String> {
         let allPaths = Set(entries.map { $0.path })
+        var toRemove: Set<String>
         switch settings.selectionMode {
         case .exclude:
-            return selectedPaths
+            toRemove = selectedPaths
         case .keep:
-            return allPaths.subtracting(selectedPaths)
+            toRemove = allPaths.subtracting(selectedPaths)
         }
+        // Remove direct favorites from the removal set
+        return toRemove.subtracting(directFavoritePaths)
+    }
+    
+    /// Paths that are directly favorited in this source (for delete protection)
+    private var directFavoritePaths: Set<String> {
+        Set(entries.filter { isDirectFavorite($0) }.map { $0.path })
+    }
+    
+    /// Count of direct favorites that would be removed (for warning)
+    private var protectedFavoriteCount: Int {
+        let allPaths = Set(entries.map { $0.path })
+        var wouldRemove: Set<String>
+        switch settings.selectionMode {
+        case .exclude:
+            wouldRemove = selectedPaths
+        case .keep:
+            wouldRemove = allPaths.subtracting(selectedPaths)
+        }
+        return wouldRemove.intersection(directFavoritePaths).count
     }
     
     // MARK: - Data Loading
@@ -363,6 +392,7 @@ struct ThumbnailGridView: View {
         print("[ThumbnailGridView] New loadID: \(newLoadID)")
         
         thumbnails = [:]
+        contentHashes = [:]  // Clear content hashes when source changes
         selectedPaths = []  // Clear selections when source changes
         focusedIndex = nil  // Reset focus when source changes
         previewEntry = nil
@@ -396,6 +426,14 @@ struct ThumbnailGridView: View {
         let entryPath = entry.path
         let entryName = entry.name
         
+        // Calculate the full path for CacheManager lookup
+        let fullPath: String
+        if imageSource is ArchiveManager {
+            fullPath = imageSource.url.path + "/" + entry.path
+        } else {
+            fullPath = entry.path  // FolderManager already has full path
+        }
+        
         print("[loadThumbnail] Starting for \(entryName) from \(capturedSourceURL.lastPathComponent), loadID: \(capturedLoadID)")
         
         DispatchQueue.global(qos: .userInitiated).async { [self] in
@@ -416,6 +454,9 @@ struct ThumbnailGridView: View {
                 return
             }
             
+            // Get content hash from CacheManager (it was registered during thumbnail generation)
+            let contentHash = CacheManager.shared.getContentHashForPath(fullPath)
+            
             DispatchQueue.main.async {
                 // Re-check validity after thumbnail generated
                 guard capturedLoadID == loadID else {
@@ -434,6 +475,12 @@ struct ThumbnailGridView: View {
                 }
                 
                 thumbnails[entryPath] = thumbnail
+                
+                // Store content hash for favorite lookup
+                if let hash = contentHash {
+                    contentHashes[entryPath] = hash
+                }
+                
                 print("[loadThumbnail] Success: \(entryName)")
             }
         }
@@ -533,6 +580,12 @@ struct ThumbnailGridView: View {
             toggleSelection(entry)
             return true
             
+        // V key - toggle favorite
+        case "v":
+            let entry = entries[currentIndex]
+            toggleFavorite(entry)
+            return true
+            
         default:
             return false
         }
@@ -555,11 +608,68 @@ struct ThumbnailGridView: View {
     // MARK: - User Actions
     
     private func toggleSelection(_ entry: ImageEntry) {
+        // In exclude mode, prevent selecting direct favorites (they're protected)
+        if settings.selectionMode == .exclude && isDirectFavorite(entry) {
+            print("[toggleSelection] Blocked: \(entry.name) is direct favorited (protected)")
+            showProtectedFeedback(for: entry)
+            return
+        }
+        
         if selectedPaths.contains(entry.path) {
             selectedPaths.remove(entry.path)
         } else {
             selectedPaths.insert(entry.path)
         }
+    }
+    
+    /// Show temporary "PROTECTED" feedback
+    private func showProtectedFeedback(for entry: ImageEntry) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            protectedFeedbackPath = entry.path
+        }
+        
+        // Clear after 2 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                if protectedFeedbackPath == entry.path {
+                    protectedFeedbackPath = nil
+                }
+            }
+        }
+    }
+    
+    /// Get favorite status for an entry
+    private func getFavoriteStatus(_ entry: ImageEntry) -> CacheManager.FavoriteStatus {
+        // Reference favoritesVersion to create SwiftUI dependency
+        _ = favoritesVersion
+        
+        let contentHash = contentHashes[entry.path]
+        return CacheManager.shared.getFavoriteStatus(
+            sourceURL: imageSource.url,
+            entryPath: entry.path,
+            contentHash: contentHash
+        )
+    }
+    
+    /// Check if entry is directly favorited (for delete protection)
+    private func isDirectFavorite(_ entry: ImageEntry) -> Bool {
+        // Reference favoritesVersion to create SwiftUI dependency
+        _ = favoritesVersion
+        
+        return CacheManager.shared.isDirectFavorite(
+            sourceURL: imageSource.url,
+            entryPath: entry.path
+        )
+    }
+    
+    private func toggleFavorite(_ entry: ImageEntry) {
+        let contentHash = contentHashes[entry.path]
+        _ = CacheManager.shared.toggleFavorite(
+            sourceURL: imageSource.url,
+            entryPath: entry.path,
+            contentHash: contentHash
+        )
+        favoritesVersion += 1  // Trigger re-render
     }
     
     private func openPreview(_ entry: ImageEntry) {
@@ -657,8 +767,10 @@ struct ThumbnailCell: View {
     let thumbnail: NSImage?
     let isSelected: Bool
     let isFocused: Bool
+    let favoriteStatus: CacheManager.FavoriteStatus
     let selectionMode: SelectionMode
     let size: CGFloat
+    let showProtectedFeedback: Bool  // Temporary feedback when trying to select protected item
     
     private var overlayColor: Color {
         switch selectionMode {
@@ -713,6 +825,7 @@ struct ThumbnailCell: View {
     var body: some View {
         VStack(spacing: 4) {
             ZStack {
+                // Thumbnail image
                 if let thumbnail = thumbnail {
                     Image(nsImage: thumbnail)
                         .resizable()
@@ -723,11 +836,52 @@ struct ThumbnailCell: View {
                         .frame(width: size, height: size)
                 }
                 
+                // Selection overlay
                 if isSelected {
                     Color.black.opacity(0.4)
                     Image(systemName: overlayIcon)
                         .font(iconSize)
                         .foregroundStyle(.white, overlayColor)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                
+                // Favorite star overlay (top-left)
+                // ★ (yellow) = direct favorite in this source
+                // ☆ (gray/white) = inherited from other source
+                VStack {
+                    HStack {
+                        switch favoriteStatus {
+                        case .direct:
+                            Image(systemName: "star.fill")
+                                .font(size < 100 ? .caption : .body)
+                                .foregroundStyle(.yellow)
+                                .shadow(color: .black.opacity(0.5), radius: 1, x: 0, y: 1)
+                        case .inherited:
+                            Image(systemName: "star")
+                                .font(size < 100 ? .caption : .body)
+                                .foregroundStyle(.white)
+                                .shadow(color: .black.opacity(0.7), radius: 1, x: 0, y: 1)
+                        case .none:
+                            EmptyView()
+                        }
+                        Spacer()
+                    }
+                    .padding(4)
+                    
+                    Spacer()
+                    
+                    // PROTECTED label - shown temporarily when trying to select protected item
+                    if showProtectedFeedback {
+                        Text("PROTECTED")
+                            .font(.system(size: size < 100 ? 8 : 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(Color.red.opacity(0.9))
+                            .cornerRadius(3)
+                            .padding(.bottom, 4)
+                            .transition(.opacity)
+                    }
                 }
             }
             .frame(width: size, height: size)

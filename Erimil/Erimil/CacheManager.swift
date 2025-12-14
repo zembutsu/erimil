@@ -37,6 +37,9 @@ class CacheManager {
     /// contentHash → thumbnail (memory cache, thread-safe)
     private let thumbnailCache = NSCache<NSString, NSImage>()
     
+    /// Favorites lock for thread-safety
+    private let favoritesLock = NSLock()
+    
     // MARK: - Initialization
     
     private init() {
@@ -53,8 +56,9 @@ class CacheManager {
         // Create directories if needed
         createDirectoriesIfNeeded()
         
-        // Load index
+        // Load index and favorites
         loadIndex()
+        loadFavorites()
     }
     
     private func createDirectoriesIfNeeded() {
@@ -202,6 +206,204 @@ class CacheManager {
         
         // Save to disk
         saveThumbnailToDisk(image, for: contentHash)
+    }
+    
+    // MARK: - Hybrid Favorites Management
+    
+    /// Favorite status enum
+    enum FavoriteStatus {
+        case none       // Not favorited
+        case inherited  // Content is favorited (from other source) - shows ☆
+        case direct     // Favorited in this source - shows ★
+    }
+    
+    /// Hybrid favorites file structure (v2)
+    private struct HybridFavoritesFile: Codable {
+        var version: Int = 2
+        var byContent: [String: FavoriteMetadata]  // contentHash → metadata
+        var bySource: [String: FavoriteMetadata]   // sourceKey → metadata (sourceKey = hash of sourceURL+entryPath)
+    }
+    
+    private struct FavoriteMetadata: Codable {
+        let addedAt: Date
+        var contentHash: String?  // For bySource entries, link to content
+    }
+    
+    /// In-memory favorites
+    private var favoritesByContent: Set<String> = []  // contentHash
+    private var favoritesBySource: Set<String> = []   // sourceKey (hash of sourceURL+entryPath)
+    private var sourceToContent: [String: String] = [:] // sourceKey → contentHash mapping
+    
+    /// Hybrid favorites file URL
+    private var hybridFavoritesFileURL: URL {
+        return baseDirectory.appendingPathComponent("favorites_hybrid.json")
+    }
+    
+    private func loadFavorites() {
+        let fileURL = hybridFavoritesFileURL
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            favoritesByContent = []
+            favoritesBySource = []
+            sourceToContent = [:]
+            print("[CacheManager] No hybrid favorites file")
+            return
+        }
+        
+        do {
+            let data = try Data(contentsOf: fileURL)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let file = try decoder.decode(HybridFavoritesFile.self, from: data)
+            
+            favoritesLock.lock()
+            favoritesByContent = Set(file.byContent.keys)
+            favoritesBySource = Set(file.bySource.keys)
+            
+            // Build sourceToContent mapping
+            sourceToContent = [:]
+            for (sourceKey, metadata) in file.bySource {
+                if let contentHash = metadata.contentHash {
+                    sourceToContent[sourceKey] = contentHash
+                }
+            }
+            favoritesLock.unlock()
+            
+            print("[CacheManager] Loaded \(favoritesBySource.count) source favorites, \(favoritesByContent.count) content favorites")
+        } catch {
+            print("[CacheManager] Failed to load favorites: \(error)")
+            favoritesByContent = []
+            favoritesBySource = []
+            sourceToContent = [:]
+        }
+    }
+    
+    private func saveFavorites() {
+        favoritesLock.lock()
+        let contentFavs = favoritesByContent
+        let sourceFavs = favoritesBySource
+        let s2c = sourceToContent
+        favoritesLock.unlock()
+        
+        var byContent: [String: FavoriteMetadata] = [:]
+        for hash in contentFavs {
+            byContent[hash] = FavoriteMetadata(addedAt: Date(), contentHash: nil)
+        }
+        
+        var bySource: [String: FavoriteMetadata] = [:]
+        for key in sourceFavs {
+            bySource[key] = FavoriteMetadata(addedAt: Date(), contentHash: s2c[key])
+        }
+        
+        let file = HybridFavoritesFile(version: 2, byContent: byContent, bySource: bySource)
+        
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = .prettyPrinted
+            let data = try encoder.encode(file)
+            try data.write(to: hybridFavoritesFileURL)
+        } catch {
+            print("[CacheManager] Failed to save favorites: \(error)")
+        }
+    }
+    
+    /// Generate source key (hash of sourceURL + entryPath)
+    func sourceKey(sourceURL: URL, entryPath: String) -> String {
+        let fullPath = sourceURL.path + "/" + entryPath
+        return hashString(fullPath)
+    }
+    
+    /// Get favorite status for an entry
+    func getFavoriteStatus(sourceURL: URL, entryPath: String, contentHash: String?) -> FavoriteStatus {
+        favoritesLock.lock()
+        defer { favoritesLock.unlock() }
+        
+        // Check source first (direct favorite in this source)
+        let sKey = sourceKey(sourceURL: sourceURL, entryPath: entryPath)
+        if favoritesBySource.contains(sKey) {
+            return .direct
+        }
+        
+        // Check content (inherited from other source)
+        if let cHash = contentHash, favoritesByContent.contains(cHash) {
+            return .inherited
+        }
+        
+        return .none
+    }
+    
+    /// Check if directly favorited in this source (for delete protection)
+    func isDirectFavorite(sourceURL: URL, entryPath: String) -> Bool {
+        let sKey = sourceKey(sourceURL: sourceURL, entryPath: entryPath)
+        favoritesLock.lock()
+        let result = favoritesBySource.contains(sKey)
+        favoritesLock.unlock()
+        return result
+    }
+    
+    /// Toggle favorite - adds/removes from both bySource and byContent
+    /// Returns new FavoriteStatus
+    func toggleFavorite(sourceURL: URL, entryPath: String, contentHash: String?) -> FavoriteStatus {
+        let sKey = sourceKey(sourceURL: sourceURL, entryPath: entryPath)
+        
+        favoritesLock.lock()
+        
+        let wasDirectFavorite = favoritesBySource.contains(sKey)
+        
+        if wasDirectFavorite {
+            // Remove from source
+            favoritesBySource.remove(sKey)
+            sourceToContent.removeValue(forKey: sKey)
+            // Note: We don't remove from byContent - other sources may still reference it
+            
+            favoritesLock.unlock()
+            saveFavorites()
+            
+            // Check if still inherited
+            if let cHash = contentHash {
+                favoritesLock.lock()
+                let stillInherited = favoritesByContent.contains(cHash)
+                favoritesLock.unlock()
+                return stillInherited ? .inherited : .none
+            }
+            return .none
+        } else {
+            // Add to source
+            favoritesBySource.insert(sKey)
+            if let cHash = contentHash {
+                sourceToContent[sKey] = cHash
+                // Add to content as well
+                favoritesByContent.insert(cHash)
+            }
+            
+            favoritesLock.unlock()
+            saveFavorites()
+            
+            return .direct
+        }
+    }
+    
+    /// Get content hash for a path (if cached)
+    func getContentHashForPath(_ path: String) -> String? {
+        let pHash = pathHash(for: path)
+        return getContentHash(for: pHash)
+    }
+    
+    // Legacy compatibility methods (deprecated, for migration)
+    
+    func isFavorite(_ contentHash: String) -> Bool {
+        favoritesLock.lock()
+        let result = favoritesByContent.contains(contentHash)
+        favoritesLock.unlock()
+        return result
+    }
+    
+    func isFavoriteByPath(_ path: String) -> Bool {
+        let pHash = pathHash(for: path)
+        guard let cHash = getContentHash(for: pHash) else {
+            return false
+        }
+        return isFavorite(cHash)
     }
     
     private func saveThumbnailToDisk(_ image: NSImage, for contentHash: String) {

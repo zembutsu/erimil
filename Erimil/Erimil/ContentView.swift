@@ -87,6 +87,26 @@ struct ContentView: View {
         } message: {
             Text("\(selectedPaths.count) 件の選択が保存されていません。破棄して別の場所に移動しますか？")
         }
+        .onAppear {
+            restoreLastOpenedFolder()
+        }
+    }
+    
+    private func restoreLastOpenedFolder() {
+        // Only restore if no folder is currently selected (first launch)
+        guard selectedFolderURL == nil else {
+            return
+        }
+        
+        // Use security-scoped bookmark restoration
+        if let restoredFolder = AppSettings.shared.restoreAndAccessLastOpenedFolder() {
+            print("[ContentView] Restored folder with security scope: \(restoredFolder.path)")
+            selectedFolderURL = restoredFolder
+            // Update the published property (without triggering didSet bookmark save)
+            AppSettings.shared.lastOpenedFolderURL = restoredFolder
+        } else {
+            print("[ContentView] No folder to restore, or access denied")
+        }
     }
     
     private func updateImageSource() {

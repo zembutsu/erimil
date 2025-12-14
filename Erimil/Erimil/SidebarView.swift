@@ -2,8 +2,6 @@
 //  SidebarView.swift
 //  Erimil
 //
-//  Created by Masahito Zembutsu on 2025/12/13.
-//
 
 import SwiftUI
 
@@ -16,23 +14,24 @@ struct SidebarView: View {
     let reloadTrigger: UUID
     
     @State private var rootNode: FolderNode?
-    @State private var selectedNodeID: UUID?
+    @State private var selectedNodeURL: URL?
     
     var body: some View {
         VStack(spacing: 0) {
             if let root = rootNode {
-                List(selection: $selectedNodeID) {
+                List {
                     OutlineGroup(root.children ?? [], children: \.children) { node in
-                        NodeRowView(node: node)
-                            .tag(node.id)
+                        NodeRowView(
+                            node: node,
+                            isSelected: selectedNodeURL == node.url
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            handleNodeTap(node)
+                        }
                     }
                 }
                 .listStyle(.sidebar)
-                .onChange(of: selectedNodeID) { _, newValue in
-                    if let nodeID = newValue {
-                        handleNodeSelection(nodeID)
-                    }
-                }
             } else {
                 ContentUnavailableView(
                     "フォルダを選択",
@@ -50,7 +49,13 @@ struct SidebarView: View {
             .padding()
         }
         .navigationTitle("Erimil")
-        .onChange(of: selectedFolderURL) { _, _ in
+        .onAppear {
+            // Load tree on initial appear (for restored folder)
+            print("[SidebarView] onAppear, selectedFolderURL: \(selectedFolderURL?.path ?? "nil")")
+            reloadTree()
+        }
+        .onChange(of: selectedFolderURL) { oldValue, newValue in
+            print("[SidebarView] onChange: \(oldValue?.path ?? "nil") → \(newValue?.path ?? "nil")")
             reloadTree()
         }
         .onChange(of: reloadTrigger) { _, _ in
@@ -58,37 +63,40 @@ struct SidebarView: View {
         }
     }
     
-    private func handleNodeSelection(_ nodeID: UUID) {
-        guard let node = findNode(by: nodeID, in: rootNode?.children ?? []) else {
-            return
-        }
+    private func handleNodeTap(_ node: FolderNode) {
+        selectedNodeURL = node.url
         
         if node.isZip {
             onZipSelectionAttempt(node.url)
         } else if node.isDirectory {
+            // フォルダの場合、画像があれば右ペインに表示
             onFolderSelectionAttempt?(node.url)
         }
     }
     
-    private func findNode(by id: UUID, in nodes: [FolderNode]) -> FolderNode? {
-        for node in nodes {
-            if node.id == id {
-                return node
-            }
-            if let children = node.children,
-               let found = findNode(by: id, in: children) {
-                return found
-            }
-        }
-        return nil
-    }
-    
     private func reloadTree() {
-        selectedNodeID = nil
+        print("[SidebarView] reloadTree called, selectedFolderURL: \(selectedFolderURL?.path ?? "nil")")
         if let url = selectedFolderURL {
-            rootNode = FolderNode(url: url)
+            // Verify folder exists
+            if FileManager.default.fileExists(atPath: url.path) {
+                rootNode = FolderNode(url: url)
+                print("[SidebarView] rootNode created, children count: \(rootNode?.children?.count ?? 0)")
+            } else {
+                print("[SidebarView] ERROR: Folder does not exist: \(url.path)")
+                // Fallback to Desktop
+                fallbackToDesktop()
+            }
         } else {
             rootNode = nil
+        }
+    }
+    
+    private func fallbackToDesktop() {
+        let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+        print("[SidebarView] Fallback to Desktop: \(desktop?.path ?? "nil")")
+        if let desktop = desktop {
+            selectedFolderURL = desktop
+            AppSettings.shared.lastOpenedFolderURL = desktop
         }
     }
     
@@ -97,15 +105,37 @@ struct SidebarView: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
+        panel.message = "表示するフォルダを選択してください"
+        panel.prompt = "選択"
         
-        if panel.runModal() == .OK {
-            selectedFolderURL = panel.url
+        print("[SidebarView] Opening folder picker...")
+        
+        let response = panel.runModal()
+        print("[SidebarView] Folder picker response: \(response == .OK ? "OK" : "Cancel")")
+        
+        if response == .OK, let url = panel.url {
+            print("[SidebarView] Selected folder: \(url.path)")
+            
+            // Force update even if same folder (by clearing first)
+            if selectedFolderURL == url {
+                print("[SidebarView] Same folder selected, forcing reload")
+                rootNode = nil
+            }
+            
+            selectedFolderURL = url
+            AppSettings.shared.lastOpenedFolderURL = url
+            
+            // Explicit reload in case onChange doesn't fire
+            reloadTree()
+        } else {
+            print("[SidebarView] Folder selection cancelled or failed")
         }
     }
 }
 
 struct NodeRowView: View {
     let node: FolderNode
+    let isSelected: Bool
     
     var body: some View {
         Label {
@@ -119,6 +149,10 @@ struct NodeRowView: View {
                     .foregroundStyle(.blue)
             }
         }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 4)
+        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        .cornerRadius(4)
     }
 }
 
