@@ -53,6 +53,16 @@
 
 ---
 
+### Parked (Out of Scope)
+
+> Ideas or topics that emerged but are out of scope for this session
+
+| Topic | Description | Destination |
+|-------|-------------|-------------|
+| \<topic\> | \<one-line\> | Issue / LOGBOOK / Later |
+
+---
+
 ### Outcome
 
 **Completed**:
@@ -116,8 +126,26 @@
 
 1. **Start of session**: Copy this template, fill in header and Setlist
 2. **During session**: Update Timeline in real-time
-3. **End of session**: Fill Outcome, Handoff Bridge, then extract to LOGBOOK
-4. **Archive**: Save as `sessions/LOG-<num>-<title>.md` (optional)
+3. **Out of scope topic**: Immediately add to Parked section, then return to focus
+4. **End of session**: Fill Outcome, Handoff Bridge, then extract to LOGBOOK
+5. **Archive**: Save as `sessions/LOG-<num>-<title>.md` (optional)
+
+## Scope Control
+
+When off-topic ideas emerge:
+
+```
+"That's interesting, but out of scope"
+    ↓
+Add to Parked table with destination
+    ↓
+Return to Setlist focus
+```
+
+**Destinations**:
+- `Issue` - Create GitHub Issue after session
+- `LOGBOOK` - Record in Ideas section
+- `Later` - Revisit in future session
 
 ## Naming Convention
 
