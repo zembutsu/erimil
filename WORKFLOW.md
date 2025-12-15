@@ -62,6 +62,86 @@ Human: Commit & merge
 | Documentation | System can draft, human reviews |
 | Design decisions | Human approval, record in DESIGN.md |
 
+### Auto-Judgment Scope (AI Autonomous Operations)
+
+Some operations can be performed by AI/System without human approval:
+
+| Operation | AI Authority | Human Involvement |
+|-----------|--------------|-------------------|
+| Typo fixes | ✅ Execute | None required |
+| Debug log addition | ✅ Execute | None required |
+| Minor bugfix (obvious) | ✅ Execute | Final check only |
+| Code formatting | ✅ Execute | None required |
+| Test additions | ✅ Execute | Review at merge |
+| New feature | ❌ Propose only | Approval required |
+| Design changes | ❌ Propose only | Approval required |
+| Dependency changes | ❌ Propose only | Approval required |
+
+**Repository naming convention for AI experiments**:
+- Prefix: `ai-exp/<name>` - Indicates AI-driven experimental work
+- Example: `ai-exp/auto-refactor`, `ai-exp/test-coverage`
+
+**Scope completion**:
+- If work stays within Auto-Judgment Scope, AI/System can mark complete
+- Human performs final check or merge at their discretion
+- No blocking on human review for trivial changes
+
+**Human Delegation (Technical Constraints)**:
+
+AI/System cannot currently perform certain operations due to technical limitations. In these cases, AI may **request** human to execute on its behalf. This is a collaborative relationship - AI asks, human decides whether and how to act.
+
+| Operation | Constraint | AI Action |
+|-----------|------------|-----------|
+| Run app / manual testing | No GUI access | Request human to test, provide test steps |
+| Git commit / push | No Git credentials | Prepare commit message, request human to execute |
+| GitHub Issue / PR operations | No API access | Draft content, request human to create |
+| Xcode build / run | No Xcode access | Provide code, request human to build |
+| File system verification | Container isolation | Request human to verify local state |
+
+**Delegation format**:
+```
+[DELEGATE] <operation>
+- What: <specific action needed>
+- Why: <technical constraint>
+- Expected result: <what human should see/verify>
+```
+
+Note: These constraints are technical, not policy. As tooling evolves, AI autonomy may expand.
+
+### Parking Lot Mechanism (Scope Control)
+
+During a session, off-topic ideas or out-of-scope discussions should be immediately parked:
+
+```
+Topic emerges during session
+    ↓
+Is it in scope for current Setlist?
+    ├─ Yes → Continue discussion
+    └─ No → PARK IT
+            ↓
+        Record in one of:
+        ├─ LOGBOOK.md → Ideas section
+        ├─ GitHub Issue → New issue with label
+        └─ Session Sheet → Parked section
+            ↓
+        Return to session focus
+```
+
+**Purpose**:
+- Prevent context bloat
+- Maintain focus on current goals
+- Capture ideas without losing them
+
+**Trigger phrases**:
+- "That's a good idea, let's park it"
+- "Out of scope for this session"
+- "Add to Ideas/Parked"
+
+**Parked item format**:
+```markdown
+- [PARKED] <topic> - <one-line description> (from LOG#<num>)
+```
+
 ### Communication Protocol
 
 1. **Before implementation**: System proposes approach, waits for approval
@@ -146,6 +226,75 @@ All significant decisions must be recorded in DESIGN.md with:
 - Rationale
 - Consequences
 
+### Issue Template (GitHub)
+
+Use consistent format for GitHub Issues:
+
+```markdown
+## Description
+
+<What needs to be done / What is the problem>
+
+## Context
+
+<Why this is needed / Background>
+
+## Acceptance Criteria
+
+- [ ] <Criterion 1>
+- [ ] <Criterion 2>
+
+## Technical Notes
+
+<Implementation hints, constraints, risks>
+
+## Related
+
+- Issue #X
+- LOG#<num>
+```
+
+**Labels**:
+- `enhancement` - New feature
+- `bug` - Something broken
+- `docs` - Documentation
+- `ai-exp` - AI autonomous work allowed
+
+### LOGBOOK Entry Template
+
+Use consistent format for LOGBOOK entries (fixed during session, evolves between sessions):
+
+```markdown
+## YYYY-MM-DD (LOG#<num>: <Session Title>)
+
+### Current Position
+- Phase/Status
+- Branch/Related Issues
+
+### Decisions
+- Decision (→ DESIGN.md reference)
+- Rationale
+
+### Insights
+- Discoveries, observations
+
+### Learnings
+- Technical knowledge gained
+
+### Parked
+- [PARKED] <topic> - <description>
+
+### Ideas
+- Future possibilities
+
+### Handoff Bridge
+- Carry forward items
+- Technical notes
+- Blockers
+```
+
+**Note**: Template is fixed within a session. Changes to template structure happen between sessions via TEMPLATE-FEEDBACK.md.
+
 ---
 
 ## Development Environment
@@ -198,6 +347,81 @@ Managed via Swift Package Manager:
 ---
 
 ## Document Lifecycle
+
+### Session Start: Setlist Check
+
+Before starting development, review and organize the work:
+
+1. **GitHub Issues Review**
+   - Check Open issues: current status, priorities
+   - Identify blockers and dependencies
+   - Decide which issues to tackle this session
+
+2. **Session Sheet Setup**
+   - Create LOG#\<num\> entry (see Session Sheet template below)
+   - Record target issues and goals
+   - Note any carry-forward from previous Handoff Bridge
+
+3. **Context Loading**
+   - Read PROJECT.md - Confirm current Phase goals
+   - Read DESIGN.md - Review past decisions
+   - Read LOGBOOK.md (latest entry) - Check Handoff Bridge
+   - Check ARCHITECTURE.md Technical Constraints (if relevant)
+
+### During Session: Session Sheet
+
+Maintain a real-time record of the session:
+
+```markdown
+## LOG#<num>: <Session Title>
+Date: YYYY-MM-DD
+Issues: #X, #Y, #Z
+Actors: Claude, Zem
+
+### Timeline
+
+| Time | Actor | Action | Issue | Status |
+|------|-------|--------|-------|--------|
+| 14:00 | Zem | Session start, Setlist Check | - | - |
+| 14:05 | Claude | Propose approach for #5 | #5 | 🔄 |
+| 14:10 | Zem | Approve approach | #5 | ✅ |
+| 14:15 | Claude | Implement fix | #5 | 🔄 |
+| 14:30 | Zem | Test - still failing | #5 | ❌ |
+| 14:35 | Claude | Step back, check constraints | #5 | 🔄 |
+| ... | ... | ... | ... | ... |
+
+### Notes
+- (Real-time observations, decisions, blockers)
+
+### Outcome
+- (Filled at session end)
+```
+
+**Status icons**:
+- 🔄 In progress
+- ✅ Completed
+- ❌ Blocked / Failed
+- ⏸️ Paused
+
+### Session End: Wrap-up
+
+1. **Session Sheet → LOGBOOK**
+   - Extract key decisions, insights, learnings
+   - Write Handoff Bridge for next session
+   - Record LOG# reference
+
+2. **Setlist Check (closing)**
+   - Update GitHub Issue status
+   - Close completed issues
+   - Add comments to open issues with progress
+
+3. **Document Updates**
+   - LOGBOOK.md - Add session entry with LOG# reference
+   - DESIGN.md - Add new Decisions (if any)
+   - WORKFLOW.md - Add learnings to Development Principles (if any)
+   - TEMPLATE-FEEDBACK.md - Add methodology insights (if any)
+
+---
 
 ### When to Reference / Update Each Document
 
@@ -383,4 +607,4 @@ Benefits:
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2025-12-14 (Phase 2.1 - Handoff Bridge, Step Back principle)
+> Last updated: 2025-12-15 (Auto-Judgment, Parking Lot, Templates)

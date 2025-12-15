@@ -5,7 +5,7 @@
 
 ---
 
-## 2025-12-14 (Phase 2.1 セッション振り返り)
+## 2025-12-14 (LOG#001: Phase 2.1 UX Improvements)
 
 ### 📍 Current Position
 - Phase 2.1 完了（v0.3.0）
@@ -128,6 +128,16 @@ func loadData() {
 - 永続化機能（設定保存、状態復元）は最初から ARCHITECTURE.md Technical Constraints を確認
 - 「簡単そう」な機能こそ技術リスクを事前確認
 - 小さな修正を2-3回試して解決しなければ、立ち戻って俯瞰する
+- #7 黒画面バグ未修正 - 次セッションで対応
+- #5 フルスクリーン未実装 - ウィンドウ内プレビューのみ完了
+
+**💡 Ideas for next iteration**:
+- **LOG#\<num\> トラッキング**: GitHub Issue とは別に、プロジェクト内でセッション単位の追跡
+  - 依存関係の可視化（depends_on, blocks）
+  - 複数 Actor（Claude-A, Claude-B, Zem）の並列作業対応
+  - 将来的には CLI ツール化（`bebop start`, `bebop status`, `bebop graph`）
+- **Session Sheet**: リアルタイムで「誰が・何を・どの Issue を」記録
+- **Setlist Check**: セッション開始/終了時の Issue 棚卸し
 
 ---
 
@@ -210,6 +220,8 @@ func loadData() {
 ## Template Reference
 
 ```
+## YYYY-MM-DD (LOG#<num>: <Session Title>)
+
 ### 📍 Current Position
 - Phase/状態
 - Branch/関連 Issue
@@ -234,3 +246,5 @@ func loadData() {
 - 次のセッションへの引き継ぎ
 - 注意点、確認すべきこと
 ```
+
+See also: `docs/TEMPLATE-SESSION-SHEET.md` for real-time session recording.
