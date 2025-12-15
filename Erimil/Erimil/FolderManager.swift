@@ -53,16 +53,61 @@ class FolderManager: ImageSource {
         return results.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
     
-    /// Generate thumbnail - direct file access
+    /// Generate thumbnail - with disk cache
     func thumbnail(for entry: ImageEntry, maxSize: CGFloat = 120) -> NSImage? {
-        guard let image = fullImage(for: entry) else { return nil }
-        return resizedImage(image, maxSize: maxSize)
+        let cache = CacheManager.shared
+        
+        // Use full file path as unique identifier
+        let pathHash = cache.pathHash(for: entry.path)
+        
+        // Check if we have cached content hash
+        if let contentHash = cache.getContentHash(for: pathHash) {
+            // Try to get cached thumbnail
+            if let cached = cache.getThumbnail(for: contentHash) {
+                print("[FolderManager] Cache HIT for \(entry.name)")
+                return cached
+            }
+        }
+        
+        // Cache miss - load file and generate
+        print("[FolderManager] Cache MISS for \(entry.name), loading...")
+        let fileURL = URL(fileURLWithPath: entry.path)
+        
+        guard let imageData = try? Data(contentsOf: fileURL) else {
+            print("[FolderManager] Failed to read file: \(entry.path)")
+            return nil
+        }
+        
+        guard let image = NSImage(data: imageData) else {
+            print("[FolderManager] Invalid image data: \(entry.path)")
+            return nil
+        }
+        
+        // Calculate content hash
+        let contentHash = cache.contentHash(for: imageData)
+        
+        // Register mapping
+        cache.registerMapping(pathHash: pathHash, contentHash: contentHash)
+        
+        // Generate thumbnail
+        let thumbnail = resizedImage(image, maxSize: maxSize)
+        
+        // Save to cache
+        cache.saveThumbnail(thumbnail, for: contentHash)
+        
+        return thumbnail
     }
     
     /// Get full-size image - direct file access
     func fullImage(for entry: ImageEntry) -> NSImage? {
         let fileURL = URL(fileURLWithPath: entry.path)
-        return NSImage(contentsOf: fileURL)
+        print("[FolderManager] Loading image: \(fileURL.lastPathComponent)")
+        
+        guard let image = NSImage(contentsOf: fileURL) else {
+            print("[FolderManager] Failed to load: \(entry.path)")
+            return nil
+        }
+        return image
     }
     
     private func resizedImage(_ image: NSImage, maxSize: CGFloat) -> NSImage {

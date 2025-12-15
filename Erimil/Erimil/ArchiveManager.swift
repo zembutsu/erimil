@@ -2,7 +2,6 @@
 //  ArchiveManager.swift
 //  Erimil
 //
-//  Created by Masahito Zembutsu on 2025/12/13.
 //  ImageSource implementation for ZIP archives
 //  Reference: https://github.com/weichsel/ZIPFoundation#closure-based-reading-and-writing
 //
@@ -15,6 +14,9 @@ class ArchiveManager: ImageSource {
     let url: URL
     let sourceType: ImageSourceType = .archive
     
+    // Serial queue for thread-safe archive access
+    private let accessQueue = DispatchQueue(label: "com.erimil.archive", qos: .userInitiated)
+    
     // Convenience alias
     var zipURL: URL { url }
     
@@ -24,69 +26,138 @@ class ArchiveManager: ImageSource {
     
     /// List all image entries in the ZIP
     func listImageEntries() -> [ImageEntry] {
-        guard let archive = Archive(url: url, accessMode: .read) else {
-            print("Failed to open archive: \(url)")
-            return []
-        }
-        
-        var results: [ImageEntry] = []
-        
-        for entry in archive {
-            if entry.type == .file {
-                let imageEntry = ImageEntry(
-                    path: entry.path,
-                    size: entry.uncompressedSize
-                )
-                
-                // Filter: images only, exclude __MACOSX metadata
-                if imageEntry.isImage && !entry.path.contains("__MACOSX/") && !imageEntry.name.hasPrefix("._") {
-                    results.append(imageEntry)
+        return accessQueue.sync {
+            print("[ArchiveManager] listImageEntries called for: \(url.lastPathComponent)")
+            
+            guard let archive = Archive(url: url, accessMode: .read) else {
+                print("[ArchiveManager] Failed to open archive: \(url)")
+                return []
+            }
+            
+            var results: [ImageEntry] = []
+            var allEntries: [String] = []
+            
+            for entry in archive {
+                allEntries.append(entry.path)
+                if entry.type == .file {
+                    let imageEntry = ImageEntry(
+                        path: entry.path,
+                        size: entry.uncompressedSize
+                    )
+                    
+                    // Filter: images only, exclude __MACOSX metadata
+                    if imageEntry.isImage && !entry.path.contains("__MACOSX/") && !imageEntry.name.hasPrefix("._") {
+                        results.append(imageEntry)
+                    }
                 }
             }
+            
+            print("[ArchiveManager] Archive contains \(allEntries.count) total entries")
+            print("[ArchiveManager] Found \(results.count) image entries:")
+            for (index, entry) in results.prefix(10).enumerated() {
+                print("  [\(index)] \(entry.name) - \(entry.path)")
+            }
+            if results.count > 10 {
+                print("  ... and \(results.count - 10) more")
+            }
+            
+            return results.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         }
-        
-        return results.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
     
     /// Generate thumbnail for entry
     func thumbnail(for entry: ImageEntry, maxSize: CGFloat = 120) -> NSImage? {
-        guard let image = extractImage(for: entry) else { return nil }
-        return resizedImage(image, maxSize: maxSize)
+        let cache = CacheManager.shared
+        
+        // Create unique path identifier: sourceURL + entryPath
+        let fullPath = url.path + "/" + entry.path
+        let pathHash = cache.pathHash(for: fullPath)
+        
+        // Check if we have cached content hash
+        if let contentHash = cache.getContentHash(for: pathHash) {
+            // Try to get cached thumbnail
+            if let cached = cache.getThumbnail(for: contentHash) {
+                print("[thumbnail] Cache HIT for \(entry.name)")
+                return cached
+            }
+        }
+        
+        // Cache miss - extract and generate
+        print("[thumbnail] Cache MISS for \(entry.name), extracting...")
+        guard let (image, imageData) = extractImageWithData(for: entry) else { return nil }
+        
+        // Calculate content hash
+        let contentHash = cache.contentHash(for: imageData)
+        
+        // Register mapping
+        cache.registerMapping(pathHash: pathHash, contentHash: contentHash)
+        
+        // Generate thumbnail
+        let thumbnail = resizedImage(image, maxSize: maxSize)
+        
+        // Save to cache
+        cache.saveThumbnail(thumbnail, for: contentHash)
+        
+        return thumbnail
     }
     
     /// Get full-size image
     func fullImage(for entry: ImageEntry) -> NSImage? {
-        return extractImage(for: entry)
+        return extractImageWithData(for: entry)?.0
     }
     
-    /// Extract image from ZIP - opens archive fresh each time per official docs
-    private func extractImage(for imageEntry: ImageEntry) -> NSImage? {
-        guard let archive = Archive(url: url, accessMode: .read) else {
-            print("Failed to open archive")
-            return nil
-        }
-        
-        guard let entry = archive[imageEntry.path] else {
-            print("Entry not found: \(imageEntry.path)")
-            return nil
-        }
-        
-        var imageData = Data()
-        do {
-            _ = try archive.extract(entry) { data in
-                imageData.append(data)
+    // MARK: - Private Helpers
+    
+    /// Extract image and raw data from ZIP
+    private func extractImageWithData(for imageEntry: ImageEntry) -> (NSImage, Data)? {
+        return accessQueue.sync {
+            print("[extractImage] Looking for '\(imageEntry.path)' in '\(url.lastPathComponent)'")
+            
+            guard let archive = Archive(url: url, accessMode: .read) else {
+                print("[extractImage] Failed to open archive: \(url.path)")
+                return nil
             }
-        } catch {
-            print("Extract failed for \(imageEntry.name): \(error)")
-            return nil
+            
+            // Find entry by iterating (reliable for all encodings)
+            var foundEntry: Entry?
+            var availablePaths: [String] = []
+            for entry in archive {
+                availablePaths.append(entry.path)
+                if entry.path == imageEntry.path {
+                    foundEntry = entry
+                    break
+                }
+            }
+            
+            guard let entry = foundEntry else {
+                print("[extractImage] Entry not found: \(imageEntry.path)")
+                print("[extractImage] ZIP '\(url.lastPathComponent)' contains \(availablePaths.count) entries:")
+                for path in availablePaths.prefix(10) {
+                    print("  - \(path)")
+                }
+                if availablePaths.count > 10 {
+                    print("  ... and \(availablePaths.count - 10) more")
+                }
+                return nil
+            }
+            
+            var imageData = Data()
+            do {
+                _ = try archive.extract(entry) { data in
+                    imageData.append(data)
+                }
+            } catch {
+                print("[extractImage] Extract failed for \(imageEntry.name): \(error)")
+                return nil
+            }
+            
+            guard let image = NSImage(data: imageData) else {
+                print("[extractImage] Invalid image data for: \(imageEntry.name), size: \(imageData.count) bytes")
+                return nil
+            }
+            
+            return (image, imageData)
         }
-        
-        guard let image = NSImage(data: imageData) else {
-            print("Invalid image data for: \(imageEntry.name), size: \(imageData.count) bytes")
-            return nil
-        }
-        
-        return image
     }
     
     private func resizedImage(_ image: NSImage, maxSize: CGFloat) -> NSImage {

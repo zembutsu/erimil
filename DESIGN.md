@@ -355,6 +355,142 @@ class FolderManager: ImageSource { ... }   // new
 
 ---
 
+### Decision 11: Cache and Metadata Storage Location
+
+**Date**: 2025-12-14
+
+**Context**: Where to store thumbnail cache, Favorite metadata, and index data?
+
+**Options Considered**:
+
+| Location | Path | Pros | Cons |
+|----------|------|------|------|
+| Application Support | `~/Library/Application Support/Erimil/` | Apple recommended, Time Machine backup | None |
+| Caches | `~/Library/Caches/Erimil/` | System may clear | Data loss risk |
+| Source adjacent | `.erimil/` folder | Project-local | Clutters user folders |
+| Container | Sandbox container | Required for App Store | Complex path |
+
+**Decision**: **Application Support**
+
+**Reference**: [Apple File System Programming Guide](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/FileSystemOverview/FileSystemOverview.html)
+
+**Structure**:
+```
+~/Library/Application Support/Erimil/
+├── cache/
+│   └── {contentHash}.thumb.jpg    # Thumbnail cache
+├── index.json                      # pathHash → contentHash mapping
+└── favorites.json                  # contentHash → favorite metadata
+```
+
+**Consequences**:
+- ✅ Standard macOS pattern
+- ✅ Included in Time Machine backup
+- ✅ Clean uninstall (remove folder)
+- ✅ Centralized management
+
+---
+
+### Decision 12: Hash-Based Privacy Design
+
+**Date**: 2025-12-14
+
+**Context**: Storing file paths reveals user's folder structure and potentially sensitive information (dates, locations, project names).
+
+**Options Considered**:
+
+| Approach | Privacy | Debuggability |
+|----------|---------|---------------|
+| Plain paths | ✗ Exposed | ◎ Easy |
+| Path hashing only | △ Content visible | ○ Medium |
+| Full hashing | ◎ Anonymous | △ Hard |
+
+**Decision**: **Full hashing (paths and content)**
+
+**Implementation**:
+```
+Path: /Users/zem/private/photo.jpg
+  ↓ sha256(path)
+PathHash: sha256:aaa111...
+
+Content: [binary image data]
+  ↓ sha256(data)  
+ContentHash: sha256:xxx999...
+```
+
+**Data Format**:
+```json
+// index.json - no readable paths
+{
+  "sha256:aaa111...": "sha256:xxx999...",
+  "sha256:bbb222...": "sha256:yyy888..."
+}
+
+// favorites.json - content hash only
+{
+  "version": 1,
+  "items": {
+    "sha256:xxx999...": { "addedAt": "2025-12-14T10:30:00Z" },
+    "sha256:yyy888...": { "addedAt": "2025-12-14T11:00:00Z" }
+  }
+}
+```
+
+**Behavior**:
+
+| Scenario | Result |
+|----------|--------|
+| Same image, different path | Same contentHash → Favorite preserved |
+| File renamed/moved | Same contentHash → Favorite preserved |
+| Same name, different content | Different contentHash → Separate items |
+| ZIP renamed (A.zip → A2.zip) | Same contentHash → Favorites work |
+
+**Consequences**:
+- ✅ Complete privacy (no readable paths)
+- ✅ Automatic favorite migration on file move
+- ✅ Deduplication (same image = same cache)
+- ⚠️ Debugging requires hash lookup
+- ⚠️ Hash calculation adds processing time (mitigated by caching)
+
+---
+
+### Decision 13: Favorite Feature Design
+
+**Date**: 2025-12-14
+
+**Context**: User wants to mark important images and prevent accidental deletion.
+
+**Requirements**:
+- Mark/unmark individual images with ★
+- Favorite images cannot be deleted (safety)
+- Favorites persist across sessions
+- Favorites follow the image (not the path)
+
+**Decision**:
+
+**Data Model**:
+- Key: contentHash (sha256 of image data)
+- Value: metadata (addedAt timestamp, optional note)
+
+**UI**:
+- ★ overlay on thumbnail (yellow/gold)
+- `v` key to toggle favorite
+- Favorite images excluded from delete operations
+- Warning if trying to delete favorites
+
+**Safety Rules**:
+1. Favorited images are **never** included in `pathsToRemove`
+2. Delete button shows warning: "N件のお気に入りは除外されます"
+3. ZIP export includes favorites regardless of selection mode
+
+**Consequences**:
+- ✅ Prevents accidental deletion of important images
+- ✅ Works across ZIP/folder sources
+- ✅ Survives file moves/renames
+- ⚠️ User must unfavorite to delete
+
+---
+
 ## Deferred Decisions
 
 ### Export Directory Structure
@@ -461,6 +597,68 @@ class FolderManager: ImageSource { ... }   // new
 
 ---
 
+### 2025-12-14: Phase 2.1 Planning Session
+
+**Participants**: Zem, Claude
+
+**Topic**: UX improvements from real usage
+
+**Discussion**:
+User feedback after using Phase 2:
+- Thumbnails too small for large displays
+- Want keyboard-driven workflow
+- Need favorites to prevent accidental deletion
+- Cache would improve perceived performance
+
+**Topic**: Thumbnail sizing
+
+**Decision**:
+- Add to Settings + UI slider
+- Presets: Small (80px), Medium (120px), Large (180px), Custom
+
+**Topic**: Favorite feature requirements
+
+**Discussion**:
+- Primary purpose: prevent accidental deletion (safety)
+- Secondary: mark important images for later
+- Must persist across sessions and file moves
+- ★ visual indicator on thumbnails
+
+**Topic**: Privacy-first metadata design
+
+**Discussion**:
+- Concern: storing paths reveals folder structure, dates, project names
+- Solution: hash everything (both paths and content)
+- Content hash enables: favorite migration on file move, deduplication
+- Path hash enables: fast lookup without exposing structure
+
+**Data location decision**:
+- `~/Library/Application Support/Erimil/` (Apple recommended)
+- Follows same pattern as Finder, Photos.app, etc.
+
+**Topic**: Keyboard shortcuts
+
+**Initial mapping**:
+- `wasd` or arrow keys: navigate thumbnails
+- `x`: toggle selection (exclude/keep)
+- `v`: toggle favorite
+- `Space`: preview
+- `Enter`: close preview
+
+Future (Phase 2.2):
+- `a/f`: previous/next in slide mode
+- `z/c`: previous/next favorite
+- `Shift-A/F`: previous/next source
+
+**Phase 2.1 scope (confirmed)**:
+1. Thumbnail size adjustment
+2. Cache infrastructure (hash calculation + Application Support storage)
+3. Keyboard navigation (wasd/arrows + x selection)
+4. Space key preview
+5. Favorite feature (v toggle, ★ display, delete protection)
+
+---
+
 ## References
 
 - [kurumil repository](https://github.com/zembutsu/kurumil)
@@ -474,3 +672,4 @@ class FolderManager: ImageSource { ... }   // new
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
+> Last updated: 2025-12-14 (Phase 2.1 planning)
