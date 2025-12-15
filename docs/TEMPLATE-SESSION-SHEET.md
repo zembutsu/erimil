@@ -1,0 +1,131 @@
+# Session Sheet Template
+
+> Real-time record of a development session
+> Part of Bebop Style Development methodology
+
+---
+
+## LOG#\<num\>: \<Session Title\>
+
+**Date**: YYYY-MM-DD  
+**Duration**: HH:MM - HH:MM  
+**Issues**: #X, #Y, #Z  
+**Actors**: Claude, Zem  
+**Depends on**: LOG#\<prev\> (if any)
+
+---
+
+### Setlist (Session Goals)
+
+- [ ] Issue #X: \<goal\>
+- [ ] Issue #Y: \<goal\>
+- [ ] \<other task\>
+
+---
+
+### Timeline
+
+| Time | Actor | Action | Issue | Status |
+|------|-------|--------|-------|--------|
+| HH:MM | Zem | Session start, Setlist Check | - | - |
+| HH:MM | Claude | Propose approach | #X | 🔄 |
+| HH:MM | Zem | Review & approve | #X | ✅ |
+| HH:MM | Claude | Implement | #X | 🔄 |
+| HH:MM | Zem | Test | #X | ✅/❌ |
+| ... | ... | ... | ... | ... |
+
+**Status icons**:
+- 🔄 In progress
+- ✅ Completed
+- ❌ Blocked / Failed
+- ⏸️ Paused
+- 💡 Insight / Discovery
+
+---
+
+### Notes
+
+> Real-time observations, decisions, blockers, discoveries
+
+- 
+- 
+- 
+
+---
+
+### Outcome
+
+**Completed**:
+- [ ] Issue #X: \<result\>
+- [ ] Issue #Y: \<result\>
+
+**Remaining**:
+- [ ] Issue #Z: \<reason\>
+
+**Discoveries**:
+- \<unexpected findings\>
+
+---
+
+### Handoff Bridge
+
+**Carry forward to next session**:
+- 
+- 
+
+**Technical notes**:
+- 
+
+**Blockers**:
+- 
+
+---
+
+### → LOGBOOK Entry
+
+> Copy key points to LOGBOOK.md after session ends
+
+```markdown
+## YYYY-MM-DD (LOG#<num>: <Session Title>)
+
+### 📍 Current Position
+- 
+
+### ⚓ Decisions
+- 
+
+### 💡 Insights
+- 
+
+### 📚 Learnings
+- 
+
+### ⏸️ Parked
+- 
+
+### 🌊 Ideas
+- 
+
+### 🌉 Handoff Bridge
+- 
+```
+
+---
+
+## Usage Notes
+
+1. **Start of session**: Copy this template, fill in header and Setlist
+2. **During session**: Update Timeline in real-time
+3. **End of session**: Fill Outcome, Handoff Bridge, then extract to LOGBOOK
+4. **Archive**: Save as `sessions/LOG-<num>-<title>.md` (optional)
+
+## Naming Convention
+
+```
+LOG#001 - First session
+LOG#002 - Second session
+...
+LOG#NNN - N-th session
+```
+
+Sequential numbering, project-wide unique.
