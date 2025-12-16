@@ -491,6 +491,41 @@ ContentHash: sha256:xxx999...
 
 ---
 
+### Decision 14: Phase-based Versioning
+
+**Date**: 2025-12-16
+
+**Context**: At Phase 2.1 completion, considered bumping version to v0.3.0. This raised the question of when to increment version numbers during 0.x.x development.
+
+**Options Considered**:
+
+| Option | Description | Pros | Cons |
+|--------|-------------|------|------|
+| A | Sub-phase versioning (0.3.0 for 2.1) | Fine-grained tracking | Overhead, meaningless without users |
+| B | Phase versioning (0.2.x for Phase 2) | Clear milestones | Less granular |
+| C | Feature versioning | Flexible | Inconsistent |
+
+**Decision**: **Option B (Phase-based versioning)**
+
+- 0.1.0 = Phase 1 (MVP)
+- 0.2.x = Phase 2 (all sub-phases 2.1, 2.2, 2.3, 2.4)
+- 0.3.0 = Phase 3
+- 1.0.0 = Public release
+
+**Rationale**:
+- Version numbers are "promises to external users" - no users yet means no need for fine-grained versioning
+- Commit log provides sufficient detail for internal tracking
+- CHANGELOG [Unreleased] section accumulates changes until Phase completion
+- Reduces overhead of version management during active development
+
+**Consequences**:
+- ✅ All Phase 2.x changes accumulate in [Unreleased]
+- ✅ Version bump only at Phase boundaries or major milestones
+- ✅ Tag creation aligned with Phase completion
+- ⚠️ Less granular external tracking (acceptable for 0.x.x)
+
+---
+
 ## Deferred Decisions
 
 ### Export Directory Structure
@@ -672,4 +707,4 @@ Future (Phase 2.2):
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2025-12-14 (Phase 2.1 planning)
+> Last updated: 2025-12-16 (Phase 2.1 completion, versioning policy)

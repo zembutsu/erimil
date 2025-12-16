@@ -410,3 +410,114 @@ Bebop method may be applicable not only to software development but also as **co
 2. **Reproducible** - Not Erimil-specific, applicable to other projects
 3. **Applies to Human-AI-Human all** - Form of collaboration doesn't matter
 4. **Methodology itself evolves** - TEMPLATE-FEEDBACK is the proof
+
+
+
+## S002 Practice Feedback (2025-12-16)
+
+Session focused on bug investigation (#7) which revealed issue was already fixed. Primary outcome was documentation and process refinement.
+
+### Discoveries
+
+| # | Issue | Description |
+|---|-------|-------------|
+| 14 | **"No work needed" is valid outcome** | Bug investigation revealed issue already fixed by cache changes. Documentation-only session is legitimate work. |
+| 15 | **Side-effect fixes require hypothesis** | When closing issues fixed unintentionally, record hypothesis of what fixed it. Provides breadcrumbs for regression tracking. |
+| 16 | **Versioning discipline** | Don't bump version for internal milestones. Phase-based versioning for 0.x.x development reduces overhead. |
+| 17 | **Session End Checklist needed** | Wrap-up had implicit steps. Explicit numbered checklist with delegation scope improves handoff quality. |
+
+### New Issues Identified
+
+| # | Issue | Description | Priority |
+|---|-------|-------------|----------|
+| 18 | **Session End Checklist missing** | WORKFLOW.md lacked explicit wrap-up checklist with numbered items | High |
+| 19 | **Delegation scope unclear** | Which wrap-up tasks can AI prepare vs Human must execute? | High |
+| 20 | **"Already Fixed" pattern undocumented** | No template for closing issues fixed as side-effect | Medium |
+
+### Actions Taken
+
+- [x] Added Session End Checklist to WORKFLOW.md with numbered items
+- [x] Added Delegatable column to checklist (AI can prepare, Human executes)
+- [x] Added Decision 16 (Phase-based Versioning) to DESIGN.md
+- [x] Created S002 session logs (en/ja)
+
+### Proposals for v0.2.0
+
+1. **Numbered Session End Checklist**
+   
+   Explicit numbered items enable:
+   - Clear completion tracking
+   - Future automation (AI delegation)
+   - Consistent wrap-up quality
+
+   ```markdown
+   | # | Item | Scope | Delegatable |
+   |---|------|-------|-------------|
+   | 1 | Session log created | Required | ✅ Yes |
+   | 2 | Handoff Bridge written | Required | ✅ Yes |
+   | 3 | Issues closed/updated | Required | ❌ No (GitHub) |
+   | ...
+   ```
+
+2. **Delegation Scope Column**
+   
+   Mark which tasks AI/System can prepare:
+   - ✅ Yes = AI prepares file/content, Human commits
+   - ❌ No = Human must execute (GitHub, Git, Xcode)
+   
+   Future: As tooling evolves, more items become fully delegatable.
+
+3. **"Already Fixed" Issue Close Pattern**
+   
+   Template for closing issues fixed as side-effect:
+   ```markdown
+   ## Resolution
+   
+   Issue no longer reproduces as of [date].
+   
+   ## Hypothesis
+   
+   Likely fixed by [related change] because [reasoning].
+   
+   ## If Regression Occurs
+   
+   Check [specific areas to investigate].
+   
+   Closing as fixed. Will reopen if regression occurs.
+   ```
+
+4. **Versioning Guidelines in WORKFLOW.md**
+   
+   Add section:
+   ```markdown
+   ### Versioning Strategy
+   
+   During 0.x.x development:
+   - Phase completion → minor version bump
+   - Sub-phase completion → no bump, accumulate in [Unreleased]
+   - Bug fixes → no bump unless critical
+   - 1.0.0 → public release, compatibility guarantees begin
+   ```
+
+### Key Insight: Delegation as First-Class Concept
+
+The distinction between "AI can prepare" and "Human must execute" is fundamental to Bebop method. Making this explicit in checklists:
+
+1. **Clarifies collaboration boundaries**
+2. **Enables future automation** - numbered items + delegation scope = automatable
+3. **Reduces cognitive load** - Human knows exactly what requires their action
+4. **Documents technical constraints** - Why can't AI do GitHub operations? (No credentials)
+
+This connects to ADC's "Boundary, Not Control" principle: define what's delegatable, let AI operate freely within those boundaries.
+
+---
+
+## Licks Discovered (S002)
+
+| # | Type | Content |
+|---|------|---------|
+| 8 | 💡 Discovery | Session End Checklist with numbered items + delegation scope |
+| 9 | 💡 Discovery | "Already Fixed" close pattern for side-effect fixes |
+| 10 | 🔥 Important | Delegation scope as explicit column in process checklists |
+| 11 | ⚠️ Caution | Don't bump version for sub-phase completions |
+

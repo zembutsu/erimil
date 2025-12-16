@@ -421,6 +421,25 @@ Actors: Claude, Zem
    - WORKFLOW.md - Add learnings to Development Principles (if any)
    - TEMPLATE-FEEDBACK.md - Add methodology insights (if any)
 
+4. **Session End Checklist**
+
+   Run through this checklist before final commit:
+
+   | # | Item | Scope | Delegatable |
+   |---|------|-------|-------------|
+   | 1 | Session log created (S{NNN}_en.md, S{NNN}_ja.md) | Required | ✅ Yes |
+   | 2 | Handoff Bridge written | Required | ✅ Yes |
+   | 3 | Completed Issues closed with comment | Required | ❌ No (GitHub) |
+   | 4 | Open Issues updated with progress comment | Recommended | ❌ No (GitHub) |
+   | 5 | DESIGN.md updated (if new Decisions) | If applicable | ✅ Yes |
+   | 6 | PROJECT.md updated (if Phase complete) | If applicable | ✅ Yes |
+   | 7 | CHANGELOG.md updated | If applicable | ✅ Yes |
+   | 8 | WORKFLOW.md updated (if new learnings) | If applicable | ✅ Yes |
+   | 9 | TEMPLATE-FEEDBACK.md updated (if methodology insights) | If applicable | ✅ Yes |
+   | 10 | Commit message drafted | Required | ✅ Yes |
+
+   **Delegatable** = AI/System can prepare; Human executes Git/GitHub operations
+
 ---
 
 ### When to Reference / Update Each Document
