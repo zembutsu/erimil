@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Quick Look mode**: Space key opens preview in sheet window (Phase 2.2)
+- **Slide Mode**: f key opens fullscreen presentation view (Phase 2.2)
+- **Image navigation**: a/d and arrow keys to browse images in preview (Phase 2.2)
+- **Favorite navigation**: z/c keys to jump between favorite images (Phase 2.2)
+- **Position indicator**: Shows current position (1/N) in both preview modes (Phase 2.2)
+- **Auto-hide controls**: Slide Mode controls hide automatically, toggle with Space (Phase 2.2)
+- `ImageViewerCore.swift` - Shared image viewer component
+- `SlideWindowController.swift` - Fullscreen window management
+
+### Technical
+- D005: Mode Definitions & Component Architecture decision recorded
+
 ## [0.3.0] - 2025-12-16
 
 ### Added

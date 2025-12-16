@@ -35,10 +35,11 @@ Part of the **DDL (Do Different Lab)** tool family, designed to work alongside [
 ## Current Status
 
 - **Version**: 0.3.0 (released)
-- **Phase**: Phase 2.2 Development
+- **Phase**: Phase 2.3 Development
 - **Phase 1**: ✅ Completed (2025-12-13)
 - **Phase 2**: ✅ Completed (2025-12-14)
 - **Phase 2.1**: ✅ Completed (2025-12-16)
+- **Phase 2.2**: ✅ Completed (2025-12-17)
 
 ## Development Principles
 
@@ -90,11 +91,13 @@ This project uses AI-assisted development following the WORKFLOW.md guidelines:
 - ✅ Space key preview (window-based)
 - ✅ Favorite feature (★/☆ hybrid, delete protection, v toggle)
 
-### Phase 2.2 (Planned) - Slide Mode
-- Full-screen presentation mode (Space key option)
-- a/f for previous/next image
-- z/c for previous/next favorite
-- Shift-A/F for previous/next source
+### Phase 2.2 - ✅ Completed (2025-12-17) - Slide Mode
+- ✅ Quick Look mode (Space key opens sheet preview)
+- ✅ Slide Mode (f key opens fullscreen NSWindow)
+- ✅ a/d and arrow keys for image navigation
+- ✅ z/c for favorite jump navigation
+- ✅ Position indicator (1/N) in both modes
+- ✅ Auto-hide controls in Slide Mode
 
 ### Phase 2.3 (Planned) - Performance
 - Thumbnail disk cache

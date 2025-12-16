@@ -78,7 +78,7 @@ Some operations can be performed by AI/System without human approval:
 | Dependency changes | ❌ Propose only | Approval required |
 
 **Repository naming convention for AI experiments**:
-- Prefix: `ai-exp/<name>` - Indicates AI-driven experimental work
+- Prefix: `ai-exp/<n>` - Indicates AI-driven experimental work
 - Example: `ai-exp/auto-refactor`, `ai-exp/test-coverage`
 
 **Scope completion**:
@@ -140,6 +140,66 @@ Is it in scope for current Setlist?
 **Parked item format**:
 ```markdown
 - [PARKED] <topic> - <one-line description> (from LOG#<num>)
+```
+
+**Park Metadata** (S003):
+
+For better traceability, parks should include:
+
+```markdown
+[PARKED/Who/Session/Context] Topic - Description
+```
+
+**Examples**:
+- `[PARKED/Human/S003] Feature idea - Description`
+- `[PARKED/Claude/S003/Step4] Code smell - Description`
+- `[PARKED/S003] Process improvement - Description`
+
+**Benefits**:
+- Know who raised the item
+- Know when it was raised
+- Know what context triggered the observation
+- Cross-session/project learning possible
+
+### Parked Item → Issue Conversion
+
+At session end, review parked items and classify:
+
+| Category | Action |
+|----------|--------|
+| Code quality / Refactor | → GitHub Issue (`refactor`, `ai-exp`) |
+| Feature request | → GitHub Issue (`enhancement`) |
+| Bug discovered | → GitHub Issue (`bug`) |
+| Performance issue | → GitHub Issue (`enhancement`, `performance`) |
+| Process improvement | → WORKFLOW.md |
+| Philosophy / Insight | → LOGBOOK.md |
+
+**Issue candidate marker during session**:
+```markdown
+[PARKED/ISSUE] Topic - Description
+```
+
+Items marked `[PARKED/ISSUE]` are reviewed at session end for GitHub Issue creation.
+
+**Issue body template** (for items from Park):
+```markdown
+### Description
+<What needs to be done>
+
+### Context
+Identified during S{NNN} ({phase/step context}).
+<Why this matters>
+
+### Acceptance Criteria
+- [ ] Criterion 1
+- [ ] Criterion 2
+
+### Technical Notes
+<Implementation hints>
+
+### Related
+- S{NNN} ({session description})
+- Label: `{labels}`
 ```
 
 ### Communication Protocol
@@ -440,6 +500,86 @@ Actors: Claude, Zem
 
    **Delegatable** = AI/System can prepare; Human executes Git/GitHub operations
 
+### State Snapshot Mechanism (Context Preservation)
+
+**Problem**: Context can be lost due to:
+- Claude's context window compression
+- Human interruptions or task switching
+- Long sessions with many steps
+
+**Solution**: Write state snapshots at step boundaries or key moments.
+
+#### Snapshot Format
+
+```markdown
+## [STATE] S{NNN} / Step {N} {Status} / {Timestamp}
+
+### Position
+- Phase: X.Y, Step: N/M
+- Branch: {branch-name}
+- Last commit: {hash or "none"}
+
+### Completed
+- [x] Step 1: {description}
+- [x] Step 2: {description}
+- [ ] Step 3: {description} ← current
+
+### Current State
+- Files modified: {list}
+- Key decision: {D00X if any}
+- Blocker: {if any}
+
+### Parked (this step)
+- {items parked during this step}
+
+### Next
+- {immediate next action}
+```
+
+#### When to Snapshot
+
+| Trigger | Action |
+|---------|--------|
+| Step complete | Write snapshot |
+| Before complex operation | Write snapshot |
+| Human requests break | Write snapshot |
+| Context feels heavy | Write snapshot |
+| Before delegate to Human | Write snapshot |
+
+#### Snapshot Location
+
+- **During session**: Output as markdown in chat OR write to `/tmp/state_S{NNN}.md`
+- **Session end**: Integrate snapshots into S{NNN}_en.md / S{NNN}_ja.md
+
+#### Integration with Session Log
+
+```
+Step 1 → [STATE] snapshot
+    ↓
+Step 2 → [STATE] snapshot
+    ↓
+Step 3 → [STATE] snapshot
+    ↓
+Session End → Snapshots + Notes → S00X_en.md
+```
+
+#### Future: Parallel Processing Foundation
+
+State snapshots enable:
+- Multiple Claude instances working in parallel
+- Human + Claude parallel work
+- State merge at integration points
+
+```
+Human
+  ├─ Claude A: Task X → [STATE]
+  └─ Claude B: Task Y → [STATE]
+         ↓
+    Merge States → Unified Log
+```
+
+**Prerequisite**: Consistent state format across all actors.
+
 ---
 
 ### When to Reference / Update Each Document
@@ -563,6 +703,61 @@ Common permission issues and solutions:
 | Panel crashes | Check entitlements in Signing & Capabilities |
 | Trash files | Use FileManager.trashItem() (works in sandbox) |
 
+### macOS Fullscreen Constraints (Phase 2.2)
+
+When implementing fullscreen on macOS:
+
+1. **`fullScreenCover()` is iOS-only** - Not available on macOS
+2. **Sheet windows cannot toggle fullscreen** - Attached to parent window
+3. **Use separate NSWindow** - For true fullscreen presentation
+
+**Pattern**:
+```swift
+// ❌ Wrong - iOS only
+.fullScreenCover(isPresented: $showFullscreen) { ... }
+
+// ❌ Wrong - Sheet cannot fullscreen
+.sheet(isPresented: $showSheet) {
+    ContentView()
+        .onAppear { window?.toggleFullScreen(nil) }  // Won't work
+}
+
+// ✅ Correct - Separate NSWindow
+let window = NSWindow(...)
+window.toggleFullScreen(nil)  // Works
+```
+
+**Lesson learned (Phase 2.2)**:
+Check Apple documentation for platform availability before assuming SwiftUI modifiers work on macOS.
+
+### NSWindow Cleanup Pattern (Phase 2.2)
+
+When closing NSWindow programmatically:
+
+```swift
+// ❌ Wrong - Window may linger
+window.close()
+
+// ✅ Correct - Clean closure
+window.contentView = nil  // Release SwiftUI hosting view
+window.orderOut(nil)      // Hide immediately
+window.close()            // Then close
+windowReference = nil     // Release reference
+```
+
+**Why**: `close()` alone may not immediately hide the window, especially during fullscreen animation.
+
+### Build Cache Awareness (Phase 2.2)
+
+When debugging unexpected behavior:
+
+1. **Suspect cache** if code changes don't reflect in app
+2. **Clean Build**: Cmd+Shift+K → Cmd+B
+3. **Full restart**: Quit Xcode and app completely
+4. **Singleton pattern**: Especially problematic with hot reload
+
+**Pattern**: First build after change fails, second succeeds → likely cache issue.
+
 ### Protocol Abstraction (Phase 2)
 
 When supporting multiple similar sources (ZIP, Folder):
@@ -626,4 +821,15 @@ Benefits:
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2025-12-15 (Auto-Judgment, Parking Lot, Templates)
+> Last updated: 2025-12-17 (State Snapshot, macOS Fullscreen, Park→Issue flow)
+
+
+### Long Task Coordination (S003)
+
+When Claude's processing takes 5+ minutes:
+1. Claude explicitly states "This will take ~X minutes"
+2. Claude suggests parallel Human tasks if available
+3. For small edits (few lines), Claude provides bash/sed commands for Human to execute locally
+4. Human can proceed with local work while Claude processes
+
+**Rationale**: Token efficiency + Human time optimization. Small changes are faster locally than round-trip through Claude's file creation.

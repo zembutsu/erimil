@@ -2,7 +2,7 @@
 
 > Notes from Erimil development experience
 > Date: 2025-12-13
-> Updated: 2025-12-15 (Phase 2.1, Session Management, AI Autonomy)
+> Updated: 2025-12-17 (S003 - State Snapshot, Role Division, macOS Constraints)
 
 ## Strengths
 
@@ -222,10 +222,10 @@ Ideas discovered during Phase 2.1 session retrospective for Bebop method's next 
 - Tracking breaks down when multiple sessions run in parallel
 
 **Discovery trigger**:
-- Issue close confirmation was ambiguous about "which completed, which not"
-- Status confusion between #5 (full-screen) and #7 (black screen)
+- Confusion about which issues were complete vs incomplete during closure check
+- #5 (fullscreen) and #7 (black screen) status got mixed up
 
-### Proposal: Session Tracking with LOG#\<num\>
+### Proposal: LOG#\<num\> Session Tracking
 
 ```
 LOG#001: Phase 2.1 UX Improvements
@@ -241,13 +241,13 @@ LOG#002: ★ Export          LOG#003: Bug fixes
 ```
 
 **Benefits**:
-- Separation of GitHub Issue (feature unit) and LOG# (session unit)
+- Separate GitHub Issues (feature-level) from LOG# (session-level)
 - Explicit dependencies (depends_on, blocks)
 - Parallel work tracking possible
 
 ### Proposal: Session Sheet (Real-time Recording)
 
-Format for recording "who, what, which Issue" during session:
+Format for "who does what on which Issue" during session:
 
 ```markdown
 | Time | Actor | Action | Issue | Status |
@@ -257,9 +257,9 @@ Format for recording "who, what, which Issue" during session:
 ```
 
 **Benefits**:
-- Decision trail can be followed
-- Easy to export to LOGBOOK at session end
-- Multi-actor collaboration visualized
+- Decision trail is traceable
+- Easy to write out to LOGBOOK at session end
+- Multi-actor collaboration visible
 
 ### Proposal: Setlist Check (Issue Review)
 
@@ -268,9 +268,9 @@ Routine to check GitHub Issues at session start/end:
 - Decide which Issues to tackle today
 - Update status at end
 
-**Bebop terminology**: Setlist (list of songs to play today)
+**Bebop term**: Setlist (list of songs to play today)
 
-### Future Development: bebop CLI Tool
+### Future: bebop CLI Tool
 
 ```bash
 $ bebop start --issues "#5,#7"
@@ -287,17 +287,17 @@ $ bebop sync
 → GitHub Issues updated with LOG# references
 ```
 
-### Proposals for v0.2.0+
+### v0.2.0+ Proposals
 
 | Priority | Proposal | Description |
 |----------|----------|-------------|
 | High | Setlist Check | Issue review routine at session start/end |
 | High | Session Sheet template | Real-time recording format |
-| High | Parking Lot mechanism | Immediate record and defer for out-of-scope topics |
-| High | Unified templates | Fixed Issue/LOGBOOK format (within session) |
-| High | Auto-Judgment Scope | Explicit AI autonomous operation scope (typo, debug log, minor fix) |
-| Medium | LOG#\<num\> numbering rule | Session-unit tracking |
-| Medium | `ai-exp/` prefix | Naming convention for AI experimental repositories |
+| High | Parking Lot mechanism | Immediate record of out-of-scope topics |
+| High | Unified templates | Fixed Issue / LOGBOOK format (within session) |
+| High | Auto-Judgment Scope | Explicit AI autonomy boundaries (typo, debug log, minor fix) |
+| Medium | LOG#\<num\> numbering | Session-level tracking |
+| Medium | `ai-exp/` prefix | Naming convention for AI experimental repos |
 | Low | bebop CLI | Future automation tool |
 
 These are stepping stones from "solo performance" to "ensemble".
@@ -521,3 +521,174 @@ This connects to ADC's "Boundary, Not Control" principle: define what's delegata
 | 10 | 🔥 Important | Delegation scope as explicit column in process checklists |
 | 11 | ⚠️ Caution | Don't bump version for sub-phase completions |
 
+---
+
+## S003 Practice Feedback (2025-12-17)
+
+Session focused on Phase 2.2 implementation (Slide Mode). Major architectural pivot required when fullScreenCover() discovered to be iOS-only. Primary outcomes: feature implementation + significant process improvements.
+
+### Discoveries
+
+| # | Issue | Description |
+|---|-------|-------------|
+| 21 | **Platform availability not always documented** | fullScreenCover() is iOS-only but many tutorials don't mention this. Always check Apple official docs for platform availability. |
+| 22 | **Context loss is dual-sided** | Both Claude (context window compression) and Human (interruptions, task switching) lose context. Mitigation needed for both. |
+| 23 | **Role division should be dynamic** | Not fixed "Claude does X, Human does Y" but "who is faster AND more accurate for THIS specific task?" |
+| 24 | **Park→Issue conversion needs formalization** | Parked items accumulated but conversion to Issues was ad-hoc. Need explicit classification and conversion flow. |
+
+### New Issues Identified
+
+| # | Issue | Description | Priority |
+|---|-------|-------------|----------|
+| 25 | **State Snapshot mechanism needed** | Long sessions lose context; need periodic state capture | High |
+| 26 | **Park metadata missing** | Who parked, when, in what context - not tracked | High |
+| 27 | **macOS-specific patterns undocumented** | NSWindow cleanup, fullscreen constraints not in WORKFLOW.md | Medium |
+
+### Actions Taken
+
+- [x] Added State Snapshot Mechanism to WORKFLOW.md
+- [x] Added Park Metadata format to WORKFLOW.md
+- [x] Added Park→Issue Conversion flow to WORKFLOW.md
+- [x] Added macOS Fullscreen Constraints to WORKFLOW.md Development Principles
+- [x] Added NSWindow Cleanup Pattern to WORKFLOW.md Development Principles
+- [x] Added Build Cache Awareness to WORKFLOW.md Development Principles
+- [x] Created 5 new GitHub Issues (#14-#18) from session parks
+
+### Key Learning: State Snapshot Mechanism
+
+**Problem**: Context lost due to:
+- Claude's context window compression (happened twice in S003)
+- Human interruptions or task switching
+- Long sessions with many steps
+
+**Solution**: Write state snapshots at step boundaries:
+
+```markdown
+## [STATE] S003 / Step 3 Complete / 05:35
+
+### Position
+- Phase: 2.2, Step: 3/4
+- Branch: feature/5-quick-look-navigation
+
+### Completed
+- [x] Step 1: ImageViewerCore
+- [x] Step 2: a/d navigation
+- [x] Step 3: Slide Mode
+
+### Current State
+- Files modified: 4 files
+- Key decision: D005 (NSWindow for fullscreen)
+
+### Next
+- Step 4: z/c favorite navigation
+```
+
+**Future application**: Foundation for parallel processing (multiple Claudes, Human+Claude parallel work).
+
+### Key Learning: Role Division by Task Characteristics
+
+**Observation**: Effective Human-AI collaboration requires dynamic role division:
+
+| Task Characteristics | Preferred Actor | Reason |
+|---------------------|-----------------|--------|
+| Large documentation with many dependencies | Claude | Consistency, accuracy across files |
+| Official doc references + verification | Claude | Systematic checking |
+| Few lines, 1-2 dependencies | Human | Faster for simple tasks |
+| Complex judgment calls | Human | Context and intent |
+| Repetitive accurate work | Claude | No fatigue, precision |
+
+**Principle**: "Who is faster AND more accurate for THIS specific task?"
+
+This is not fixed roles but dynamic allocation. Human explicitly requested Claude handle large doc updates in S003 because:
+- Many files with interdependencies
+- Consistency across files matters
+- Verification of cross-references needed
+
+### Key Learning: Park Metadata
+
+**Before**: `[PARKED] Topic - Description`
+
+**After**: `[PARKED/Who/Session/Context] Topic - Description`
+
+Examples:
+- `[PARKED/Claude/S003/Step4] Duplicate code - goToPreviousFavorite in 3 places`
+- `[PARKED/Human/S003] Feature idea - Grid-Preview sync`
+
+**Benefits**:
+- Know who raised the item
+- Know when it was raised
+- Know what context triggered the observation
+- Cross-session/project learning possible
+
+### Key Learning: Park→Issue Conversion
+
+At session end, classify parked items:
+
+| Category | Action |
+|----------|--------|
+| Code quality / Refactor | → GitHub Issue (`refactor`, `ai-exp`) |
+| Feature request | → GitHub Issue (`enhancement`) |
+| Bug discovered | → GitHub Issue (`bug`) |
+| Performance issue | → GitHub Issue (`enhancement`, `performance`) |
+| Process improvement | → WORKFLOW.md |
+| Philosophy / Insight | → LOGBOOK.md |
+
+**S003 result**: 12 parked items → 5 Issues (#14-#18) + 3 WORKFLOW.md additions + 4 Later/LOGBOOK
+
+### Proposals for v0.2.0
+
+1. **State Snapshot in Session Sheet template**
+   
+   Add snapshot format and triggers:
+   ```markdown
+   ### [STATE] S{NNN} / Step {N} {Status} / {Timestamp}
+   - Position: Phase X.Y, Step N/M
+   - Completed: [list]
+   - Current: [state]
+   - Next: [action]
+   ```
+
+2. **Role Division Guidelines in WORKFLOW.md**
+   
+   Add section:
+   ```markdown
+   ### Dynamic Role Division
+   
+   Allocate tasks based on characteristics:
+   | Characteristic | Preferred Actor |
+   |----------------|-----------------|
+   | High volume, many dependencies | Claude |
+   | Simple, 1-2 dependencies | Human |
+   | Consistency across files needed | Claude |
+   | Complex judgment required | Human |
+   ```
+
+3. **Platform-Specific Patterns in WORKFLOW.md**
+   
+   Add macOS-specific section:
+   - fullScreenCover() is iOS-only
+   - NSWindow cleanup pattern
+   - Build cache awareness
+
+4. **Park Metadata as Standard**
+   
+   Update Parking Lot Mechanism:
+   ```markdown
+   Format: [PARKED/Who/Session/Context] Topic - Description
+   ```
+
+---
+
+## Licks Discovered (S003)
+
+| # | Type | Content |
+|---|------|---------|
+| 12 | 🔧 Technical | fullScreenCover() unavailable on macOS - always check platform availability |
+| 13 | 🔧 Technical | NSWindow cleanup: contentView = nil → orderOut → close → nil reference |
+| 14 | 🔧 Technical | Build cache issues with singleton - Clean Build (Cmd+Shift+K) resolves |
+| 15 | 📋 Process | State Snapshot mechanism for context preservation across steps |
+| 16 | 📋 Process | Park metadata: [PARKED/Who/Session/Context] format for traceability |
+| 17 | 📋 Process | Park→Issue conversion flow at session end with category classification |
+| 18 | 🤝 Collaboration | Role division by task characteristics (volume, dependencies, consistency) |
+| 19 | 💡 Insight | "Who is faster AND more accurate for THIS task?" as allocation principle |
+| 20 | 💡 Insight | Context loss is dual-sided - both AI and Human need mitigation strategies |

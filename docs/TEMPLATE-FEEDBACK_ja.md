@@ -2,7 +2,7 @@
 
 > Erimil開発時に気づいた課題メモ
 > Date: 2025-12-13
-> Updated: 2025-12-14 (Phase 2.1 追記)
+> Updated: 2025-12-17 (S003 - State Snapshot, 役割分担, macOS 制約)
 
 ## 強み
 
@@ -333,7 +333,7 @@ AI/System が人間承認なしで実行できる操作：
 - 設計変更
 - 依存関係変更
 
-**リポジトリ命名規則**: `ai-exp/<name>` で AI 実験プロジェクトを明示
+**リポジトリ命名規則**: `ai-exp/<n>` で AI 実験プロジェクトを明示
 
 ---
 
@@ -410,3 +410,175 @@ Bebop 方式は、ソフトウェア開発だけでなく、**自律分散シス
 2. **再現性がある** - Erimil 固有ではなく、他プロジェクトに適用可能
 3. **Human-AI-Human すべてに適用** - 協働の形態を選ばない
 4. **方法論自体が進化する** - TEMPLATE-FEEDBACK がその証拠
+
+---
+
+## S003 実践フィードバック (2025-12-17)
+
+Phase 2.2 実装（Slide Mode）に集中したセッション。fullScreenCover() が iOS 専用と判明し、大きなアーキテクチャ変更が必要だった。主な成果：機能実装 + プロセス改善。
+
+### 発見
+
+| # | 課題 | 説明 |
+|---|------|------|
+| 21 | **プラットフォーム対応が常に文書化されていない** | fullScreenCover() は iOS 専用だが多くのチュートリアルで言及なし。Apple 公式ドキュメントで常に確認が必要。 |
+| 22 | **コンテキスト喪失は双方向** | Claude（コンテキストウィンドウ圧縮）も Human（中断、タスク切り替え）もコンテキストを失う。両方に緩和策が必要。 |
+| 23 | **役割分担は動的であるべき** | 「Claude は X、Human は Y」という固定ではなく「このタスクに対して誰がより速く、より正確か？」 |
+| 24 | **Park→Issue 変換の形式化が必要** | Park された項目は溜まるが Issue への変換がアドホック。明示的な分類と変換フローが必要。 |
+
+### 新規特定課題
+
+| # | 課題 | 説明 | 優先度 |
+|---|------|------|--------|
+| 25 | **State Snapshot 機構が必要** | 長いセッションでコンテキスト喪失；定期的な状態キャプチャが必要 | 高 |
+| 26 | **Park メタデータ欠落** | 誰が、いつ、どの文脈で park したか追跡されていない | 高 |
+| 27 | **macOS 固有パターン未文書化** | NSWindow クリーンアップ、フルスクリーン制約が WORKFLOW.md にない | 中 |
+
+### 実施した対策
+
+- [x] State Snapshot Mechanism を WORKFLOW.md に追加
+- [x] Park Metadata 形式を WORKFLOW.md に追加
+- [x] Park→Issue Conversion フローを WORKFLOW.md に追加
+- [x] macOS Fullscreen Constraints を WORKFLOW.md Development Principles に追加
+- [x] NSWindow Cleanup Pattern を WORKFLOW.md Development Principles に追加
+- [x] Build Cache Awareness を WORKFLOW.md Development Principles に追加
+- [x] セッション park から 5 件の新規 GitHub Issues (#14-#18) を作成
+
+### 重要な学び: State Snapshot Mechanism
+
+**問題**: 以下によりコンテキストが失われる：
+- Claude のコンテキストウィンドウ圧縮（S003 で2回発生）
+- Human の中断やタスク切り替え
+- 多くのステップを含む長いセッション
+
+**解決策**: ステップ境界で state snapshot を記録：
+
+```markdown
+## [STATE] S003 / Step 3 Complete / 05:35
+
+### Position
+- Phase: 2.2, Step: 3/4
+- Branch: feature/5-quick-look-navigation
+
+### Completed
+- [x] Step 1: ImageViewerCore
+- [x] Step 2: a/d navigation
+- [x] Step 3: Slide Mode
+
+### Current State
+- Files modified: 4 files
+- Key decision: D005 (NSWindow for fullscreen)
+
+### Next
+- Step 4: z/c favorite navigation
+```
+
+**将来の応用**: 並列処理の基盤（複数 Claude、Human+Claude 並行作業）。
+
+### 重要な学び: タスク特性による役割分担
+
+**観察**: 効果的な Human-AI コラボレーションには動的な役割分担が必要：
+
+| タスク特性 | 適任 | 理由 |
+|-----------|------|------|
+| 依存関係の多い大規模ドキュメント | Claude | ファイル間の一貫性・正確性 |
+| 公式ドキュメント参照・検証 | Claude | 体系的なチェック |
+| 数行、依存関係1-2個 | Human | シンプルなタスクは早い |
+| 複雑な判断が必要 | Human | 文脈と意図 |
+| 反復的で正確さ重視 | Claude | 疲労なし、精度維持 |
+
+**原則**: 「このタスクに対して誰がより速く、より正確か？」
+
+これは固定的な役割ではなく動的配分。S003 で Human が Claude に大規模ドキュメント更新を明示的に依頼した理由：
+- 相互依存のある多数のファイル
+- ファイル間の一貫性が重要
+- 相互参照の検証が必要
+
+### 重要な学び: Park メタデータ
+
+**変更前**: `[PARKED] Topic - Description`
+
+**変更後**: `[PARKED/誰/セッション/文脈] Topic - Description`
+
+例：
+- `[PARKED/Claude/S003/Step4] 重複コード - goToPreviousFavorite が3箇所`
+- `[PARKED/Human/S003] 機能アイデア - Grid-Preview 同期`
+
+**利点**:
+- 誰が提起したかわかる
+- いつ提起されたかわかる
+- どの文脈で観察されたかわかる
+- セッション/プロジェクト横断的な学習が可能
+
+### 重要な学び: Park→Issue 変換
+
+セッション終了時に park 項目を分類：
+
+| カテゴリ | アクション |
+|---------|----------|
+| コード品質 / リファクタ | → GitHub Issue (`refactor`, `ai-exp`) |
+| 機能リクエスト | → GitHub Issue (`enhancement`) |
+| バグ発見 | → GitHub Issue (`bug`) |
+| パフォーマンス問題 | → GitHub Issue (`enhancement`, `performance`) |
+| プロセス改善 | → WORKFLOW.md |
+| 哲学 / 洞察 | → LOGBOOK.md |
+
+**S003 結果**: 12 park 項目 → 5 Issues (#14-#18) + 3 WORKFLOW.md 追加 + 4 Later/LOGBOOK
+
+### v0.2.0 への提案
+
+1. **Session Sheet テンプレートに State Snapshot を追加**
+   
+   スナップショット形式とトリガーを追加：
+   ```markdown
+   ### [STATE] S{NNN} / Step {N} {Status} / {Timestamp}
+   - Position: Phase X.Y, Step N/M
+   - Completed: [list]
+   - Current: [state]
+   - Next: [action]
+   ```
+
+2. **WORKFLOW.md に役割分担ガイドラインを追加**
+   
+   セクション追加：
+   ```markdown
+   ### Dynamic Role Division
+   
+   特性に基づいてタスクを配分：
+   | 特性 | 適任 |
+   |------|------|
+   | 大量、多依存関係 | Claude |
+   | シンプル、依存1-2個 | Human |
+   | ファイル間一貫性必要 | Claude |
+   | 複雑な判断必要 | Human |
+   ```
+
+3. **WORKFLOW.md にプラットフォーム固有パターンを追加**
+   
+   macOS 固有セクション追加：
+   - fullScreenCover() は iOS 専用
+   - NSWindow クリーンアップパターン
+   - ビルドキャッシュの認識
+
+4. **Park メタデータを標準化**
+   
+   Parking Lot Mechanism 更新：
+   ```markdown
+   形式: [PARKED/誰/セッション/文脈] Topic - Description
+   ```
+
+---
+
+## Licks Discovered (S003)
+
+| # | タイプ | 内容 |
+|---|--------|------|
+| 12 | 🔧 技術 | fullScreenCover() は macOS で利用不可 - 常にプラットフォーム対応を確認 |
+| 13 | 🔧 技術 | NSWindow クリーンアップ: contentView = nil → orderOut → close → nil 参照 |
+| 14 | 🔧 技術 | シングルトンでビルドキャッシュ問題 - Clean Build (Cmd+Shift+K) で解決 |
+| 15 | 📋 プロセス | State Snapshot 機構でステップ間のコンテキスト保持 |
+| 16 | 📋 プロセス | Park メタデータ: [PARKED/誰/セッション/文脈] 形式で追跡性向上 |
+| 17 | 📋 プロセス | セッション終了時の Park→Issue 変換フローとカテゴリ分類 |
+| 18 | 🤝 協働 | タスク特性による役割分担（量、依存関係、一貫性要件） |
+| 19 | 💡 洞察 | 「このタスクに対して誰がより速く、より正確か？」を配分原則に |
+| 20 | 💡 洞察 | コンテキスト喪失は双方向 - AI も Human も緩和策が必要 |
