@@ -29,17 +29,19 @@ class SlideWindowController {
     ///   - imageSource: The image source (ZIP or Folder)
     ///   - entries: Array of image entries
     ///   - initialIndex: Starting image index
+    ///   - favoriteIndices: Set of favorite entry indices for z/c navigation
     ///   - onClose: Callback when window is closed
     ///   - onIndexChange: Callback when navigation changes index (for Grid sync)
     func open(
         imageSource: any ImageSource,
         entries: [ImageEntry],
         initialIndex: Int,
+        favoriteIndices: Set<Int>,
         onClose: @escaping () -> Void,
         onIndexChange: ((Int) -> Void)? = nil
     ) {
         print("[SlideWindowController] open() called")
-        print("[SlideWindowController] entries.count: \(entries.count), initialIndex: \(initialIndex)")
+        print("[SlideWindowController] entries.count: \(entries.count), initialIndex: \(initialIndex), favorites: \(favoriteIndices.count)")
         
         // Close existing window if any
         close()
@@ -51,6 +53,7 @@ class SlideWindowController {
             imageSource: imageSource,
             entries: entries,
             initialIndex: initialIndex,
+            favoriteIndices: favoriteIndices,
             onClose: { [weak self] in
                 print("[SlideWindowController] onClose callback triggered")
                 self?.close()
@@ -141,6 +144,7 @@ struct SlideWindowView: View {
     let imageSource: any ImageSource
     let entries: [ImageEntry]
     let initialIndex: Int
+    let favoriteIndices: Set<Int>
     let onClose: () -> Void
     let onExitFullScreen: () -> Void
     let onIndexChange: ((Int) -> Void)?
@@ -155,7 +159,8 @@ struct SlideWindowView: View {
                 imageSource: imageSource,
                 entries: entries,
                 currentIndex: $currentIndex,
-                showPositionIndicator: false
+                showPositionIndicator: false,
+                favoriteIndices: favoriteIndices
             )
             
             // Controls overlay (auto-hide capable)
@@ -168,6 +173,8 @@ struct SlideWindowView: View {
                 onClose: onClose,
                 onPrevious: { goToPrevious() },
                 onNext: { goToNext() },
+                onPreviousFavorite: { goToPreviousFavorite() },
+                onNextFavorite: { goToNextFavorite() },
                 onExitFullScreen: onExitFullScreen,
                 onToggleControls: { showControls.toggle() }
             )
@@ -282,6 +289,28 @@ struct SlideWindowView: View {
         guard currentIndex < entries.count - 1 else { return }
         currentIndex += 1
     }
+    
+    private func goToPreviousFavorite() {
+        guard !favoriteIndices.isEmpty else { return }
+        
+        let previousFavorites = favoriteIndices.filter { $0 < currentIndex }
+        if let targetIndex = previousFavorites.max() {
+            currentIndex = targetIndex
+        } else if let lastFavorite = favoriteIndices.max(), lastFavorite != currentIndex {
+            currentIndex = lastFavorite
+        }
+    }
+    
+    private func goToNextFavorite() {
+        guard !favoriteIndices.isEmpty else { return }
+        
+        let nextFavorites = favoriteIndices.filter { $0 > currentIndex }
+        if let targetIndex = nextFavorites.min() {
+            currentIndex = targetIndex
+        } else if let firstFavorite = favoriteIndices.min(), firstFavorite != currentIndex {
+            currentIndex = firstFavorite
+        }
+    }
 }
 
 // MARK: - Slide Key Handler
@@ -290,6 +319,8 @@ struct SlideKeyHandler: NSViewRepresentable {
     let onClose: () -> Void
     let onPrevious: () -> Void
     let onNext: () -> Void
+    let onPreviousFavorite: () -> Void
+    let onNextFavorite: () -> Void
     let onExitFullScreen: () -> Void
     let onToggleControls: () -> Void
     
@@ -298,6 +329,8 @@ struct SlideKeyHandler: NSViewRepresentable {
         view.onClose = onClose
         view.onPrevious = onPrevious
         view.onNext = onNext
+        view.onPreviousFavorite = onPreviousFavorite
+        view.onNextFavorite = onNextFavorite
         view.onExitFullScreen = onExitFullScreen
         view.onToggleControls = onToggleControls
         DispatchQueue.main.async {
@@ -310,6 +343,8 @@ struct SlideKeyHandler: NSViewRepresentable {
         nsView.onClose = onClose
         nsView.onPrevious = onPrevious
         nsView.onNext = onNext
+        nsView.onPreviousFavorite = onPreviousFavorite
+        nsView.onNextFavorite = onNextFavorite
         nsView.onExitFullScreen = onExitFullScreen
         nsView.onToggleControls = onToggleControls
     }
@@ -318,6 +353,8 @@ struct SlideKeyHandler: NSViewRepresentable {
         var onClose: (() -> Void)?
         var onPrevious: (() -> Void)?
         var onNext: (() -> Void)?
+        var onPreviousFavorite: (() -> Void)?
+        var onNextFavorite: (() -> Void)?
         var onExitFullScreen: (() -> Void)?
         var onToggleControls: (() -> Void)?
         
@@ -356,6 +393,12 @@ struct SlideKeyHandler: NSViewRepresentable {
                     case "d":
                         print("[SlideKeyView] → Next (d)")
                         onNext?()
+                    case "z":
+                        print("[SlideKeyView] → Previous favorite (z)")
+                        onPreviousFavorite?()
+                    case "c":
+                        print("[SlideKeyView] → Next favorite (c)")
+                        onNextFavorite?()
                     case "f":
                         print("[SlideKeyView] → Exit fullscreen (f)")
                         onExitFullScreen?()

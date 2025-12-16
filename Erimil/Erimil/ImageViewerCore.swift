@@ -10,12 +10,13 @@ import SwiftUI
 import AppKit
 
 /// Core image viewer component shared between Quick Look and Slide Mode
-/// Provides: image display, a/f navigation, position indicator
+/// Provides: image display, a/d navigation, z/c favorite jump, position indicator
 struct ImageViewerCore: View {
     let imageSource: any ImageSource
     let entries: [ImageEntry]
     @Binding var currentIndex: Int
     let showPositionIndicator: Bool
+    let favoriteIndices: Set<Int>  // Indices of favorite entries for z/c navigation
     
     @State private var loadedImage: NSImage?
     @State private var isLoading: Bool = true
@@ -123,14 +124,40 @@ struct ImageViewerCore: View {
     
     /// Navigate to previous favorite (returns true if found and moved)
     func goToPreviousFavorite() -> Bool {
-        // TODO: Phase 2.2 Step 4 - implement z/c navigation
-        return false
+        guard !favoriteIndices.isEmpty else { return false }
+        
+        // Find the largest favorite index that is less than currentIndex
+        let previousFavorites = favoriteIndices.filter { $0 < currentIndex }
+        guard let targetIndex = previousFavorites.max() else {
+            // No favorite before current position - wrap to last favorite
+            if let lastFavorite = favoriteIndices.max(), lastFavorite != currentIndex {
+                currentIndex = lastFavorite
+                return true
+            }
+            return false
+        }
+        
+        currentIndex = targetIndex
+        return true
     }
     
     /// Navigate to next favorite (returns true if found and moved)
     func goToNextFavorite() -> Bool {
-        // TODO: Phase 2.2 Step 4 - implement z/c navigation
-        return false
+        guard !favoriteIndices.isEmpty else { return false }
+        
+        // Find the smallest favorite index that is greater than currentIndex
+        let nextFavorites = favoriteIndices.filter { $0 > currentIndex }
+        guard let targetIndex = nextFavorites.min() else {
+            // No favorite after current position - wrap to first favorite
+            if let firstFavorite = favoriteIndices.min(), firstFavorite != currentIndex {
+                currentIndex = firstFavorite
+                return true
+            }
+            return false
+        }
+        
+        currentIndex = targetIndex
+        return true
     }
 }
 
@@ -141,6 +168,7 @@ struct ImageViewerCore: View {
         imageSource: ArchiveManager(zipURL: URL(fileURLWithPath: "/tmp/test.zip")),
         entries: [],
         currentIndex: .constant(0),
-        showPositionIndicator: true
+        showPositionIndicator: true,
+        favoriteIndices: []
     )
 }

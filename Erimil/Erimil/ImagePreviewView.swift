@@ -13,11 +13,14 @@ import AppKit
 /// - Space/Esc/Enter: close
 /// - a/←: previous image
 /// - d/→: next image
+/// - z: previous favorite
+/// - c: next favorite
 /// - f: toggle fullscreen (Slide Mode)
 struct ImagePreviewView: View {
     let imageSource: any ImageSource
     let entries: [ImageEntry]
     let initialIndex: Int
+    let favoriteIndices: Set<Int>  // For z/c navigation
     let onClose: () -> Void
     let onToggleFullScreen: () -> Void  // Callback to switch between Quick Look / Slide Mode
     
@@ -30,7 +33,8 @@ struct ImagePreviewView: View {
                 imageSource: imageSource,
                 entries: entries,
                 currentIndex: $currentIndex,
-                showPositionIndicator: false  // Position shown in header instead
+                showPositionIndicator: false,  // Position shown in header instead
+                favoriteIndices: favoriteIndices
             )
             
             // Header overlay
@@ -44,6 +48,8 @@ struct ImagePreviewView: View {
                 onClose: onClose,
                 onPrevious: { goToPrevious() },
                 onNext: { goToNext() },
+                onPreviousFavorite: { goToPreviousFavorite() },
+                onNextFavorite: { goToNextFavorite() },
                 onToggleFullScreen: onToggleFullScreen
             )
             .allowsHitTesting(false)
@@ -155,6 +161,32 @@ struct ImagePreviewView: View {
         guard currentIndex < entries.count - 1 else { return }
         currentIndex += 1
     }
+    
+    private func goToPreviousFavorite() {
+        guard !favoriteIndices.isEmpty else { return }
+        
+        // Find the largest favorite index that is less than currentIndex
+        let previousFavorites = favoriteIndices.filter { $0 < currentIndex }
+        if let targetIndex = previousFavorites.max() {
+            currentIndex = targetIndex
+        } else if let lastFavorite = favoriteIndices.max(), lastFavorite != currentIndex {
+            // Wrap to last favorite
+            currentIndex = lastFavorite
+        }
+    }
+    
+    private func goToNextFavorite() {
+        guard !favoriteIndices.isEmpty else { return }
+        
+        // Find the smallest favorite index that is greater than currentIndex
+        let nextFavorites = favoriteIndices.filter { $0 > currentIndex }
+        if let targetIndex = nextFavorites.min() {
+            currentIndex = targetIndex
+        } else if let firstFavorite = favoriteIndices.min(), firstFavorite != currentIndex {
+            // Wrap to first favorite
+            currentIndex = firstFavorite
+        }
+    }
 }
 
 // MARK: - Key Event Handler for Quick Look
@@ -163,6 +195,8 @@ struct QuickLookKeyHandler: NSViewRepresentable {
     let onClose: () -> Void
     let onPrevious: () -> Void
     let onNext: () -> Void
+    let onPreviousFavorite: () -> Void
+    let onNextFavorite: () -> Void
     let onToggleFullScreen: () -> Void
     
     func makeNSView(context: Context) -> QuickLookKeyView {
@@ -170,6 +204,8 @@ struct QuickLookKeyHandler: NSViewRepresentable {
         view.onClose = onClose
         view.onPrevious = onPrevious
         view.onNext = onNext
+        view.onPreviousFavorite = onPreviousFavorite
+        view.onNextFavorite = onNextFavorite
         view.onToggleFullScreen = onToggleFullScreen
         print("[QuickLookKeyHandler] makeNSView called")
         DispatchQueue.main.async {
@@ -183,6 +219,8 @@ struct QuickLookKeyHandler: NSViewRepresentable {
         nsView.onClose = onClose
         nsView.onPrevious = onPrevious
         nsView.onNext = onNext
+        nsView.onPreviousFavorite = onPreviousFavorite
+        nsView.onNextFavorite = onNextFavorite
         nsView.onToggleFullScreen = onToggleFullScreen
     }
     
@@ -190,6 +228,8 @@ struct QuickLookKeyHandler: NSViewRepresentable {
         var onClose: (() -> Void)?
         var onPrevious: (() -> Void)?
         var onNext: (() -> Void)?
+        var onPreviousFavorite: (() -> Void)?
+        var onNextFavorite: (() -> Void)?
         var onToggleFullScreen: (() -> Void)?
         
         override var acceptsFirstResponder: Bool { true }
@@ -223,6 +263,12 @@ struct QuickLookKeyHandler: NSViewRepresentable {
                     case "d":
                         print("[QuickLookKeyView] → Next (d) triggered")
                         onNext?()
+                    case "z":
+                        print("[QuickLookKeyView] → Previous favorite (z) triggered")
+                        onPreviousFavorite?()
+                    case "c":
+                        print("[QuickLookKeyView] → Next favorite (c) triggered")
+                        onNextFavorite?()
                     case "f":
                         print("[QuickLookKeyView] → FullScreen (f) triggered, calling onToggleFullScreen")
                         onToggleFullScreen?()
@@ -244,6 +290,7 @@ struct QuickLookKeyHandler: NSViewRepresentable {
         imageSource: ArchiveManager(zipURL: URL(fileURLWithPath: "/tmp/test.zip")),
         entries: [],
         initialIndex: 0,
+        favoriteIndices: [],
         onClose: {},
         onToggleFullScreen: {}
     )

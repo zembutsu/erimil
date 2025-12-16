@@ -222,6 +222,7 @@ struct ThumbnailGridView: View {
                     imageSource: imageSource,
                     entries: entries,
                     initialIndex: index,
+                    favoriteIndices: favoriteIndices,
                     onClose: { previewMode = .none },
                     onToggleFullScreen: {
                         print("[ThumbnailGridView] onToggleFullScreen called")
@@ -243,6 +244,8 @@ struct ThumbnailGridView: View {
             
             if case .slideMode(let index) = newMode {
                 print("[ThumbnailGridView] Slide Mode requested at index \(index)")
+                // Capture favoriteIndices before closing sheet
+                let favIndices = favoriteIndices
                 // Close sheet first, then open Slide window
                 previewMode = .none
                 
@@ -252,6 +255,7 @@ struct ThumbnailGridView: View {
                         imageSource: imageSource,
                         entries: entries,
                         initialIndex: index,
+                        favoriteIndices: favIndices,
                         onClose: {
                             print("[ThumbnailGridView] SlideWindowController closed")
                             // Slide window closed - could optionally return to Quick Look
@@ -723,6 +727,21 @@ struct ThumbnailGridView: View {
             entryPath: entry.path,
             contentHash: contentHash
         )
+    }
+    
+    /// Get indices of all favorited entries (for z/c navigation)
+    private var favoriteIndices: Set<Int> {
+        // Reference favoritesVersion to create SwiftUI dependency
+        _ = favoritesVersion
+        
+        var indices = Set<Int>()
+        for (index, entry) in entries.enumerated() {
+            let status = getFavoriteStatus(entry)
+            if status != .none {
+                indices.insert(index)
+            }
+        }
+        return indices
     }
     
     /// Check if entry is directly favorited (for delete protection)
