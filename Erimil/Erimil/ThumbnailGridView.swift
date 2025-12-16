@@ -49,6 +49,36 @@ struct KeyEventHandlerView: NSViewRepresentable {
     }
 }
 
+// MARK: - Preview Mode
+
+/// Preview display mode
+enum PreviewMode: Equatable {
+    case none
+    case quickLook(index: Int)   // Window-based preview
+    case slideMode(index: Int)   // Fullscreen presentation
+    
+    var index: Int? {
+        switch self {
+        case .none: return nil
+        case .quickLook(let i), .slideMode(let i): return i
+        }
+    }
+    
+    var isPresented: Bool {
+        self != .none
+    }
+    
+    var isQuickLook: Bool {
+        if case .quickLook = self { return true }
+        return false
+    }
+    
+    var isSlideMode: Bool {
+        if case .slideMode = self { return true }
+        return false
+    }
+}
+
 struct ThumbnailGridView: View {
     let imageSource: any ImageSource
     @Binding var selectedPaths: Set<String>  // Changed: Binding from parent
@@ -58,7 +88,7 @@ struct ThumbnailGridView: View {
     
     @State private var entries: [ImageEntry] = []
     @State private var thumbnails: [String: NSImage] = [:]
-    @State private var previewEntry: ImageEntry?
+    @State private var previewMode: PreviewMode = .none  // Changed: enum for Quick Look vs Slide Mode
     @State private var showExportSuccess = false
     @State private var showExportError = false
     @State private var showDeleteConfirm = false
@@ -118,7 +148,7 @@ struct ThumbnailGridView: View {
                                         )
                                         .id(index)
                                         .onTapGesture(count: 2) {
-                                            openPreview(entry)
+                                            openPreview(at: index)
                                         }
                                         .onTapGesture(count: 1) {
                                             focusedIndex = index
@@ -182,12 +212,61 @@ struct ThumbnailGridView: View {
                 loadSource()
             }
         }
-        .sheet(item: $previewEntry) { entry in
-            ImagePreviewView(
-                imageSource: imageSource,
-                entry: entry,
-                onClose: { previewEntry = nil }
-            )
+        // Quick Look mode (sheet)
+        .sheet(isPresented: Binding(
+            get: { previewMode.isQuickLook },
+            set: { if !$0 { previewMode = .none } }
+        )) {
+            if let index = previewMode.index {
+                ImagePreviewView(
+                    imageSource: imageSource,
+                    entries: entries,
+                    initialIndex: index,
+                    favoriteIndices: favoriteIndices,
+                    onClose: { previewMode = .none },
+                    onToggleFullScreen: {
+                        print("[ThumbnailGridView] onToggleFullScreen called")
+                        print("[ThumbnailGridView] Current previewMode: \(previewMode)")
+                        // Switch from Quick Look to Slide Mode
+                        if let idx = previewMode.index {
+                            print("[ThumbnailGridView] Setting previewMode to .slideMode(index: \(idx))")
+                            previewMode = .slideMode(index: idx)
+                        } else {
+                            print("[ThumbnailGridView] ERROR: previewMode.index is nil")
+                        }
+                    }
+                )
+            }
+        }
+        // Slide Mode - opens separate fullscreen window
+        .onChange(of: previewMode) { oldMode, newMode in
+            print("[ThumbnailGridView] previewMode changed: \(oldMode) → \(newMode)")
+            
+            if case .slideMode(let index) = newMode {
+                print("[ThumbnailGridView] Slide Mode requested at index \(index)")
+                // Capture favoriteIndices before closing sheet
+                let favIndices = favoriteIndices
+                // Close sheet first, then open Slide window
+                previewMode = .none
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    print("[ThumbnailGridView] Opening SlideWindowController...")
+                    SlideWindowController.shared.open(
+                        imageSource: imageSource,
+                        entries: entries,
+                        initialIndex: index,
+                        favoriteIndices: favIndices,
+                        onClose: {
+                            print("[ThumbnailGridView] SlideWindowController closed")
+                            // Slide window closed - could optionally return to Quick Look
+                        },
+                        onIndexChange: { newIndex in
+                            // Sync focusedIndex with Slide Mode navigation
+                            focusedIndex = newIndex
+                        }
+                    )
+                }
+            }
         }
         .alert("エクスポート完了", isPresented: $showExportSuccess) {
             Button("OK") { }
@@ -395,7 +474,7 @@ struct ThumbnailGridView: View {
         contentHashes = [:]  // Clear content hashes when source changes
         selectedPaths = []  // Clear selections when source changes
         focusedIndex = nil  // Reset focus when source changes
-        previewEntry = nil
+        previewMode = .none  // Close preview when source changes
         entries = imageSource.listImageEntries()
         
         print("[ThumbnailGridView] Loaded \(entries.count) entries:")
@@ -526,8 +605,8 @@ struct ThumbnailGridView: View {
             
         // Escape
         case 53:
-            if previewEntry != nil {
-                previewEntry = nil
+            if previewMode.isPresented {
+                previewMode = .none
             } else {
                 focusedIndex = nil
             }
@@ -535,18 +614,17 @@ struct ThumbnailGridView: View {
             
         // Return/Enter
         case 36:
-            if previewEntry != nil {
-                previewEntry = nil
+            if previewMode.isPresented {
+                previewMode = .none
             }
             return true
             
         // Space
         case 49:
-            if previewEntry != nil {
-                previewEntry = nil
+            if previewMode.isPresented {
+                previewMode = .none
             } else {
-                let entry = entries[currentIndex]
-                openPreview(entry)
+                openPreview(at: currentIndex)
             }
             return true
             
@@ -651,6 +729,21 @@ struct ThumbnailGridView: View {
         )
     }
     
+    /// Get indices of all favorited entries (for z/c navigation)
+    private var favoriteIndices: Set<Int> {
+        // Reference favoritesVersion to create SwiftUI dependency
+        _ = favoritesVersion
+        
+        var indices = Set<Int>()
+        for (index, entry) in entries.enumerated() {
+            let status = getFavoriteStatus(entry)
+            if status != .none {
+                indices.insert(index)
+            }
+        }
+        return indices
+    }
+    
     /// Check if entry is directly favorited (for delete protection)
     private func isDirectFavorite(_ entry: ImageEntry) -> Bool {
         // Reference favoritesVersion to create SwiftUI dependency
@@ -672,9 +765,10 @@ struct ThumbnailGridView: View {
         favoritesVersion += 1  // Trigger re-render
     }
     
-    private func openPreview(_ entry: ImageEntry) {
-        print("[openPreview] Opening preview for: \(entry.name)")
-        previewEntry = entry
+    private func openPreview(at index: Int) {
+        guard index >= 0 && index < entries.count else { return }
+        print("[openPreview] Opening preview at index: \(index) - \(entries[index].name)")
+        previewMode = .quickLook(index: index)
     }
     
     // MARK: - Archive Export
