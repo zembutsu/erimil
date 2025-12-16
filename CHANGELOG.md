@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-12-16
+
+### Added
+- **Thumbnail size adjustment**: Configurable in Settings, UI slider in toolbar
+- **Cache infrastructure**: Hash-based thumbnail caching in Application Support
+- **Keyboard navigation**: wasd/arrow keys for grid navigation, x for selection toggle
+- **Space key preview**: Quick preview without double-click
+- **Favorite feature**: 
+  - ★ (direct) / ☆ (inherited) hybrid system
+  - v key to toggle favorite
+  - Delete protection for favorited images
+  - Content-hash based: same image recognized across different ZIPs
+- **Folder restoration**: Remembers last opened folder using Security-Scoped Bookmarks
+- **Session logging**: Development logs in `docs/logbook/`
+
+### Fixed
+- Black screen on first image preview (#7) - resolved via cache timing improvements
+
+### Technical
+- Security-Scoped Bookmarks for sandbox-compatible folder persistence
+- `loadID` pattern for async race condition prevention
+- `favoritesVersion` pattern for SwiftUI state refresh
+
 ## [0.2.0] - 2025-12-14
 
 ### Added
@@ -56,9 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Phase | Highlights |
 |---------|------|-------|------------|
+| 0.3.0 | 2025-12-16 | Phase 2.1 | UX improvements, favorites, keyboard nav |
 | 0.2.0 | 2025-12-14 | Phase 2 | Folder viewer, settings, selection modes |
 | 0.1.0 | 2025-12-13 | Phase 1 | MVP - ZIP viewer and export |
 
-[Unreleased]: https://github.com/zembutsu/erimil/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/zembutsu/erimil/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/zembutsu/erimil/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/zembutsu/erimil/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/zembutsu/erimil/releases/tag/v0.1.0
