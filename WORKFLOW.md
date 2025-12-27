@@ -51,6 +51,33 @@ Human: Commit & merge
 | **Human (Zem)** | Vision, approval, review, testing, Git operations, releases |
 | **System (Claude)** | Analysis, proposal, implementation, documentation drafts |
 
+### Voice Switching (S004)
+
+Actors can switch "Voices" to access different thinking patterns.
+This is not role-play but a structured mode shift.
+
+**Available Voices**:
+
+| Voice | Focus | Questions |
+|-------|-------|-----------|
+| **Developer** | Implementation, architecture, code | How? What breaks? Dependencies? |
+| **Designer** | Experience, flow, motivation | Why? What feeling? What changes? |
+| **Critic** | Risks, edge cases, failure modes | What if? Have we considered? |
+
+**When to switch**:
+- Developer → Designer: When "what feature?" questions aren't producing insights
+- Developer → Critic: Before finalizing a decision
+- Designer → Developer: After insight is captured, ready to implement
+
+**Voice switch format**:
+```
+*[Voice Switch: Developer → Designer]*
+
+<new voice begins here>
+```
+
+**Note**: Voice switching was discovered in S004. Designer Voice interview produced the core insight ("uninterrupted viewing experience") that Developer questioning would not have found.
+
 ### Decision Authority
 
 | Decision Type | Authority |
@@ -211,6 +238,30 @@ Identified during S{NNN} ({phase/step context}).
 5. **On uncertainty**: Ask for clarification rather than assuming
 6. **Design decisions**: Document rationale in DESIGN.md
 
+### Session Checkpoint (S004)
+
+Before starting implementation in a long session, consciously evaluate:
+
+| Question | If Yes | If No |
+|----------|--------|-------|
+| Has significant insight been captured? | Consider split | Continue |
+| Is token usage high (>50% estimated)? | Consider split | Continue |
+| Is implementation scope well-defined? | Can continue | Must clarify first |
+| Would losing context now lose work? | Split and log | Continue |
+
+**Split decision format**:
+```
+[CHECKPOINT] Evaluating session state:
+- Insight captured: Yes/No
+- Token budget: Estimated %
+- Next step clarity: High/Medium/Low
+- Context risk: High/Medium/Low
+
+Decision: Continue / Split
+```
+
+**Rationale**: Implementation with depleted context risks losing discovery work. Better to preserve state and start fresh than to rush implementation.
+
 ### Quality Gates
 
 Before proposing implementation complete:
@@ -355,6 +406,37 @@ Use consistent format for LOGBOOK entries (fixed during session, evolves between
 
 **Note**: Template is fixed within a session. Changes to template structure happen between sessions via TEMPLATE-FEEDBACK.md.
 
+### Session Log Language Policy (S004)
+
+Session logs are maintained in two languages:
+
+| Version | Role | Filename |
+|---------|------|----------|
+| English | Primary (main) | `S{NNN}_{project}_en.md` |
+| Japanese | Secondary (sub) | `S{NNN}_{project}_ja.md` |
+
+**Why English primary**:
+
+Claude thinks in English internally. When logs are written in Japanese first, translation to English introduces semantic drift:
+
+| Original (JP) | Intended | Mistranslated |
+|---------------|----------|---------------|
+| 厳しいフィードバック | strict feedback | harsh feedback |
+| 委ねる | entrust | abandon |
+
+This drift compounds across sessions, causing context misalignment.
+
+**Workflow**:
+1. During session: Record in English (`S{NNN}_en.md`)
+2. At session end: Create Japanese version (`S{NNN}_ja.md`)
+3. Nuances that don't translate: Keep original term with explanation
+
+**Rationale**:
+- LOGBOOK is for context handoff between actors (including future Claude instances)
+- English-first preserves Claude's original thinking
+- Japanese version preserves human-readable nuances for Zem
+- Both versions are authoritative for their respective purposes
+
 ---
 
 ## Development Environment
@@ -377,6 +459,28 @@ open Erimil.xcodeproj
 
 Managed via Swift Package Manager:
 - ZIPFoundation
+
+---
+
+## UX Discovery Patterns (S004)
+
+### Designer Interview Pattern
+
+When switching to Designer Voice for UX discovery, follow this progression:
+
+1. **Origin** — "What made you want to build/use this?"
+2. **Current behavior** — "Walk me through what you actually do today"
+3. **Friction** — "Where does it break? What frustrates you?"
+4. **Ideal** — "What would success look like?"
+5. **Minimal validation** — "If you could try ONE thing first, what would it be?"
+
+**Key principles**:
+- Ask about situations, not features
+- Listen for emotional language ("日が暮れる", "面倒")
+- Distinguish stated needs from underlying needs
+- "Why don't you use it?" > "What feature do you want?"
+
+**Output**: Priority list with user's own words as validation criteria
 
 ---
 
@@ -821,7 +925,7 @@ Benefits:
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2025-12-17 (State Snapshot, macOS Fullscreen, Park→Issue flow)
+> Last updated: 2025-12-27 (S004: Voice Switching, Session Checkpoint, Log Language Policy, Designer Interview Pattern)
 
 
 ### Long Task Coordination (S003)

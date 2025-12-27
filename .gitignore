@@ -18,4 +18,4 @@ xcuserdata/
 *.xcarchive
 
 # Development session logs (internal)
-docs/logbook/S*.md
+docs/logbook/
