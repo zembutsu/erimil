@@ -88,13 +88,14 @@ Each pass refines your selection, with ☆ showing what you liked before.
 
 ## Data Storage
 
-Erimil stores cache and favorites in:
+Erimil stores cache and favorites in the sandboxed container:
 
 ```
-~/Library/Application Support/Erimil/
-├── cache/                    # Thumbnail cache
-├── index.json               # Path → content hash mapping
-└── favorites_hybrid.json    # Favorites data
+~/Library/Containers/jp.pocketstudio.zem.Erimil/Data/Library/Application Support/Erimil/
+├── cache/                      # Thumbnail cache (disk)
+├── index.json                  # Path hash → content hash mapping
+├── favorites_hybrid.json       # Favorites data (hybrid system)
+└── last_folder_bookmark.data   # Security-scoped bookmark for folder restoration
 ```
 
 ## Related Projects
