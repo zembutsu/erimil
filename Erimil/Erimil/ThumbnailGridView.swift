@@ -695,6 +695,11 @@ struct ThumbnailGridView: View {
             toggleFavorite(entry)
             return true
             
+        // F key - open Slide Mode directly (S006)
+        case "f":
+            previewMode = .slideMode(index: currentIndex)
+            return true
+            
         default:
             return false
         }
