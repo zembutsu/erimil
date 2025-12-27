@@ -142,6 +142,73 @@ class SlideWindowController {
     var isOpen: Bool {
         slideWindow != nil
     }
+    
+    /// Update the source while keeping fullscreen state (S005)
+    /// - Parameters:
+    ///   - imageSource: The new image source
+    ///   - entries: New array of image entries
+    ///   - favoriteIndices: New set of favorite indices
+    ///   - onClose: Callback when window is closed
+    ///   - onIndexChange: Callback when navigation changes index
+    ///   - onNextSource: Callback for next source navigation
+    ///   - onPreviousSource: Callback for previous source navigation
+    func updateSource(
+        imageSource: any ImageSource,
+        entries: [ImageEntry],
+        favoriteIndices: Set<Int>,
+        onClose: @escaping () -> Void,
+        onIndexChange: ((Int) -> Void)? = nil,
+        onNextSource: (() -> Void)? = nil,
+        onPreviousSource: (() -> Void)? = nil
+    ) {
+        guard let window = slideWindow else {
+            print("[SlideWindowController] updateSource: no window, falling back to open()")
+            open(
+                imageSource: imageSource,
+                entries: entries,
+                initialIndex: 0,
+                favoriteIndices: favoriteIndices,
+                onClose: onClose,
+                onIndexChange: onIndexChange,
+                onNextSource: onNextSource,
+                onPreviousSource: onPreviousSource
+            )
+            return
+        }
+        
+        print("[SlideWindowController] updateSource: updating content in-place")
+        print("[SlideWindowController] new entries.count: \(entries.count), favorites: \(favoriteIndices.count)")
+        
+        // Create new SwiftUI view with updated content
+        let slideView = SlideWindowView(
+            imageSource: imageSource,
+            entries: entries,
+            initialIndex: 0,  // Start from first image
+            favoriteIndices: favoriteIndices,
+            onClose: { [weak self] in
+                print("[SlideWindowController] onClose callback triggered")
+                self?.close()
+                onClose()
+            },
+            onExitFullScreen: { [weak self] in
+                print("[SlideWindowController] onExitFullScreen callback triggered")
+                self?.close()
+                onClose()
+            },
+            onIndexChange: onIndexChange,
+            onNextSource: onNextSource,
+            onPreviousSource: onPreviousSource
+        )
+        
+        // Replace content view while keeping window state (including fullscreen)
+        let hostingView = NSHostingView(rootView: slideView)
+        window.contentView = hostingView
+        
+        // Ensure window has focus
+        window.makeFirstResponder(hostingView)
+        
+        print("[SlideWindowController] updateSource: content replaced, fullscreen maintained")
+    }
 }
 
 // MARK: - Slide Window View
@@ -389,10 +456,19 @@ struct SlideKeyHandler: NSViewRepresentable {
         
         override var acceptsFirstResponder: Bool { true }
         
+        override func flagsChanged(with event: NSEvent) {
+            print("[SlideKeyView] flagsChanged: modifiers=\(event.modifierFlags.rawValue)")
+            super.flagsChanged(with: event)
+        }
+        
         override func keyDown(with event: NSEvent) {
-            let hasControl = event.modifierFlags.contains(.control)
+            // RAW debug log to check if events arrive at all
+            print("[SlideKeyView] RAW: keyCode=\(event.keyCode), modifiers=\(event.modifierFlags.rawValue), chars='\(event.characters ?? "nil")', charsIgnoring='\(event.charactersIgnoringModifiers ?? "nil")'")
             
-            print("[SlideKeyView] keyDown: keyCode=\(event.keyCode), chars='\(event.charactersIgnoringModifiers ?? "nil")', ctrl=\(hasControl)")
+            let hasControl = event.modifierFlags.contains(.control)
+            let hasCommand = event.modifierFlags.contains(.command)
+            
+            print("[SlideKeyView] keyDown: keyCode=\(event.keyCode), chars='\(event.charactersIgnoringModifiers ?? "nil")', ctrl=\(hasControl), cmd=\(hasCommand)")
             
             switch event.keyCode {
             // Escape - close
