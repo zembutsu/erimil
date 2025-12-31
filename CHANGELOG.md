@@ -5,10 +5,19 @@ All notable changes to Erimil will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unrelased
+## [0.3.2] - 2025-12-31
 
 ### Added
-- F key shortcut in thumbnail grid to open Slide Mode directly (skips preview)
+- **Source navigation in Slide Mode**: Ctrl+A/D to navigate between ZIP files and folders while staying in fullscreen (Phase 2.2)
+- **Direct Slide Mode entry**: F key from grid view launches fullscreen directly, skipping Quick Look (Phase 2.2)
+- `SourceNavigator.swift` - Helper for computing next/previous source
+
+### Known Issues
+- Empty source handling: Navigation to folders with 0 images causes key events to stop responding (#21)
+
+### Technical
+- SlideWindowController now supports source switching callbacks
+- Architecture documentation updated
 
 
 ## [0.3.1] - 2025-12-27
@@ -98,11 +107,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Phase | Highlights |
 |---------|------|-------|------------|
+| 0.3.2 | 2025-12-31 | Phase 2.2 | Fullscreen source navigation, F key shortcut |
 | 0.3.0 | 2025-12-16 | Phase 2.1 | UX improvements, favorites, keyboard nav |
 | 0.2.0 | 2025-12-14 | Phase 2 | Folder viewer, settings, selection modes |
 | 0.1.0 | 2025-12-13 | Phase 1 | MVP - ZIP viewer and export |
 
-[Unreleased]: https://github.com/zembutsu/erimil/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/zembutsu/erimil/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/zembutsu/erimil/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/zembutsu/erimil/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/zembutsu/erimil/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/zembutsu/erimil/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/zembutsu/erimil/releases/tag/v0.1.0
