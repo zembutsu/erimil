@@ -136,8 +136,8 @@ When working on this project:
 
 ## Repository
 
-- GitHub: https://github.com/zembutsu/erimil (planned)
-- Issues: https://github.com/zembutsu/erimil/issues (planned)
+- GitHub: https://github.com/zembutsu/erimil
+- Issues: https://github.com/zembutsu/erimil/issues
 
 ## Related Projects
 
