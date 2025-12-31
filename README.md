@@ -98,9 +98,63 @@ Erimil stores cache and favorites in the sandboxed container:
 └── last_folder_bookmark.data   # Security-scoped bookmark for folder restoration
 ```
 
-## Related Projects
+## Contributing
 
-- [kurumil](https://github.com/zembutsu/kurumil) - Image compression and AI upscaling CLI tool
+Contributions are welcome! This project was created as a practical solution to a real problem, and maintained as a learning resource.
+
+### Development Philosophy
+- **Simplicity First**: Resist feature creep
+- **Privacy Matters**: No telemetry, no cloud
+- **Readable Code**: Clear over clever
+- **User Agency**: Give users control
+
+## Development Process & AI Usage
+
+This project was developed with assistance from Claude AI (Anthropic). I want to be transparent about this approach and my reasoning.
+
+### Standing on the Shoulders of Giants
+
+I've been fortunate to work with open source technologies for over 30 years—from the early internet days to Linux, Virtualization, Cloud Computing, Docker, and beyond. The knowledge and code shared freely by countless developers made my career possible. Using AI trained on open source code without acknowledgment would feel like forgetting where I came from.
+
+### Learning, Not Replacing
+
+I used AI as a **learning accelerator** to explore SwiftUI, a framework I hadn't worked with before:
+
+- I identified the problem (visual preview and selective extraction of images from ZIP archives)
+- I defined all requirements and architectural decisions
+- AI generated initial code structures and API examples
+- I read and understood every line of generated code
+- I debugged, refined, and made all final decisions
+
+This mirrors how I learned in the 1990s: reading others' code, asking questions in forums, and building on shared knowledge. The tools changed, but the learning process remains the same.
+
+### Why Share This?
+
+I'm sharing this development approach for a few reasons:
+
+**Transparency**: The community deserves to know how projects are built, especially when new tools are involved.
+
+**For students**: If you're learning to code, know that using AI as a learning tool is okay—as long as you understand what you're building. Don't copy-paste. Read, understand, modify, and make it yours.
+
+**For fellow developers**: I don't claim this is the "right" way. It's simply my way of balancing learning new technologies with years of experience in software development. Your approach may differ, and that's perfectly valid.
+
+### A Note of Respect
+
+To developers who built their skills entirely through manual effort: I deeply respect that path. This isn't about claiming my approach is superior—it's about being honest regarding the tools I used. The open source community thrives on honesty, sharing, and mutual respect. I hope this project reflects those values, even if the development process looks different from what came before.
+
+---
+
+## Acknowledgments
+
+This project stands on the shoulders of giants and wouldn't exist without:
+
+**Development Support**
+- [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) for reliable ZIP archive handling
+- The macOS developer community for comprehensive documentation and helpful discussions
+- Apple's engineering teams for SwiftUI and the macOS sandbox security model
+
+**Related Tools**
+- [kurumil](https://github.com/zembutsu/kurumil) - Companion tool for image compression and AI upscaling
 
 ## License
 
