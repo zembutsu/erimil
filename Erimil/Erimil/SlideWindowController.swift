@@ -4,6 +4,7 @@
 //
 //  Created for Phase 2.2 - Slide Mode
 //  Session: S003 (2025-12-17)
+//  Updated: S005 (2025-12-27) - Added source navigation (Ctrl+Arrow)
 //
 //  Manages a separate NSWindow for fullscreen Slide Mode viewing.
 //  This approach is required because:
@@ -32,13 +33,17 @@ class SlideWindowController {
     ///   - favoriteIndices: Set of favorite entry indices for z/c navigation
     ///   - onClose: Callback when window is closed
     ///   - onIndexChange: Callback when navigation changes index (for Grid sync)
+    ///   - onNextSource: Callback when user requests next source (Ctrl+Arrow)
+    ///   - onPreviousSource: Callback when user requests previous source (Ctrl+Arrow)
     func open(
         imageSource: any ImageSource,
         entries: [ImageEntry],
         initialIndex: Int,
         favoriteIndices: Set<Int>,
         onClose: @escaping () -> Void,
-        onIndexChange: ((Int) -> Void)? = nil
+        onIndexChange: ((Int) -> Void)? = nil,
+        onNextSource: (() -> Void)? = nil,
+        onPreviousSource: (() -> Void)? = nil
     ) {
         print("[SlideWindowController] open() called")
         print("[SlideWindowController] entries.count: \(entries.count), initialIndex: \(initialIndex), favorites: \(favoriteIndices.count)")
@@ -66,7 +71,9 @@ class SlideWindowController {
                 self?.close()
                 onClose()
             },
-            onIndexChange: onIndexChange
+            onIndexChange: onIndexChange,
+            onNextSource: onNextSource,
+            onPreviousSource: onPreviousSource
         )
         
         // Create hosting view
@@ -135,6 +142,73 @@ class SlideWindowController {
     var isOpen: Bool {
         slideWindow != nil
     }
+    
+    /// Update the source while keeping fullscreen state (S005)
+    /// - Parameters:
+    ///   - imageSource: The new image source
+    ///   - entries: New array of image entries
+    ///   - favoriteIndices: New set of favorite indices
+    ///   - onClose: Callback when window is closed
+    ///   - onIndexChange: Callback when navigation changes index
+    ///   - onNextSource: Callback for next source navigation
+    ///   - onPreviousSource: Callback for previous source navigation
+    func updateSource(
+        imageSource: any ImageSource,
+        entries: [ImageEntry],
+        favoriteIndices: Set<Int>,
+        onClose: @escaping () -> Void,
+        onIndexChange: ((Int) -> Void)? = nil,
+        onNextSource: (() -> Void)? = nil,
+        onPreviousSource: (() -> Void)? = nil
+    ) {
+        guard let window = slideWindow else {
+            print("[SlideWindowController] updateSource: no window, falling back to open()")
+            open(
+                imageSource: imageSource,
+                entries: entries,
+                initialIndex: 0,
+                favoriteIndices: favoriteIndices,
+                onClose: onClose,
+                onIndexChange: onIndexChange,
+                onNextSource: onNextSource,
+                onPreviousSource: onPreviousSource
+            )
+            return
+        }
+        
+        print("[SlideWindowController] updateSource: updating content in-place")
+        print("[SlideWindowController] new entries.count: \(entries.count), favorites: \(favoriteIndices.count)")
+        
+        // Create new SwiftUI view with updated content
+        let slideView = SlideWindowView(
+            imageSource: imageSource,
+            entries: entries,
+            initialIndex: 0,  // Start from first image
+            favoriteIndices: favoriteIndices,
+            onClose: { [weak self] in
+                print("[SlideWindowController] onClose callback triggered")
+                self?.close()
+                onClose()
+            },
+            onExitFullScreen: { [weak self] in
+                print("[SlideWindowController] onExitFullScreen callback triggered")
+                self?.close()
+                onClose()
+            },
+            onIndexChange: onIndexChange,
+            onNextSource: onNextSource,
+            onPreviousSource: onPreviousSource
+        )
+        
+        // Replace content view while keeping window state (including fullscreen)
+        let hostingView = NSHostingView(rootView: slideView)
+        window.contentView = hostingView
+        
+        // Ensure window has focus
+        window.makeFirstResponder(hostingView)
+        
+        print("[SlideWindowController] updateSource: content replaced, fullscreen maintained")
+    }
 }
 
 // MARK: - Slide Window View
@@ -148,6 +222,8 @@ struct SlideWindowView: View {
     let onClose: () -> Void
     let onExitFullScreen: () -> Void
     let onIndexChange: ((Int) -> Void)?
+    let onNextSource: (() -> Void)?
+    let onPreviousSource: (() -> Void)?
     
     @State private var currentIndex: Int = 0
     @State private var showControls: Bool = true
@@ -176,7 +252,9 @@ struct SlideWindowView: View {
                 onPreviousFavorite: { goToPreviousFavorite() },
                 onNextFavorite: { goToNextFavorite() },
                 onExitFullScreen: onExitFullScreen,
-                onToggleControls: { showControls.toggle() }
+                onToggleControls: { showControls.toggle() },
+                onNextSource: onNextSource,
+                onPreviousSource: onPreviousSource
             )
             .allowsHitTesting(false)
         }
@@ -260,6 +338,16 @@ struct SlideWindowView: View {
                 
                 Spacer()
                 
+                // Source navigation hint
+                Text("⌃←/→")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.5))
+                Text("prev/next source")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.3))
+                
+                Spacer()
+                
                 Text("next")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.3))
@@ -323,6 +411,8 @@ struct SlideKeyHandler: NSViewRepresentable {
     let onNextFavorite: () -> Void
     let onExitFullScreen: () -> Void
     let onToggleControls: () -> Void
+    let onNextSource: (() -> Void)?
+    let onPreviousSource: (() -> Void)?
     
     func makeNSView(context: Context) -> SlideKeyView {
         let view = SlideKeyView()
@@ -333,6 +423,8 @@ struct SlideKeyHandler: NSViewRepresentable {
         view.onNextFavorite = onNextFavorite
         view.onExitFullScreen = onExitFullScreen
         view.onToggleControls = onToggleControls
+        view.onNextSource = onNextSource
+        view.onPreviousSource = onPreviousSource
         DispatchQueue.main.async {
             view.window?.makeFirstResponder(view)
         }
@@ -347,6 +439,8 @@ struct SlideKeyHandler: NSViewRepresentable {
         nsView.onNextFavorite = onNextFavorite
         nsView.onExitFullScreen = onExitFullScreen
         nsView.onToggleControls = onToggleControls
+        nsView.onNextSource = onNextSource
+        nsView.onPreviousSource = onPreviousSource
     }
     
     class SlideKeyView: NSView {
@@ -357,11 +451,24 @@ struct SlideKeyHandler: NSViewRepresentable {
         var onNextFavorite: (() -> Void)?
         var onExitFullScreen: (() -> Void)?
         var onToggleControls: (() -> Void)?
+        var onNextSource: (() -> Void)?
+        var onPreviousSource: (() -> Void)?
         
         override var acceptsFirstResponder: Bool { true }
         
+        override func flagsChanged(with event: NSEvent) {
+            print("[SlideKeyView] flagsChanged: modifiers=\(event.modifierFlags.rawValue)")
+            super.flagsChanged(with: event)
+        }
+        
         override func keyDown(with event: NSEvent) {
-            print("[SlideKeyView] keyDown: keyCode=\(event.keyCode), chars='\(event.charactersIgnoringModifiers ?? "nil")'")
+            // RAW debug log to check if events arrive at all
+            print("[SlideKeyView] RAW: keyCode=\(event.keyCode), modifiers=\(event.modifierFlags.rawValue), chars='\(event.characters ?? "nil")', charsIgnoring='\(event.charactersIgnoringModifiers ?? "nil")'")
+            
+            let hasControl = event.modifierFlags.contains(.control)
+            let hasCommand = event.modifierFlags.contains(.command)
+            
+            print("[SlideKeyView] keyDown: keyCode=\(event.keyCode), chars='\(event.charactersIgnoringModifiers ?? "nil")', ctrl=\(hasControl), cmd=\(hasCommand)")
             
             switch event.keyCode {
             // Escape - close
@@ -376,23 +483,43 @@ struct SlideKeyHandler: NSViewRepresentable {
                 
             // Left arrow
             case 123:
-                print("[SlideKeyView] → Previous (←)")
-                onPrevious?()
+                if hasControl {
+                    print("[SlideKeyView] → Previous source (Ctrl+←)")
+                    onPreviousSource?()
+                } else {
+                    print("[SlideKeyView] → Previous (←)")
+                    onPrevious?()
+                }
                 
             // Right arrow
             case 124:
-                print("[SlideKeyView] → Next (→)")
-                onNext?()
+                if hasControl {
+                    print("[SlideKeyView] → Next source (Ctrl+→)")
+                    onNextSource?()
+                } else {
+                    print("[SlideKeyView] → Next (→)")
+                    onNext?()
+                }
                 
             default:
                 if let chars = event.charactersIgnoringModifiers?.lowercased() {
                     switch chars {
                     case "a":
-                        print("[SlideKeyView] → Previous (a)")
-                        onPrevious?()
+                        if hasControl {
+                            print("[SlideKeyView] → Previous source (Ctrl+A)")
+                            onPreviousSource?()
+                        } else {
+                            print("[SlideKeyView] → Previous (a)")
+                            onPrevious?()
+                        }
                     case "d":
-                        print("[SlideKeyView] → Next (d)")
-                        onNext?()
+                        if hasControl {
+                            print("[SlideKeyView] → Next source (Ctrl+D)")
+                            onNextSource?()
+                        } else {
+                            print("[SlideKeyView] → Next (d)")
+                            onNext?()
+                        }
                     case "z":
                         print("[SlideKeyView] → Previous favorite (z)")
                         onPreviousFavorite?()

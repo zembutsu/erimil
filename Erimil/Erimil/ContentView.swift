@@ -17,6 +17,9 @@ struct ContentView: View {
     // Stable image source (not recreated on every render)
     @State private var currentImageSource: (any ImageSource)?
     
+    // S005: Flag to reopen Slide Mode after source switch
+    @State private var shouldReopenSlideMode: Bool = false
+    
     // 確認ダイアログ用
     @State private var pendingSourceURL: URL?
     @State private var pendingSourceType: ImageSourceType?
@@ -46,7 +49,14 @@ struct ContentView: View {
                     selectedPaths: $selectedPaths,  // Changed: pass selectedPaths
                     onExportSuccess: {
                         reloadFolder()
-                    }
+                    },
+                    onRequestNextSource: {
+                        navigateToNextSource()
+                    },
+                    onRequestPreviousSource: {
+                        navigateToPreviousSource()
+                    },
+                    shouldReopenSlideMode: $shouldReopenSlideMode
                 )
                 .id(imageSource.url)  // Force View recreation when source changes
             } else {
@@ -168,6 +178,65 @@ struct ContentView: View {
     
     private func reloadFolder() {
         folderReloadTrigger = UUID()
+    }
+    
+    // MARK: - Source Navigation (S005)
+    
+    private func navigateToNextSource() {
+        guard let currentURL = selectedSourceURL else {
+            print("[ContentView] navigateToNextSource: no current source")
+            return
+        }
+        
+        if let nextURL = SourceNavigator.nextSource(from: currentURL) {
+            print("[ContentView] navigateToNextSource: \(currentURL.lastPathComponent) → \(nextURL.lastPathComponent)")
+            let type = inferSourceType(nextURL)
+            
+            // S005: Set flag to update Slide Mode content (don't close window)
+            if SlideWindowController.shared.isOpen {
+                shouldReopenSlideMode = true
+            }
+            
+            // Skip unsaved changes check - user is in Slide Mode, selections not applicable
+            selectedPaths.removeAll()
+            selectedSourceURL = nextURL
+            selectedSourceType = type
+        } else {
+            print("[ContentView] navigateToNextSource: no next source available")
+        }
+    }
+    
+    private func navigateToPreviousSource() {
+        guard let currentURL = selectedSourceURL else {
+            print("[ContentView] navigateToPreviousSource: no current source")
+            return
+        }
+        
+        if let prevURL = SourceNavigator.previousSource(from: currentURL) {
+            print("[ContentView] navigateToPreviousSource: \(currentURL.lastPathComponent) → \(prevURL.lastPathComponent)")
+            let type = inferSourceType(prevURL)
+            
+            // S005: Set flag to update Slide Mode content (don't close window)
+            if SlideWindowController.shared.isOpen {
+                shouldReopenSlideMode = true
+            }
+            
+            // Skip unsaved changes check - user is in Slide Mode, selections not applicable
+            selectedPaths.removeAll()
+            selectedSourceURL = prevURL
+            selectedSourceType = type
+        } else {
+            print("[ContentView] navigateToPreviousSource: no previous source available")
+        }
+    }
+    
+    /// Infer ImageSourceType from URL (ZIP file or directory)
+    private func inferSourceType(_ url: URL) -> ImageSourceType {
+        if url.pathExtension.lowercased() == "zip" {
+            return .archive
+        } else {
+            return .folder
+        }
     }
 }
 

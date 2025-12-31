@@ -83,6 +83,9 @@ struct ThumbnailGridView: View {
     let imageSource: any ImageSource
     @Binding var selectedPaths: Set<String>  // Changed: Binding from parent
     var onExportSuccess: (() -> Void)?
+    var onRequestNextSource: (() -> Void)?      // S005: Source navigation
+    var onRequestPreviousSource: (() -> Void)?  // S005: Source navigation
+    @Binding var shouldReopenSlideMode: Bool    // S005: Reopen after source switch
     
     @ObservedObject private var settings = AppSettings.shared
     
@@ -263,7 +266,9 @@ struct ThumbnailGridView: View {
                         onIndexChange: { newIndex in
                             // Sync focusedIndex with Slide Mode navigation
                             focusedIndex = newIndex
-                        }
+                        },
+                        onNextSource: onRequestNextSource,
+                        onPreviousSource: onRequestPreviousSource
                     )
                 }
             }
@@ -484,6 +489,32 @@ struct ThumbnailGridView: View {
         if entries.count > 10 {
             print("  ... and \(entries.count - 10) more")
         }
+        
+        // S005: Reopen Slide Mode if flag is set (after source navigation)
+        if shouldReopenSlideMode && !entries.isEmpty {
+            print("[ThumbnailGridView] Reopening Slide Mode after source switch")
+            shouldReopenSlideMode = false
+            
+            // Delay slightly to ensure view is ready
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                let favIndices = favoriteIndices
+                
+                // Use updateSource to maintain fullscreen state
+                SlideWindowController.shared.updateSource(
+                    imageSource: imageSource,
+                    entries: entries,
+                    favoriteIndices: favIndices,
+                    onClose: {
+                        print("[ThumbnailGridView] SlideWindowController closed (after source switch)")
+                    },
+                    onIndexChange: { newIndex in
+                        focusedIndex = newIndex
+                    },
+                    onNextSource: onRequestNextSource,
+                    onPreviousSource: onRequestPreviousSource
+                )
+            }
+        }
     }
     
     private func loadThumbnailIfNeeded(for entry: ImageEntry) {
@@ -662,6 +693,11 @@ struct ThumbnailGridView: View {
         case "v":
             let entry = entries[currentIndex]
             toggleFavorite(entry)
+            return true
+            
+        // F key - open Slide Mode directly (S006)
+        case "f":
+            previewMode = .slideMode(index: currentIndex)
             return true
             
         default:
@@ -1000,6 +1036,7 @@ struct ThumbnailCell: View {
     ThumbnailGridView(
         imageSource: ArchiveManager(zipURL: URL(fileURLWithPath: "/tmp/test.zip")),
         selectedPaths: .constant([]),
-        onExportSuccess: nil
+        onExportSuccess: nil,
+        shouldReopenSlideMode: .constant(false)
     )
 }

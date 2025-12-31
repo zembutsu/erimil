@@ -78,6 +78,23 @@ SwiftUI views for user interaction.
 - **ImagePreviewView**: Modal full-size preview
 - **SettingsView**: Settings panel (⌘,)
 
+### 7. Slide Mode Layer
+
+Fullscreen image viewing and source navigation.
+
+- **SlideWindowController**: Singleton managing fullscreen window
+  - NSWindow with NSHostingView for SwiftUI integration
+  - Keyboard-driven navigation (←/→ for images, Ctrl+A/D for sources)
+  - `updateSource()` for in-place content replacement (preserves fullscreen state)
+  
+- **SlideKeyView**: NSViewRepresentable for keyboard event capture
+  - Captures key events before SwiftUI processing
+  - Routes to SlideWindowController or ContentView
+  
+- **SourceNavigator**: Utility for sibling source discovery
+  - Lists ZIPs and image-containing folders in parent directory
+  - Supports looping navigation (last→first, first→last)
+
 ## Data Flow
 
 ### Opening a Source (ZIP or Folder)
@@ -144,6 +161,32 @@ Show confirmation dialog:
   - "キャンセル" → Stay on current source
 ```
 
+### Fullscreen Source Navigation
+
+```
+User presses Ctrl+D in Slide Mode
+    ↓
+SlideKeyView captures key event
+    ↓
+ContentView.navigateToNextSource()
+    ↓
+SourceNavigator.nextSource(from: currentURL)
+  - Scans parent directory
+  - Filters for ZIPs and image folders
+  - Returns next sibling (with loop)
+    ↓
+ContentView sets shouldReopenSlideMode = true
+    ↓
+selectedSourceURL changes
+    ↓
+ThumbnailGridView.loadSource() detects flag
+    ↓
+SlideWindowController.updateSource()
+  - Creates new SlideView with new entries
+  - Replaces window.contentView
+  - Fullscreen state preserved
+```
+
 ## Key Design Decisions
 
 ### 1. ImageSource Protocol Abstraction
@@ -198,6 +241,8 @@ Erimil/
 ├── ThumbnailCell.swift       # Individual thumbnail (in ThumbnailGridView)
 ├── ImagePreviewView.swift    # Full-size preview modal
 ├── SettingsView.swift        # Settings panel
+├── SlideWindowController.swift # Fullscreen slide mode controller
+├── SourceNavigator.swift     # Sibling source discovery utility
 ├── ImageSource.swift         # Protocol + ImageEntry model
 ├── ArchiveManager.swift      # ZIP ImageSource implementation
 ├── FolderManager.swift       # Folder ImageSource implementation
@@ -225,18 +270,25 @@ ErimilApp
             ├── @State selectedPaths: Set<String>  ← Source of truth
             ├── @State selectedSourceURL: URL?
             ├── @State selectedSourceType: ImageSourceType?
+            ├── @State shouldReopenSlideMode: Bool  ← For source navigation
             │
             ├── SidebarView
             │       ├── @Binding selectedFolderURL
             │       ├── @State rootNode: FolderNode?
             │       └── @State selectedNodeID: UUID?
             │
-            └── ThumbnailGridView
-                    ├── @Binding selectedPaths     ← From parent
-                    ├── @ObservedObject AppSettings.shared
-                    ├── @State entries: [ImageEntry]
-                    ├── @State thumbnails: [String: NSImage]
-                    └── imageSource: any ImageSource
+            ├── ThumbnailGridView
+            │       ├── @Binding selectedPaths     ← From parent
+            │       ├── @Binding shouldReopenSlideMode
+            │       ├── @ObservedObject AppSettings.shared
+            │       ├── @State entries: [ImageEntry]
+            │       ├── @State thumbnails: [String: NSImage]
+            │       └── imageSource: any ImageSource
+            │
+            └── SlideWindowController.shared (Singleton)
+                    ├── window: NSWindow?
+                    ├── entries: [ImageEntry]
+                    └── currentIndex: Int
 ```
 
 ### AppSettings (Singleton)
