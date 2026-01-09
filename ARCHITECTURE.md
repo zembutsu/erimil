@@ -86,14 +86,15 @@ Fullscreen image viewing and source navigation.
   - NSWindow with NSHostingView for SwiftUI integration
   - Keyboard-driven navigation (←/→ for images, Ctrl+A/D for sources)
   - `updateSource()` for in-place content replacement (preserves fullscreen state)
-  
-- **SlideKeyView**: NSViewRepresentable for keyboard event capture
-  - Captures key events before SwiftUI processing
-  - Routes to SlideWindowController or ContentView
-  
+  - Centralized key handling via `NSEvent.addLocalMonitorForEvents` (S008)
+  - State sync to View via NotificationCenter
+  - Empty source support with "No images" display
 - **SourceNavigator**: Utility for sibling source discovery
   - Lists ZIPs and image-containing folders in parent directory
-  - Supports looping navigation (last→first, first→last)
+  - Supports looping navigation (last→first, first→last)  
+- **SlideKeyView**: NSViewRepresentable (supplementary)
+  - Handles Space key for controls toggle only
+  - Main key handling moved to SlideWindowController (S008)
 
 ## Data Flow
 
