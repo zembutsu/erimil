@@ -5,11 +5,7 @@
 //  Created for Phase 2.2 - Slide Mode
 //  Session: S003 (2025-12-17)
 //  Updated: S005 (2025-12-27) - Added source navigation (Ctrl+Arrow)
-//
-//  Manages a separate NSWindow for fullscreen Slide Mode viewing.
-//  This approach is required because:
-//  1. fullScreenCover() is not available on macOS
-//  2. Sheet windows cannot use toggleFullScreen()
+//  Updated: S008 (2025-01-09) - Centralized key handling for empty source support (#21)
 //
 
 import SwiftUI
@@ -22,6 +18,17 @@ class SlideWindowController {
     
     private var slideWindow: NSWindow?
     private var currentIndex: Int = 0
+    
+    // S008: Event monitor for centralized key handling
+    private var eventMonitor: Any?
+    
+    // S008: Callback storage for event monitor
+    private var storedOnClose: (() -> Void)?
+    private var storedOnNextSource: (() -> Void)?
+    private var storedOnPreviousSource: (() -> Void)?
+    private var storedOnIndexChange: ((Int) -> Void)?
+    private var storedEntries: [ImageEntry] = []
+    private var storedFavoriteIndices: Set<Int> = []
     
     private init() {}
     
@@ -53,6 +60,14 @@ class SlideWindowController {
         
         currentIndex = initialIndex
         
+        // S008: Store callbacks and state for event monitor
+        storedOnClose = onClose
+        storedOnNextSource = onNextSource
+        storedOnPreviousSource = onPreviousSource
+        storedOnIndexChange = onIndexChange
+        storedEntries = entries
+        storedFavoriteIndices = favoriteIndices
+        
         // Create the SwiftUI view
         let slideView = SlideWindowView(
             imageSource: imageSource,
@@ -66,12 +81,13 @@ class SlideWindowController {
             },
             onExitFullScreen: { [weak self] in
                 print("[SlideWindowController] onExitFullScreen callback triggered")
-                // Exit fullscreen but keep window open? Or close entirely?
-                // For now, close the window (return to Quick Look)
                 self?.close()
                 onClose()
             },
-            onIndexChange: onIndexChange,
+            onIndexChange: { [weak self] index in
+                self?.currentIndex = index
+                onIndexChange?(index)
+            },
             onNextSource: onNextSource,
             onPreviousSource: onPreviousSource
         )
@@ -109,12 +125,27 @@ class SlideWindowController {
         }
         
         slideWindow = window
+        
+        // S008: Register key event monitor
+        setupEventMonitor()
+        
         print("[SlideWindowController] open() complete")
     }
     
     /// Close the Slide Mode window
     func close() {
         print("[SlideWindowController] close() called")
+        
+        // S008: Remove event monitor first
+        removeEventMonitor()
+        
+        // S008: Clear stored callbacks
+        storedOnClose = nil
+        storedOnNextSource = nil
+        storedOnPreviousSource = nil
+        storedOnIndexChange = nil
+        storedEntries = []
+        storedFavoriteIndices = []
         
         guard let window = slideWindow else {
             print("[SlideWindowController] No window to close")
@@ -179,6 +210,15 @@ class SlideWindowController {
         print("[SlideWindowController] updateSource: updating content in-place")
         print("[SlideWindowController] new entries.count: \(entries.count), favorites: \(favoriteIndices.count)")
         
+        // S008: Update stored state for event monitor
+        currentIndex = 0
+        storedOnClose = onClose
+        storedOnNextSource = onNextSource
+        storedOnPreviousSource = onPreviousSource
+        storedOnIndexChange = onIndexChange
+        storedEntries = entries
+        storedFavoriteIndices = favoriteIndices
+        
         // Create new SwiftUI view with updated content
         let slideView = SlideWindowView(
             imageSource: imageSource,
@@ -195,7 +235,10 @@ class SlideWindowController {
                 self?.close()
                 onClose()
             },
-            onIndexChange: onIndexChange,
+            onIndexChange: { [weak self] index in
+                self?.currentIndex = index
+                onIndexChange?(index)
+            },
             onNextSource: onNextSource,
             onPreviousSource: onPreviousSource
         )
@@ -204,10 +247,173 @@ class SlideWindowController {
         let hostingView = NSHostingView(rootView: slideView)
         window.contentView = hostingView
         
-        // Ensure window has focus
-        window.makeFirstResponder(hostingView)
+        // S008: No need to set firstResponder - event monitor handles keys
         
         print("[SlideWindowController] updateSource: content replaced, fullscreen maintained")
+    }
+    
+    // MARK: - S008: Centralized Key Event Handling
+    
+    private func setupEventMonitor() {
+        removeEventMonitor()  // Ensure no duplicate
+        
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return event }
+            guard self.slideWindow?.isKeyWindow == true else { return event }
+            
+            return self.handleKeyEvent(event)
+        }
+        
+        print("[SlideWindowController] Event monitor registered")
+    }
+    
+    private func removeEventMonitor() {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+            print("[SlideWindowController] Event monitor removed")
+        }
+    }
+    
+    /// Handle key events centrally - returns nil to consume, event to pass through
+    private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
+        let hasControl = event.modifierFlags.contains(.control)
+        
+        print("[SlideWindowController] handleKeyEvent: keyCode=\(event.keyCode), ctrl=\(hasControl)")
+        
+        switch event.keyCode {
+        // Escape - close
+        case 53:
+            print("[SlideWindowController] → Close (Esc)")
+            triggerClose()
+            return nil
+            
+        // Space - toggle controls (pass to view)
+        case 49:
+            return event  // Let SlideKeyView handle this
+            
+        // Left arrow
+        case 123:
+            if hasControl {
+                print("[SlideWindowController] → Previous source (Ctrl+←)")
+                storedOnPreviousSource?()
+                return nil
+            } else {
+                goToPrevious()
+                return nil
+            }
+            
+        // Right arrow
+        case 124:
+            if hasControl {
+                print("[SlideWindowController] → Next source (Ctrl+→)")
+                storedOnNextSource?()
+                return nil
+            } else {
+                goToNext()
+                return nil
+            }
+            
+        default:
+            if let chars = event.charactersIgnoringModifiers?.lowercased() {
+                switch chars {
+                case "a":
+                    if hasControl {
+                        print("[SlideWindowController] → Previous source (Ctrl+A)")
+                        storedOnPreviousSource?()
+                    } else {
+                        goToPrevious()
+                    }
+                    return nil
+                case "d":
+                    if hasControl {
+                        print("[SlideWindowController] → Next source (Ctrl+D)")
+                        storedOnNextSource?()
+                    } else {
+                        goToNext()
+                    }
+                    return nil
+                case "z":
+                    goToPreviousFavorite()
+                    return nil
+                case "c":
+                    goToNextFavorite()
+                    return nil
+                case "f":
+                    print("[SlideWindowController] → Exit fullscreen (f)")
+                    triggerClose()
+                    return nil
+                case "q":
+                    print("[SlideWindowController] → Close (q)")
+                    triggerClose()
+                    return nil
+                default:
+                    return event  // Pass through unhandled
+                }
+            }
+            return event
+        }
+    }
+    
+    private func triggerClose() {
+        let callback = storedOnClose
+        close()
+        callback?()
+    }
+    
+    // MARK: - S008: Navigation (moved from View for centralized control)
+    
+    private func goToPrevious() {
+        guard !storedEntries.isEmpty, currentIndex > 0 else { return }
+        currentIndex -= 1
+        storedOnIndexChange?(currentIndex)
+        notifyViewOfIndexChange()
+    }
+    
+    private func goToNext() {
+        guard !storedEntries.isEmpty, currentIndex < storedEntries.count - 1 else { return }
+        currentIndex += 1
+        storedOnIndexChange?(currentIndex)
+        notifyViewOfIndexChange()
+    }
+    
+    private func goToPreviousFavorite() {
+        guard !storedFavoriteIndices.isEmpty else { return }
+        
+        let previousFavorites = storedFavoriteIndices.filter { $0 < currentIndex }
+        if let targetIndex = previousFavorites.max() {
+            currentIndex = targetIndex
+            storedOnIndexChange?(currentIndex)
+            notifyViewOfIndexChange()
+        } else if let lastFavorite = storedFavoriteIndices.max(), lastFavorite != currentIndex {
+            currentIndex = lastFavorite
+            storedOnIndexChange?(currentIndex)
+            notifyViewOfIndexChange()
+        }
+    }
+    
+    private func goToNextFavorite() {
+        guard !storedFavoriteIndices.isEmpty else { return }
+        
+        let nextFavorites = storedFavoriteIndices.filter { $0 > currentIndex }
+        if let targetIndex = nextFavorites.min() {
+            currentIndex = targetIndex
+            storedOnIndexChange?(currentIndex)
+            notifyViewOfIndexChange()
+        } else if let firstFavorite = storedFavoriteIndices.min(), firstFavorite != currentIndex {
+            currentIndex = firstFavorite
+            storedOnIndexChange?(currentIndex)
+            notifyViewOfIndexChange()
+        }
+    }
+    
+    /// Notify the view of index change via NotificationCenter
+    private func notifyViewOfIndexChange() {
+        NotificationCenter.default.post(
+            name: NSNotification.Name("SlideWindowIndexChanged"),
+            object: nil,
+            userInfo: ["index": currentIndex]
+        )
     }
 }
 
@@ -230,27 +436,32 @@ struct SlideWindowView: View {
     
     var body: some View {
         ZStack {
-            // Image viewer
-            ImageViewerCore(
-                imageSource: imageSource,
-                entries: entries,
-                currentIndex: $currentIndex,
-                showPositionIndicator: false,
-                favoriteIndices: favoriteIndices
-            )
+            // S008: Handle empty source
+            if entries.isEmpty {
+                emptySourceView
+            } else {
+                // Image viewer
+                ImageViewerCore(
+                    imageSource: imageSource,
+                    entries: entries,
+                    currentIndex: $currentIndex,
+                    showPositionIndicator: false,
+                    favoriteIndices: favoriteIndices
+                )
+            }
             
             // Controls overlay (auto-hide capable)
             if showControls {
                 controlsOverlay
             }
             
-            // Key event handler
+            // Key event handler (supplementary - main handling in Controller)
             SlideKeyHandler(
                 onClose: onClose,
-                onPrevious: { goToPrevious() },
-                onNext: { goToNext() },
-                onPreviousFavorite: { goToPreviousFavorite() },
-                onNextFavorite: { goToNextFavorite() },
+                onPrevious: { /* handled by controller */ },
+                onNext: { /* handled by controller */ },
+                onPreviousFavorite: { /* handled by controller */ },
+                onNextFavorite: { /* handled by controller */ },
                 onExitFullScreen: onExitFullScreen,
                 onToggleControls: { showControls.toggle() },
                 onNextSource: onNextSource,
@@ -266,6 +477,43 @@ struct SlideWindowView: View {
         .onChange(of: currentIndex) { _, newIndex in
             onIndexChange?(newIndex)
         }
+        // S008: Listen for index changes from controller
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowIndexChanged"))) { notification in
+            if let index = notification.userInfo?["index"] as? Int {
+                currentIndex = index
+            }
+        }
+    }
+    
+    // MARK: - S008: Empty Source View
+    
+    @ViewBuilder
+    private var emptySourceView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "photo.on.rectangle.angled")
+                .font(.system(size: 64))
+                .foregroundStyle(.white.opacity(0.4))
+            
+            Text("No images")
+                .font(.title2)
+                .foregroundStyle(.white.opacity(0.6))
+            
+            Text(imageSource.url.lastPathComponent)
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.4))
+            
+            Spacer().frame(height: 32)
+            
+            // Navigation hint
+            VStack(spacing: 8) {
+                Text("Ctrl+← / Ctrl+→")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.5))
+                Text("Navigate to another source")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+        }
     }
     
     // MARK: - Controls Overlay
@@ -275,8 +523,12 @@ struct SlideWindowView: View {
         VStack {
             // Top bar
             HStack {
-                // Filename
-                if currentIndex >= 0 && currentIndex < entries.count {
+                // Filename (or source name for empty)
+                if entries.isEmpty {
+                    Text(imageSource.url.lastPathComponent)
+                        .font(.headline)
+                        .foregroundStyle(.white.opacity(0.6))
+                } else if currentIndex >= 0 && currentIndex < entries.count {
                     Text(entries[currentIndex].name)
                         .font(.headline)
                         .foregroundStyle(.white)
@@ -286,9 +538,15 @@ struct SlideWindowView: View {
                 Spacer()
                 
                 // Position indicator
-                Text("\(currentIndex + 1) / \(entries.count)")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.8))
+                if entries.isEmpty {
+                    Text("0 / 0")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.4))
+                } else {
+                    Text("\(currentIndex + 1) / \(entries.count)")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.8))
+                }
                 
                 Spacer()
                 
@@ -365,43 +623,9 @@ struct SlideWindowView: View {
             )
         }
     }
-    
-    // MARK: - Navigation
-    
-    private func goToPrevious() {
-        guard currentIndex > 0 else { return }
-        currentIndex -= 1
-    }
-    
-    private func goToNext() {
-        guard currentIndex < entries.count - 1 else { return }
-        currentIndex += 1
-    }
-    
-    private func goToPreviousFavorite() {
-        guard !favoriteIndices.isEmpty else { return }
-        
-        let previousFavorites = favoriteIndices.filter { $0 < currentIndex }
-        if let targetIndex = previousFavorites.max() {
-            currentIndex = targetIndex
-        } else if let lastFavorite = favoriteIndices.max(), lastFavorite != currentIndex {
-            currentIndex = lastFavorite
-        }
-    }
-    
-    private func goToNextFavorite() {
-        guard !favoriteIndices.isEmpty else { return }
-        
-        let nextFavorites = favoriteIndices.filter { $0 > currentIndex }
-        if let targetIndex = nextFavorites.min() {
-            currentIndex = targetIndex
-        } else if let firstFavorite = favoriteIndices.min(), firstFavorite != currentIndex {
-            currentIndex = firstFavorite
-        }
-    }
 }
 
-// MARK: - Slide Key Handler
+// MARK: - Slide Key Handler (Supplementary)
 
 struct SlideKeyHandler: NSViewRepresentable {
     let onClose: () -> Void
@@ -425,9 +649,7 @@ struct SlideKeyHandler: NSViewRepresentable {
         view.onToggleControls = onToggleControls
         view.onNextSource = onNextSource
         view.onPreviousSource = onPreviousSource
-        DispatchQueue.main.async {
-            view.window?.makeFirstResponder(view)
-        }
+        // S008: Don't force firstResponder - controller handles keys
         return view
     }
     
@@ -456,89 +678,15 @@ struct SlideKeyHandler: NSViewRepresentable {
         
         override var acceptsFirstResponder: Bool { true }
         
-        override func flagsChanged(with event: NSEvent) {
-            print("[SlideKeyView] flagsChanged: modifiers=\(event.modifierFlags.rawValue)")
-            super.flagsChanged(with: event)
-        }
-        
         override func keyDown(with event: NSEvent) {
-            // RAW debug log to check if events arrive at all
-            print("[SlideKeyView] RAW: keyCode=\(event.keyCode), modifiers=\(event.modifierFlags.rawValue), chars='\(event.characters ?? "nil")', charsIgnoring='\(event.charactersIgnoringModifiers ?? "nil")'")
-            
-            let hasControl = event.modifierFlags.contains(.control)
-            let hasCommand = event.modifierFlags.contains(.command)
-            
-            print("[SlideKeyView] keyDown: keyCode=\(event.keyCode), chars='\(event.charactersIgnoringModifiers ?? "nil")', ctrl=\(hasControl), cmd=\(hasCommand)")
-            
-            switch event.keyCode {
-            // Escape - close
-            case 53:
-                print("[SlideKeyView] → Close triggered (Esc)")
-                onClose?()
-                
-            // Space - toggle controls
-            case 49:
+            // S008: Only handle Space for toggle controls
+            // Other keys are handled by SlideWindowController's event monitor
+            if event.keyCode == 49 {  // Space
                 print("[SlideKeyView] → Toggle controls (Space)")
                 onToggleControls?()
-                
-            // Left arrow
-            case 123:
-                if hasControl {
-                    print("[SlideKeyView] → Previous source (Ctrl+←)")
-                    onPreviousSource?()
-                } else {
-                    print("[SlideKeyView] → Previous (←)")
-                    onPrevious?()
-                }
-                
-            // Right arrow
-            case 124:
-                if hasControl {
-                    print("[SlideKeyView] → Next source (Ctrl+→)")
-                    onNextSource?()
-                } else {
-                    print("[SlideKeyView] → Next (→)")
-                    onNext?()
-                }
-                
-            default:
-                if let chars = event.charactersIgnoringModifiers?.lowercased() {
-                    switch chars {
-                    case "a":
-                        if hasControl {
-                            print("[SlideKeyView] → Previous source (Ctrl+A)")
-                            onPreviousSource?()
-                        } else {
-                            print("[SlideKeyView] → Previous (a)")
-                            onPrevious?()
-                        }
-                    case "d":
-                        if hasControl {
-                            print("[SlideKeyView] → Next source (Ctrl+D)")
-                            onNextSource?()
-                        } else {
-                            print("[SlideKeyView] → Next (d)")
-                            onNext?()
-                        }
-                    case "z":
-                        print("[SlideKeyView] → Previous favorite (z)")
-                        onPreviousFavorite?()
-                    case "c":
-                        print("[SlideKeyView] → Next favorite (c)")
-                        onNextFavorite?()
-                    case "f":
-                        print("[SlideKeyView] → Exit fullscreen (f)")
-                        onExitFullScreen?()
-                    case "q":
-                        print("[SlideKeyView] → Close (q)")
-                        onClose?()
-                    default:
-                        print("[SlideKeyView] → Unhandled key")
-                        super.keyDown(with: event)
-                    }
-                } else {
-                    super.keyDown(with: event)
-                }
+            } else {
+                // Pass through - already handled by event monitor
+                super.keyDown(with: event)
             }
         }
     }
