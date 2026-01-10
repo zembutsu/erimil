@@ -20,8 +20,50 @@ class ArchiveManager: ImageSource {
     // Convenience alias
     var zipURL: URL { url }
     
+    /// Cached encoding detection result
+    private var detectedEncoding: ZIPEncodingDetector.DetectedEncoding?
+    
     init(zipURL: URL) {
         self.url = zipURL
+    }
+    
+    // MARK: - Archive Opening with Encoding Detection
+    
+    /// Open archive with appropriate encoding based on detection
+    private func openArchive() -> Archive? {
+        // Detect encoding on first access, cache result
+        if detectedEncoding == nil {
+            detectedEncoding = ZIPEncodingDetector.detect(for: url)
+        }
+        
+        do {
+            switch detectedEncoding {
+            case .shiftJIS:
+                print("[ArchiveManager] Opening with Shift_JIS encoding")
+                return try Archive(url: url, accessMode: .read, pathEncoding: .shiftJIS)
+            case .utf8:
+                print("[ArchiveManager] Opening with UTF-8 encoding")
+                return try Archive(url: url, accessMode: .read, pathEncoding: .utf8)
+            case .unknown, .none:
+                print("[ArchiveManager] Opening with default encoding")
+                return try Archive(url: url, accessMode: .read)
+            }
+        } catch {
+            print("[ArchiveManager] Failed to open archive: \(error)")
+            return nil
+        }
+    }
+    
+    /// Get String.Encoding based on detected encoding
+    private func getPathEncoding() -> String.Encoding? {
+        switch detectedEncoding {
+        case .utf8:
+            return .utf8
+        case .shiftJIS:
+            return .shiftJIS
+        case .unknown, .none:
+            return nil
+        }
     }
     
     /// List all image entries in the ZIP
@@ -29,24 +71,27 @@ class ArchiveManager: ImageSource {
         return accessQueue.sync {
             print("[ArchiveManager] listImageEntries called for: \(url.lastPathComponent)")
             
-            guard let archive = Archive(url: url, accessMode: .read) else {
+            guard let archive = openArchive() else {
                 print("[ArchiveManager] Failed to open archive: \(url)")
                 return []
             }
             
+            let encoding = getPathEncoding()
             var results: [ImageEntry] = []
             var allEntries: [String] = []
             
             for entry in archive {
-                allEntries.append(entry.path)
+                // Use explicit encoding for path decoding
+                let path = encoding != nil ? entry.path(using: encoding!) : entry.path
+                allEntries.append(path)
                 if entry.type == .file {
                     let imageEntry = ImageEntry(
-                        path: entry.path,
+                        path: path,
                         size: entry.uncompressedSize
                     )
                     
                     // Filter: images only, exclude __MACOSX metadata
-                    if imageEntry.isImage && !entry.path.contains("__MACOSX/") && !imageEntry.name.hasPrefix("._") {
+                    if imageEntry.isImage && !path.contains("__MACOSX/") && !imageEntry.name.hasPrefix("._") {
                         results.append(imageEntry)
                     }
                 }
@@ -113,17 +158,20 @@ class ArchiveManager: ImageSource {
         return accessQueue.sync {
             print("[extractImage] Looking for '\(imageEntry.path)' in '\(url.lastPathComponent)'")
             
-            guard let archive = Archive(url: url, accessMode: .read) else {
+            guard let archive = openArchive() else {
                 print("[extractImage] Failed to open archive: \(url.path)")
                 return nil
             }
+            
+            let encoding = getPathEncoding()
             
             // Find entry by iterating (reliable for all encodings)
             var foundEntry: Entry?
             var availablePaths: [String] = []
             for entry in archive {
-                availablePaths.append(entry.path)
-                if entry.path == imageEntry.path {
+                let path = encoding != nil ? entry.path(using: encoding!) : entry.path
+                availablePaths.append(path)
+                if path == imageEntry.path {
                     foundEntry = entry
                     break
                 }
@@ -193,35 +241,39 @@ class ArchiveManager: ImageSource {
         print("exportOptimized called")
         print("Excluded paths: \(excludedPaths)")
         
-        guard let sourceArchive = Archive(url: url, accessMode: .read) else {
+        guard let sourceArchive = openArchive() else {
             print("Failed to open source archive")
             throw ArchiveError.cannotOpenSource
         }
         print("Source archive opened")
         
-        guard let destinationArchive = Archive(url: destinationURL, accessMode: .create) else {
+        guard let destinationArchive = try? Archive(url: destinationURL, accessMode: .create) else {
             print("Failed to create destination archive at: \(destinationURL.path)")
             throw ArchiveError.cannotCreateDestination
         }
         print("Destination archive created")
         
+        let encoding = getPathEncoding()
+        
         for entry in sourceArchive {
-            if excludedPaths.contains(entry.path) {
-                print("Excluding: \(entry.path)")
+            let path = encoding != nil ? entry.path(using: encoding!) : entry.path
+            
+            if excludedPaths.contains(path) {
+                print("Excluding: \(path)")
                 continue
             }
             
-            if entry.path.contains("__MACOSX/") {
-                print("Skipping __MACOSX: \(entry.path)")
+            if path.contains("__MACOSX/") {
+                print("Skipping __MACOSX: \(path)")
                 continue
             }
             
             if entry.type == .directory {
-                print("Skipping directory: \(entry.path)")
+                print("Skipping directory: \(path)")
                 continue
             }
             
-            print("Copying: \(entry.path)")
+            print("Copying: \(path)")
             
             var entryData = Data()
             do {
@@ -235,8 +287,9 @@ class ArchiveManager: ImageSource {
             }
             
             do {
+                // Write with correctly decoded path (UTF-8 in destination)
                 try destinationArchive.addEntry(
-                    with: entry.path,
+                    with: path,
                     type: entry.type,
                     uncompressedSize: Int64(entryData.count),
                     provider: { position, size in
