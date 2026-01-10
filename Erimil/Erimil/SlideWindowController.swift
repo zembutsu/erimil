@@ -6,6 +6,7 @@
 //  Session: S003 (2025-12-17)
 //  Updated: S005 (2025-12-27) - Added source navigation (Ctrl+Arrow)
 //  Updated: S008 (2025-01-09) - Centralized key handling for empty source support (#21)
+//  Updated: S010 (2025-01-11) - Added source position indicator (#23)
 //
 
 import SwiftUI
@@ -30,6 +31,11 @@ class SlideWindowController {
     private var storedEntries: [ImageEntry] = []
     private var storedFavoriteIndices: Set<Int> = []
     
+    // S010: Source position info storage
+    private var storedSourceName: String = ""
+    private var storedSourcePosition: Int = 0
+    private var storedTotalSources: Int = 0
+    
     private init() {}
     
     /// Open Slide Mode window with fullscreen
@@ -38,6 +44,9 @@ class SlideWindowController {
     ///   - entries: Array of image entries
     ///   - initialIndex: Starting image index
     ///   - favoriteIndices: Set of favorite entry indices for z/c navigation
+    ///   - sourceName: Name of current source (ZIP/folder name)
+    ///   - sourcePosition: Current position in source list (1-based)
+    ///   - totalSources: Total number of sibling sources
     ///   - onClose: Callback when window is closed
     ///   - onIndexChange: Callback when navigation changes index (for Grid sync)
     ///   - onNextSource: Callback when user requests next source (Ctrl+Arrow)
@@ -47,6 +56,9 @@ class SlideWindowController {
         entries: [ImageEntry],
         initialIndex: Int,
         favoriteIndices: Set<Int>,
+        sourceName: String = "",
+        sourcePosition: Int = 0,
+        totalSources: Int = 0,
         onClose: @escaping () -> Void,
         onIndexChange: ((Int) -> Void)? = nil,
         onNextSource: (() -> Void)? = nil,
@@ -54,6 +66,7 @@ class SlideWindowController {
     ) {
         print("[SlideWindowController] open() called")
         print("[SlideWindowController] entries.count: \(entries.count), initialIndex: \(initialIndex), favorites: \(favoriteIndices.count)")
+        print("[SlideWindowController] source: \(sourceName) (\(sourcePosition)/\(totalSources))")
         
         // Close existing window if any
         close()
@@ -68,12 +81,20 @@ class SlideWindowController {
         storedEntries = entries
         storedFavoriteIndices = favoriteIndices
         
+        // S010: Store source position info
+        storedSourceName = sourceName
+        storedSourcePosition = sourcePosition
+        storedTotalSources = totalSources
+        
         // Create the SwiftUI view
         let slideView = SlideWindowView(
             imageSource: imageSource,
             entries: entries,
             initialIndex: initialIndex,
             favoriteIndices: favoriteIndices,
+            sourceName: sourceName,
+            sourcePosition: sourcePosition,
+            totalSources: totalSources,
             onClose: { [weak self] in
                 print("[SlideWindowController] onClose callback triggered")
                 self?.close()
@@ -147,6 +168,11 @@ class SlideWindowController {
         storedEntries = []
         storedFavoriteIndices = []
         
+        // S010: Clear source position info
+        storedSourceName = ""
+        storedSourcePosition = 0
+        storedTotalSources = 0
+        
         guard let window = slideWindow else {
             print("[SlideWindowController] No window to close")
             return
@@ -179,6 +205,9 @@ class SlideWindowController {
     ///   - imageSource: The new image source
     ///   - entries: New array of image entries
     ///   - favoriteIndices: New set of favorite indices
+    ///   - sourceName: Name of current source
+    ///   - sourcePosition: Current position in source list (1-based)
+    ///   - totalSources: Total number of sibling sources
     ///   - onClose: Callback when window is closed
     ///   - onIndexChange: Callback when navigation changes index
     ///   - onNextSource: Callback for next source navigation
@@ -187,6 +216,9 @@ class SlideWindowController {
         imageSource: any ImageSource,
         entries: [ImageEntry],
         favoriteIndices: Set<Int>,
+        sourceName: String = "",
+        sourcePosition: Int = 0,
+        totalSources: Int = 0,
         onClose: @escaping () -> Void,
         onIndexChange: ((Int) -> Void)? = nil,
         onNextSource: (() -> Void)? = nil,
@@ -199,6 +231,9 @@ class SlideWindowController {
                 entries: entries,
                 initialIndex: 0,
                 favoriteIndices: favoriteIndices,
+                sourceName: sourceName,
+                sourcePosition: sourcePosition,
+                totalSources: totalSources,
                 onClose: onClose,
                 onIndexChange: onIndexChange,
                 onNextSource: onNextSource,
@@ -209,6 +244,7 @@ class SlideWindowController {
         
         print("[SlideWindowController] updateSource: updating content in-place")
         print("[SlideWindowController] new entries.count: \(entries.count), favorites: \(favoriteIndices.count)")
+        print("[SlideWindowController] source: \(sourceName) (\(sourcePosition)/\(totalSources))")
         
         // S008: Update stored state for event monitor
         currentIndex = 0
@@ -219,12 +255,20 @@ class SlideWindowController {
         storedEntries = entries
         storedFavoriteIndices = favoriteIndices
         
+        // S010: Update source position info
+        storedSourceName = sourceName
+        storedSourcePosition = sourcePosition
+        storedTotalSources = totalSources
+        
         // Create new SwiftUI view with updated content
         let slideView = SlideWindowView(
             imageSource: imageSource,
             entries: entries,
             initialIndex: 0,  // Start from first image
             favoriteIndices: favoriteIndices,
+            sourceName: sourceName,
+            sourcePosition: sourcePosition,
+            totalSources: totalSources,
             onClose: { [weak self] in
                 print("[SlideWindowController] onClose callback triggered")
                 self?.close()
@@ -425,6 +469,9 @@ struct SlideWindowView: View {
     let entries: [ImageEntry]
     let initialIndex: Int
     let favoriteIndices: Set<Int>
+    let sourceName: String          // S010
+    let sourcePosition: Int         // S010 (1-based)
+    let totalSources: Int           // S010
     let onClose: () -> Void
     let onExitFullScreen: () -> Void
     let onIndexChange: ((Int) -> Void)?
@@ -516,63 +563,88 @@ struct SlideWindowView: View {
         }
     }
     
-    // MARK: - Controls Overlay
+    // MARK: - Controls Overlay (S010: 3-row layout)
     
     @ViewBuilder
     private var controlsOverlay: some View {
         VStack {
-            // Top bar
-            HStack {
-                // Filename (or source name for empty)
-                if entries.isEmpty {
-                    Text(imageSource.url.lastPathComponent)
-                        .font(.headline)
-                        .foregroundStyle(.white.opacity(0.6))
-                } else if currentIndex >= 0 && currentIndex < entries.count {
-                    Text(entries[currentIndex].name)
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
+            // Top bar (S010: 3-row structure)
+            VStack(alignment: .leading, spacing: 4) {
+                // Row 1: Source name › Filename (position)
+                HStack {
+                    // S010: Full path display
+                    if entries.isEmpty {
+                        Text(imageSource.url.lastPathComponent)
+                            .font(.headline)
+                            .foregroundStyle(.white.opacity(0.6))
+                    } else if currentIndex >= 0 && currentIndex < entries.count {
+                        // Source name › Filename (n/total)
+                        HStack(spacing: 0) {
+                            if !sourceName.isEmpty {
+                                Text(sourceName)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white.opacity(0.6))
+                                Text(" › ")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white.opacity(0.4))
+                            }
+                            Text(entries[currentIndex].name)
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                            Text(" (\(currentIndex + 1)/\(entries.count))")
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.6))
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    // Exit hint
+                    HStack(spacing: 4) {
+                        Text("f")
+                            .font(.caption)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.white.opacity(0.2))
+                            .cornerRadius(4)
+                        Text("exit")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    
+                    // Close button
+                    Button {
+                        onClose()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 12)
                 }
                 
-                Spacer()
-                
-                // Position indicator
-                if entries.isEmpty {
-                    Text("0 / 0")
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.4))
-                } else {
-                    Text("\(currentIndex + 1) / \(entries.count)")
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.8))
+                // Row 2: Image position indicator (within current source)
+                if entries.count > 1 {
+                    ImagePositionBar(
+                        current: currentIndex + 1,
+                        total: entries.count,
+                        favoriteIndices: favoriteIndices,
+                        barWidth: 144  // 12 dots × 12px = 144px (matches source bar)
+                    )
+                    .frame(height: 12)
                 }
                 
-                Spacer()
-                
-                // Exit hint
-                HStack(spacing: 4) {
-                    Text("f")
-                        .font(.caption)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.white.opacity(0.2))
-                        .cornerRadius(4)
-                    Text("exit")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.6))
+                // Row 3: Source position indicator (among sibling sources)
+                if totalSources > 1 {
+                    SourcePositionIndicator(
+                        current: sourcePosition,
+                        total: totalSources,
+                        barWidth: 144  // Match image bar width
+                    )
+                    .frame(height: 16)
                 }
-                
-                // Close button
-                Button {
-                    onClose()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.white.opacity(0.7))
-                }
-                .buttonStyle(.plain)
-                .padding(.leading, 12)
             }
             .padding()
             .background(
@@ -688,6 +760,59 @@ struct SlideKeyHandler: NSViewRepresentable {
                 // Pass through - already handled by event monitor
                 super.keyDown(with: event)
             }
+        }
+    }
+}
+
+// MARK: - Image Position Bar (S010)
+
+/// Progress bar for image position within current source, with favorite markers
+struct ImagePositionBar: View {
+    let current: Int              // 1-based current position
+    let total: Int                // Total number of images
+    let favoriteIndices: Set<Int> // 0-based indices of favorites
+    let barWidth: CGFloat         // Fixed width to match source bar
+    
+    private var progress: CGFloat {
+        guard total > 1 else { return 1.0 }
+        return CGFloat(current - 1) / CGFloat(total - 1)
+    }
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            // Progress bar with fixed width
+            ZStack(alignment: .leading) {
+                // Background track
+                Capsule()
+                    .fill(Color.white.opacity(0.2))
+                    .frame(width: barWidth, height: 3)
+                
+                // Favorite markers (★)
+                ForEach(Array(favoriteIndices), id: \.self) { favIndex in
+                    let favProgress = total > 1 ? CGFloat(favIndex) / CGFloat(total - 1) : 0.5
+                    let favX = favProgress * barWidth
+                    
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 6))
+                        .foregroundStyle(.yellow)
+                        .offset(x: favX - 3)
+                }
+                
+                // Position marker (current)
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 8, height: 8)
+                    .offset(x: max(0, progress * barWidth - 4))
+            }
+            .frame(width: barWidth, height: 10)
+            
+            Spacer()
+            
+            // Numeric indicator (right-aligned)
+            Text("\(current)/\(total)")
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.8))
         }
     }
 }
