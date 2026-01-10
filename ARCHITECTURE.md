@@ -58,7 +58,8 @@ Handles folder browsing and source discovery.
 
 - **SidebarView**: Finder-style tree navigation (→ DESIGN.md Decision 9)
   - ▶ for expand/collapse
-  - Row click for content display
+  - Single-click for content display
+  - Double-click to open Slide Mode directly
 - **FolderNode**: Model representing folder/ZIP in tree
 
 ### 5. Selection Layer
@@ -75,26 +76,51 @@ SwiftUI views for user interaction.
 - **ContentView**: Main split view, owns selection state
 - **ThumbnailGridView**: Grid display with mode-aware styling
 - **ThumbnailCell**: Individual thumbnail with selection overlay
-- **ImagePreviewView**: Modal full-size preview
+- **ImagePreviewView**: Quick Look modal preview (Enter → Slide Mode)
 - **SettingsView**: Settings panel (⌘,)
 
 ### 7. Slide Mode Layer
 
-Fullscreen image viewing and source navigation.
+Fullscreen image viewing with Favorites Mode and source navigation.
 
 - **SlideWindowController**: Singleton managing fullscreen window
   - NSWindow with NSHostingView for SwiftUI integration
-  - Keyboard-driven navigation (←/→ for images, Ctrl+A/D for sources)
-  - `updateSource()` for in-place content replacement (preserves fullscreen state)
-  - Centralized key handling via `NSEvent.addLocalMonitorForEvents` (S008)
+  - Centralized key handling via `NSEvent.addLocalMonitorForEvents`
   - State sync to View via NotificationCenter
   - Empty source support with "No images" display
+
+- **Keyboard Handling**:
+  | Key | Normal Mode | Favorites Mode |
+  |-----|-------------|----------------|
+  | ←/→, A/D | Previous/Next image | Previous/Next favorite |
+  | Tab | Next ★ + enter mode | Next ★ |
+  | F | Toggle favorite | Toggle favorite |
+  | X | Toggle selection | Toggle selection |
+  | Q | Exit fullscreen | Exit Favorites Mode |
+  | Esc | Exit fullscreen | Exit fullscreen |
+  | Ctrl+←/→, Ctrl+A/D | Previous/Next source | Same |
+  | Space | Toggle controls | Toggle controls |
+
+- **Favorites Mode State**:
+  - `isFavoritesMode: Bool` in SlideWindowController
+  - Visual: Yellow gradient header + ★ FAVORITES badge
+  - Badge persists even when controls are hidden
+
 - **SourceNavigator**: Utility for sibling source discovery
   - Lists ZIPs and image-containing folders in parent directory
-  - Supports looping navigation (last→first, first→last)  
-- **SlideKeyView**: NSViewRepresentable (supplementary)
-  - Handles Space key for controls toggle only
-  - Main key handling moved to SlideWindowController (S008)
+  - Supports looping navigation (last→first, first→last)
+  - `positionInfo(for:)` returns current position among siblings
+
+- **SourcePositionIndicator**: Visual indicator for source position
+  - Dot bar for ≤12 sources (individual dots)
+  - Proportional bar for >12 sources (highlighted segment)
+  - Fixed width (144px) aligned with ImagePositionBar
+
+- **ImagePositionBar**: Image position within current source
+  - Progress bar with current position marker
+  - ★ markers for favorites (yellow)
+  - × markers for selections (red)
+  - Always shown for consistent layout (even with 1 image)
 
 ## Data Flow
 
@@ -162,12 +188,57 @@ Show confirmation dialog:
   - "キャンセル" → Stay on current source
 ```
 
+### Opening Slide Mode
+
+```
+User triggers Slide Mode:
+  - Enter key in filer
+  - Double-click thumbnail
+  - Double-click sidebar item
+  - Enter in Quick Look preview
+    ↓
+ThumbnailGridView sets previewMode = .slideMode(index)
+    ↓
+SlideWindowController.shared.open()
+  - Creates NSWindow
+  - Registers event monitor
+  - Toggles fullscreen
+    ↓
+User navigates with keyboard
+    ↓
+Exit via Q/Esc → SlideWindowController.close()
+```
+
+### Favorites Mode Flow
+
+```
+User presses Tab in Slide Mode
+    ↓
+SlideWindowController:
+  - isFavoritesMode = true
+  - notifyViewOfModeChange()
+  - goToNextFavorite()
+    ↓
+View updates:
+  - Yellow gradient header
+  - ★ FAVORITES badge
+  - Navigation hints change
+    ↓
+A/D now navigate favorites only
+    ↓
+User presses Q
+    ↓
+isFavoritesMode = false
+    ↓
+View returns to normal mode
+```
+
 ### Fullscreen Source Navigation
 
 ```
 User presses Ctrl+D in Slide Mode
     ↓
-SlideKeyView captures key event
+SlideWindowController handles key event
     ↓
 ContentView.navigateToNextSource()
     ↓
@@ -186,6 +257,25 @@ SlideWindowController.updateSource()
   - Creates new SlideView with new entries
   - Replaces window.contentView
   - Fullscreen state preserved
+```
+
+### Favorite/Selection Toggle in Slide Mode
+
+```
+User presses F in Slide Mode
+    ↓
+SlideWindowController.toggleFavorite()
+  - Update storedFavoriteIndices
+  - Call storedOnToggleFavorite?(currentIndex)
+  - notifyViewOfStateChange()
+    ↓
+ThumbnailGridView callback:
+  - CacheManager.shared.toggleFavorite()
+  - favoritesVersion += 1
+    ↓
+View updates:
+  - ImagePositionBar shows/hides ★ marker
+  - Grid thumbnail updates (via favoritesVersion)
 ```
 
 ## Key Design Decisions
@@ -222,6 +312,20 @@ User selections are stored as `selectedPaths`. The meaning (exclude vs keep) is 
 
 This allows mode switching without losing selections.
 
+### 6. Centralized Key Handling in Slide Mode
+
+All keyboard events in Slide Mode are handled by SlideWindowController via `NSEvent.addLocalMonitorForEvents`. This solves:
+- Focus issues with SwiftUI/NSWindow integration
+- Consistent key behavior across all states
+- Empty source keyboard navigation support
+
+### 7. Unified Key Semantics
+
+Keys have consistent meanings across screens:
+- `F` always toggles favorite (filer, Quick Look, Slide Mode)
+- `Enter` always opens Slide Mode (filer, Quick Look, sidebar)
+- `Q` always "quits" the current context (Favorites Mode → exit mode, normal → exit fullscreen)
+
 ## Constants and Configuration
 
 | Constant | Value | Purpose |
@@ -230,25 +334,31 @@ This allows mode switching without losing selections.
 | `gridSpacing` | 8px | Gap between thumbnails |
 | `outputSuffix` | `_opt` | Appended to output filename |
 | `supportedImageTypes` | jpg, jpeg, png, gif, webp, heic | Recognized image extensions |
+| `positionBarWidth` | 144px | Fixed width for position indicators |
 
 ## File Structure
 
 ```
 Erimil/
-├── ErimilApp.swift           # App entry point, Settings scene
-├── ContentView.swift         # Main split view, owns selection state
-├── SidebarView.swift         # Folder tree navigation (Finder-style)
-├── ThumbnailGridView.swift   # Image grid with mode-aware UI
-├── ThumbnailCell.swift       # Individual thumbnail (in ThumbnailGridView)
-├── ImagePreviewView.swift    # Full-size preview modal
-├── SettingsView.swift        # Settings panel
-├── SlideWindowController.swift # Fullscreen slide mode controller
-├── SourceNavigator.swift     # Sibling source discovery utility
-├── ImageSource.swift         # Protocol + ImageEntry model
-├── ArchiveManager.swift      # ZIP ImageSource implementation
-├── FolderManager.swift       # Folder ImageSource implementation
-├── FolderNode.swift          # Tree node model
-└── AppSettings.swift         # UserDefaults wrapper, SelectionMode
+├── ErimilApp.swift              # App entry point, Settings scene
+├── ContentView.swift            # Main split view, owns selection state
+├── SidebarView.swift            # Folder tree navigation (Finder-style)
+├── ThumbnailGridView.swift      # Image grid with mode-aware UI
+├── ThumbnailCell.swift          # Individual thumbnail (in ThumbnailGridView)
+├── ImagePreviewView.swift       # Quick Look preview modal
+├── SettingsView.swift           # Settings panel
+├── SlideWindowController.swift  # Fullscreen slide mode controller
+│   ├── SlideWindowView          # SwiftUI view for slide content
+│   ├── ImagePositionBar         # Image position with ★/× markers
+│   └── SlideKeyHandler          # Supplementary key view (Space only)
+├── SourceNavigator.swift        # Sibling source discovery utility
+├── SourcePositionIndicator.swift # Source position dot/bar indicator
+├── ImageSource.swift            # Protocol + ImageEntry model
+├── ArchiveManager.swift         # ZIP ImageSource implementation
+├── FolderManager.swift          # Folder ImageSource implementation
+├── FolderNode.swift             # Tree node model
+├── CacheManager.swift           # Thumbnail cache + favorites storage
+└── AppSettings.swift            # UserDefaults wrapper, SelectionMode
 ```
 
 ## External Dependencies
@@ -276,7 +386,8 @@ ErimilApp
             ├── SidebarView
             │       ├── @Binding selectedFolderURL
             │       ├── @State rootNode: FolderNode?
-            │       └── @State selectedNodeID: UUID?
+            │       ├── @State selectedNodeURL: URL?
+            │       └── onOpenSlideMode callback  ← Double-click handler
             │
             ├── ThumbnailGridView
             │       ├── @Binding selectedPaths     ← From parent
@@ -284,12 +395,18 @@ ErimilApp
             │       ├── @ObservedObject AppSettings.shared
             │       ├── @State entries: [ImageEntry]
             │       ├── @State thumbnails: [String: NSImage]
+            │       ├── @State previewMode: PreviewMode
             │       └── imageSource: any ImageSource
             │
             └── SlideWindowController.shared (Singleton)
-                    ├── window: NSWindow?
-                    ├── entries: [ImageEntry]
-                    └── currentIndex: Int
+                    ├── slideWindow: NSWindow?
+                    ├── currentIndex: Int
+                    ├── isFavoritesMode: Bool       ← Favorites Mode state
+                    ├── storedEntries: [ImageEntry]
+                    ├── storedFavoriteIndices: Set<Int>
+                    ├── storedSelectedIndices: Set<Int>
+                    ├── storedOnToggleFavorite: ((Int) -> Void)?
+                    └── storedOnToggleSelection: ((Int) -> Void)?
 ```
 
 ### AppSettings (Singleton)
@@ -415,6 +532,9 @@ Required keys in `Erimil.entitlements`:
 | `[CacheManager]` | Cache, Favorites |
 | `[SidebarView]` | Folder tree |
 | `[ContentView]` | Main view |
+| `[ThumbnailGridView]` | Thumbnail grid |
+| `[SlideWindowController]` | Slide Mode |
+| `[SourceNavigator]` | Source navigation |
 
 ### Application Support Location
 
@@ -450,6 +570,13 @@ A: Build Settings misconfiguration
    2. Verify file is added to project
 ```
 
+**Q: Keyboard shortcuts not working in Slide Mode**
+```
+A: Event monitor issue
+   1. Check "[SlideWindowController]" logs for "Event monitor registered"
+   2. Verify window is key window (isKeyWindow == true)
+```
+
 ---
 
 ## Performance Considerations
@@ -464,4 +591,4 @@ A: Build Settings misconfiguration
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2025-12-14 (Phase 2.1 - Technical Constraints added)
+> Last updated: 2025-01-11 (Slide Mode keyboard shortcuts, Favorites Mode)

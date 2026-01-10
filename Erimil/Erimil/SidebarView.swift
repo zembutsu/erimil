@@ -2,6 +2,8 @@
 //  SidebarView.swift
 //  Erimil
 //
+//  Updated: S010 (2025-01-11) - Double-click to open Slide Mode
+//
 
 import SwiftUI
 
@@ -11,6 +13,7 @@ struct SidebarView: View {
     let hasUnsavedChanges: Bool
     let onZipSelectionAttempt: (URL) -> Void
     var onFolderSelectionAttempt: ((URL) -> Void)?
+    var onOpenSlideMode: ((URL) -> Void)?  // S010: Double-click to open Slide Mode
     let reloadTrigger: UUID
     
     @State private var rootNode: FolderNode?
@@ -26,7 +29,11 @@ struct SidebarView: View {
                             isSelected: selectedNodeURL == node.url
                         )
                         .contentShape(Rectangle())
-                        .onTapGesture {
+                        .onTapGesture(count: 2) {
+                            // S010: Double-click opens Slide Mode
+                            handleNodeDoubleTap(node)
+                        }
+                        .onTapGesture(count: 1) {
                             handleNodeTap(node)
                         }
                     }
@@ -71,6 +78,23 @@ struct SidebarView: View {
         } else if node.isDirectory {
             // フォルダの場合、画像があれば右ペインに表示
             onFolderSelectionAttempt?(node.url)
+        }
+    }
+    
+    // S010: Double-click handler
+    private func handleNodeDoubleTap(_ node: FolderNode) {
+        selectedNodeURL = node.url
+        
+        // First select the node (same as single tap)
+        if node.isZip {
+            onZipSelectionAttempt(node.url)
+        } else if node.isDirectory {
+            onFolderSelectionAttempt?(node.url)
+        }
+        
+        // Then open Slide Mode after a brief delay (to let selection complete)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            onOpenSlideMode?(node.url)
         }
     }
     
@@ -163,6 +187,7 @@ struct NodeRowView: View {
         hasUnsavedChanges: false,
         onZipSelectionAttempt: { _ in },
         onFolderSelectionAttempt: { _ in },
+        onOpenSlideMode: { _ in },
         reloadTrigger: UUID()
     )
 }

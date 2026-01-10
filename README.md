@@ -9,6 +9,7 @@ A macOS application for visual preview and selective extraction of images from Z
 - **Folder Support**: Also works with regular image folders
 - **Keyboard-Driven**: Navigate and select with keyboard shortcuts
 - **Favorites System**: Mark important images with ★ for protection
+- **Slide Mode**: Fullscreen viewing with Favorites Mode for quick navigation
 
 ## Requirements
 
@@ -38,13 +39,64 @@ Toggle mode via the toolbar button or Settings.
 
 ### Keyboard Shortcuts
 
+#### Filer View (Thumbnail Grid)
+
 | Key | Action |
 |-----|--------|
 | ← → ↑ ↓ / WASD | Navigate thumbnails |
 | X | Toggle selection |
-| V | Toggle favorite ★ |
-| Space | Open preview |
-| Escape / Enter | Close preview |
+| F | Toggle favorite ★ |
+| Space | Open Quick Look preview |
+| Enter | Open Slide Mode (fullscreen) |
+| Ctrl+F | Open Slide Mode (alternative) |
+
+#### Quick Look Preview
+
+| Key | Action |
+|-----|--------|
+| ← → / A D | Navigate images |
+| Enter | Switch to Slide Mode |
+| Space / Esc | Close preview |
+
+#### Slide Mode (Fullscreen)
+
+| Key | Normal Mode | Favorites Mode |
+|-----|-------------|----------------|
+| ← → / A D | Previous/Next image | Previous/Next ★ |
+| Tab | Next ★ + **Enter Favorites Mode** | Next ★ |
+| F | Toggle favorite ★ | Toggle favorite ★ |
+| X | Toggle selection | Toggle selection |
+| Q | Exit fullscreen | Exit Favorites Mode |
+| Esc | Exit fullscreen | Exit fullscreen |
+| Ctrl+← / Ctrl+A | Previous source (ZIP/folder) | Previous source |
+| Ctrl+→ / Ctrl+D | Next source (ZIP/folder) | Next source |
+| Space | Toggle controls | Toggle controls |
+
+### Sidebar Navigation
+
+| Action | Result |
+|--------|--------|
+| Single-click | Select source, show thumbnails |
+| Double-click | Select source + open Slide Mode |
+
+### Slide Mode Features
+
+Slide Mode provides fullscreen image viewing with powerful navigation:
+
+**Position Indicators**
+- Image position bar: Shows current position with ★ (favorites) and × (selections) markers
+- Source position bar: Shows position among sibling ZIPs/folders in the same directory
+
+**Favorites Mode**
+- Press `Tab` to enter Favorites Mode and jump to the next favorite
+- `←/→` or `A/D` navigate between favorites only (skipping non-favorites)
+- Yellow header indicates Favorites Mode is active
+- Press `Q` to exit Favorites Mode (return to normal navigation)
+
+**Source Navigation**
+- `Ctrl+←/→` or `Ctrl+A/D` to switch between ZIPs/folders
+- Maintains fullscreen state during navigation
+- Loops from last to first (and vice versa)
 
 ## Favorites System
 
@@ -54,7 +106,7 @@ Erimil uses a **Hybrid Favorites** design that tracks favorites in two ways:
 
 Favorited in the current source (ZIP/folder). These are **protected** from deletion in Exclude mode.
 
-When you press `V` on an image:
+When you press `F` on an image:
 - The image is marked as ★ (direct favorite)
 - It cannot be selected for exclusion
 - Shows "PROTECTED" label in Exclude mode

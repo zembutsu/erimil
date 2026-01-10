@@ -151,7 +151,9 @@ struct ThumbnailGridView: View {
                                         )
                                         .id(index)
                                         .onTapGesture(count: 2) {
-                                            openPreview(at: index)
+                                            //openPreview(at: index)
+                                            // S010: Double-click opens Slide Mode directly
+                                            previewMode = .slideMode(index: index)
                                         }
                                         .onTapGesture(count: 1) {
                                             focusedIndex = index
@@ -241,6 +243,15 @@ struct ThumbnailGridView: View {
                 )
             }
         }
+        // S010: Watch for Slide Mode open request from sidebar double-click
+        .onChange(of: shouldReopenSlideMode) { _, newValue in
+            if newValue && !entries.isEmpty && !SlideWindowController.shared.isOpen {
+                print("[ThumbnailGridView] shouldReopenSlideMode triggered, opening Slide Mode")
+                shouldReopenSlideMode = false
+                let index = focusedIndex ?? 0
+                previewMode = .slideMode(index: index)
+            }
+        }
         // Slide Mode - opens separate fullscreen window
         .onChange(of: previewMode) { oldMode, newMode in
             print("[ThumbnailGridView] previewMode changed: \(oldMode) → \(newMode)")
@@ -259,27 +270,53 @@ struct ThumbnailGridView: View {
                     let positionInfo = SourceNavigator.positionInfo(for: imageSource.url)
                     let sourceName = imageSource.url.lastPathComponent
                     
+                    // S010: Convert selectedPaths to indices
+                    let selectedIndices = Set(entries.enumerated().compactMap { index, entry in
+                        selectedPaths.contains(entry.path) ? index : nil
+                    })
+                    
                     SlideWindowController.shared.open(
                         imageSource: imageSource,
                         entries: entries,
                         initialIndex: index,
                         favoriteIndices: favIndices,
+                        selectedIndices: selectedIndices,
                         sourceName: sourceName,
                         sourcePosition: positionInfo?.position ?? 0,
                         totalSources: positionInfo?.total ?? 0,
                         onClose: {
                             print("[ThumbnailGridView] SlideWindowController closed")
-                            // Slide window closed - could optionally return to Quick Look
                         },
                         onIndexChange: { newIndex in
-                            // Sync focusedIndex with Slide Mode navigation
                             focusedIndex = newIndex
                         },
                         onNextSource: onRequestNextSource,
-                        onPreviousSource: onRequestPreviousSource
+                        onPreviousSource: onRequestPreviousSource,
+                        onToggleFavorite: { [self] index in
+                            // Toggle favorite for entry at index
+                            guard index >= 0, index < entries.count else { return }
+                            let entry = entries[index]
+                            let hash = contentHashes[entry.path]
+                            _ = CacheManager.shared.toggleFavorite(
+                                sourceURL: imageSource.url,
+                                entryPath: entry.path,
+                                contentHash: hash
+                            )
+                            favoritesVersion += 1
+                        },
+                        onToggleSelection: { [self] index in
+                            // Toggle selection for entry at index
+                            guard index >= 0, index < entries.count else { return }
+                            let entry = entries[index]
+                            if selectedPaths.contains(entry.path) {
+                                selectedPaths.remove(entry.path)
+                            } else {
+                                selectedPaths.insert(entry.path)
+                            }
+                        }
                     )
                 }
-                
+
                 
             }
         }
@@ -513,11 +550,15 @@ struct ThumbnailGridView: View {
                 let positionInfo = SourceNavigator.positionInfo(for: imageSource.url)
                 let sourceName = imageSource.url.lastPathComponent
 
+                // S010: Convert selectedPaths to indices (empty for new source)
+                let selectedIndices: Set<Int> = []
+
                 // Use updateSource to maintain fullscreen state
                 SlideWindowController.shared.updateSource(
                     imageSource: imageSource,
                     entries: entries,
                     favoriteIndices: favIndices,
+                    selectedIndices: selectedIndices,
                     sourceName: sourceName,
                     sourcePosition: positionInfo?.position ?? 0,
                     totalSources: positionInfo?.total ?? 0,
@@ -528,8 +569,29 @@ struct ThumbnailGridView: View {
                         focusedIndex = newIndex
                     },
                     onNextSource: onRequestNextSource,
-                    onPreviousSource: onRequestPreviousSource
+                    onPreviousSource: onRequestPreviousSource,
+                    onToggleFavorite: { [self] index in
+                        guard index >= 0, index < entries.count else { return }
+                        let entry = entries[index]
+                        let hash = contentHashes[entry.path]
+                        _ = CacheManager.shared.toggleFavorite(
+                            sourceURL: imageSource.url,
+                            entryPath: entry.path,
+                            contentHash: hash
+                        )
+                        favoritesVersion += 1
+                    },
+                    onToggleSelection: { [self] index in
+                        guard index >= 0, index < entries.count else { return }
+                        let entry = entries[index]
+                        if selectedPaths.contains(entry.path) {
+                            selectedPaths.remove(entry.path)
+                        } else {
+                            selectedPaths.insert(entry.path)
+                        }
+                    }
                 )
+
             }
         }
     }
@@ -664,6 +726,9 @@ struct ThumbnailGridView: View {
         case 36:
             if previewMode.isPresented {
                 previewMode = .none
+            } else {
+                // S010: Open Slide Mode from filer
+                previewMode = .slideMode(index: currentIndex)
             }
             return true
             
@@ -713,10 +778,32 @@ struct ThumbnailGridView: View {
             return true
             
         // F key - open Slide Mode directly (S006)
+        // case "f":
+        //    previewMode = .slideMode(index: currentIndex)
+        //    return true
+
+        // F key - toggle favorite / Ctrl+F = Slide Mode (S010)
         case "f":
-            previewMode = .slideMode(index: currentIndex)
+            let hasControl = event.modifierFlags.contains(.control)
+            if hasControl {
+                // Ctrl+F = Slide Mode
+                previewMode = .slideMode(index: currentIndex)
+            } else {
+                // F = Toggle favorite
+                if let index = focusedIndex, index < entries.count {
+                    let entry = entries[index]
+                    let hash = contentHashes[entry.path]
+                    _ = CacheManager.shared.toggleFavorite(
+                        sourceURL: imageSource.url,
+                        entryPath: entry.path,
+                        contentHash: hash
+                    )
+                    favoritesVersion += 1
+                }
+            }
             return true
             
+        
         default:
             return false
         }
