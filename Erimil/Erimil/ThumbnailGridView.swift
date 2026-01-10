@@ -254,11 +254,19 @@ struct ThumbnailGridView: View {
                 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     print("[ThumbnailGridView] Opening SlideWindowController...")
+                    
+                    // S010: Get source position info
+                    let positionInfo = SourceNavigator.positionInfo(for: imageSource.url)
+                    let sourceName = imageSource.url.lastPathComponent
+                    
                     SlideWindowController.shared.open(
                         imageSource: imageSource,
                         entries: entries,
                         initialIndex: index,
                         favoriteIndices: favIndices,
+                        sourceName: sourceName,
+                        sourcePosition: positionInfo?.position ?? 0,
+                        totalSources: positionInfo?.total ?? 0,
                         onClose: {
                             print("[ThumbnailGridView] SlideWindowController closed")
                             // Slide window closed - could optionally return to Quick Look
@@ -271,6 +279,8 @@ struct ThumbnailGridView: View {
                         onPreviousSource: onRequestPreviousSource
                     )
                 }
+                
+                
             }
         }
         .alert("エクスポート完了", isPresented: $showExportSuccess) {
@@ -499,11 +509,18 @@ struct ThumbnailGridView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 let favIndices = favoriteIndices
                 
+                // S010: Get source position info
+                let positionInfo = SourceNavigator.positionInfo(for: imageSource.url)
+                let sourceName = imageSource.url.lastPathComponent
+
                 // Use updateSource to maintain fullscreen state
                 SlideWindowController.shared.updateSource(
                     imageSource: imageSource,
                     entries: entries,
                     favoriteIndices: favIndices,
+                    sourceName: sourceName,
+                    sourcePosition: positionInfo?.position ?? 0,
+                    totalSources: positionInfo?.total ?? 0,
                     onClose: {
                         print("[ThumbnailGridView] SlideWindowController closed (after source switch)")
                     },
