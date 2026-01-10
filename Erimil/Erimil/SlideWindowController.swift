@@ -7,6 +7,7 @@
 //  Updated: S005 (2025-12-27) - Added source navigation (Ctrl+Arrow)
 //  Updated: S008 (2025-01-09) - Centralized key handling for empty source support (#21)
 //  Updated: S010 (2025-01-11) - Added source position indicator (#23)
+//  Updated: S010 (2025-01-11) - Added Favorites Mode, f/x toggles (#23 continued)
 //
 
 import SwiftUI
@@ -36,33 +37,32 @@ class SlideWindowController {
     private var storedSourcePosition: Int = 0
     private var storedTotalSources: Int = 0
     
+    // S010: Favorite and selection callbacks
+    private var storedOnToggleFavorite: ((Int) -> Void)?
+    private var storedOnToggleSelection: ((Int) -> Void)?
+    private var storedSelectedIndices: Set<Int> = []
+    
+    // S010: Favorites Mode state
+    private var isFavoritesMode: Bool = false
+    
     private init() {}
     
     /// Open Slide Mode window with fullscreen
-    /// - Parameters:
-    ///   - imageSource: The image source (ZIP or Folder)
-    ///   - entries: Array of image entries
-    ///   - initialIndex: Starting image index
-    ///   - favoriteIndices: Set of favorite entry indices for z/c navigation
-    ///   - sourceName: Name of current source (ZIP/folder name)
-    ///   - sourcePosition: Current position in source list (1-based)
-    ///   - totalSources: Total number of sibling sources
-    ///   - onClose: Callback when window is closed
-    ///   - onIndexChange: Callback when navigation changes index (for Grid sync)
-    ///   - onNextSource: Callback when user requests next source (Ctrl+Arrow)
-    ///   - onPreviousSource: Callback when user requests previous source (Ctrl+Arrow)
     func open(
         imageSource: any ImageSource,
         entries: [ImageEntry],
         initialIndex: Int,
         favoriteIndices: Set<Int>,
+        selectedIndices: Set<Int> = [],
         sourceName: String = "",
         sourcePosition: Int = 0,
         totalSources: Int = 0,
         onClose: @escaping () -> Void,
         onIndexChange: ((Int) -> Void)? = nil,
         onNextSource: (() -> Void)? = nil,
-        onPreviousSource: (() -> Void)? = nil
+        onPreviousSource: (() -> Void)? = nil,
+        onToggleFavorite: ((Int) -> Void)? = nil,
+        onToggleSelection: ((Int) -> Void)? = nil
     ) {
         print("[SlideWindowController] open() called")
         print("[SlideWindowController] entries.count: \(entries.count), initialIndex: \(initialIndex), favorites: \(favoriteIndices.count)")
@@ -72,6 +72,7 @@ class SlideWindowController {
         close()
         
         currentIndex = initialIndex
+        isFavoritesMode = false
         
         // S008: Store callbacks and state for event monitor
         storedOnClose = onClose
@@ -86,15 +87,22 @@ class SlideWindowController {
         storedSourcePosition = sourcePosition
         storedTotalSources = totalSources
         
+        // S010: Store favorite/selection callbacks
+        storedOnToggleFavorite = onToggleFavorite
+        storedOnToggleSelection = onToggleSelection
+        storedSelectedIndices = selectedIndices
+        
         // Create the SwiftUI view
         let slideView = SlideWindowView(
             imageSource: imageSource,
             entries: entries,
             initialIndex: initialIndex,
             favoriteIndices: favoriteIndices,
+            selectedIndices: selectedIndices,
             sourceName: sourceName,
             sourcePosition: sourcePosition,
             totalSources: totalSources,
+            isFavoritesMode: isFavoritesMode,
             onClose: { [weak self] in
                 print("[SlideWindowController] onClose callback triggered")
                 self?.close()
@@ -165,13 +173,19 @@ class SlideWindowController {
         storedOnNextSource = nil
         storedOnPreviousSource = nil
         storedOnIndexChange = nil
+        storedOnToggleFavorite = nil
+        storedOnToggleSelection = nil
         storedEntries = []
         storedFavoriteIndices = []
+        storedSelectedIndices = []
         
         // S010: Clear source position info
         storedSourceName = ""
         storedSourcePosition = 0
         storedTotalSources = 0
+        
+        // S010: Reset favorites mode
+        isFavoritesMode = false
         
         guard let window = slideWindow else {
             print("[SlideWindowController] No window to close")
@@ -201,28 +215,20 @@ class SlideWindowController {
     }
     
     /// Update the source while keeping fullscreen state (S005)
-    /// - Parameters:
-    ///   - imageSource: The new image source
-    ///   - entries: New array of image entries
-    ///   - favoriteIndices: New set of favorite indices
-    ///   - sourceName: Name of current source
-    ///   - sourcePosition: Current position in source list (1-based)
-    ///   - totalSources: Total number of sibling sources
-    ///   - onClose: Callback when window is closed
-    ///   - onIndexChange: Callback when navigation changes index
-    ///   - onNextSource: Callback for next source navigation
-    ///   - onPreviousSource: Callback for previous source navigation
     func updateSource(
         imageSource: any ImageSource,
         entries: [ImageEntry],
         favoriteIndices: Set<Int>,
+        selectedIndices: Set<Int> = [],
         sourceName: String = "",
         sourcePosition: Int = 0,
         totalSources: Int = 0,
         onClose: @escaping () -> Void,
         onIndexChange: ((Int) -> Void)? = nil,
         onNextSource: (() -> Void)? = nil,
-        onPreviousSource: (() -> Void)? = nil
+        onPreviousSource: (() -> Void)? = nil,
+        onToggleFavorite: ((Int) -> Void)? = nil,
+        onToggleSelection: ((Int) -> Void)? = nil
     ) {
         guard let window = slideWindow else {
             print("[SlideWindowController] updateSource: no window, falling back to open()")
@@ -231,13 +237,16 @@ class SlideWindowController {
                 entries: entries,
                 initialIndex: 0,
                 favoriteIndices: favoriteIndices,
+                selectedIndices: selectedIndices,
                 sourceName: sourceName,
                 sourcePosition: sourcePosition,
                 totalSources: totalSources,
                 onClose: onClose,
                 onIndexChange: onIndexChange,
                 onNextSource: onNextSource,
-                onPreviousSource: onPreviousSource
+                onPreviousSource: onPreviousSource,
+                onToggleFavorite: onToggleFavorite,
+                onToggleSelection: onToggleSelection
             )
             return
         }
@@ -248,6 +257,7 @@ class SlideWindowController {
         
         // S008: Update stored state for event monitor
         currentIndex = 0
+        isFavoritesMode = false  // Reset mode on source change
         storedOnClose = onClose
         storedOnNextSource = onNextSource
         storedOnPreviousSource = onPreviousSource
@@ -260,15 +270,22 @@ class SlideWindowController {
         storedSourcePosition = sourcePosition
         storedTotalSources = totalSources
         
+        // S010: Update favorite/selection callbacks
+        storedOnToggleFavorite = onToggleFavorite
+        storedOnToggleSelection = onToggleSelection
+        storedSelectedIndices = selectedIndices
+        
         // Create new SwiftUI view with updated content
         let slideView = SlideWindowView(
             imageSource: imageSource,
             entries: entries,
             initialIndex: 0,  // Start from first image
             favoriteIndices: favoriteIndices,
+            selectedIndices: selectedIndices,
             sourceName: sourceName,
             sourcePosition: sourcePosition,
             totalSources: totalSources,
+            isFavoritesMode: isFavoritesMode,
             onClose: { [weak self] in
                 print("[SlideWindowController] onClose callback triggered")
                 self?.close()
@@ -291,9 +308,21 @@ class SlideWindowController {
         let hostingView = NSHostingView(rootView: slideView)
         window.contentView = hostingView
         
-        // S008: No need to set firstResponder - event monitor handles keys
-        
         print("[SlideWindowController] updateSource: content replaced, fullscreen maintained")
+    }
+    
+    // MARK: - S010: Update favorite/selection state from external changes
+    
+    /// Update favorite indices (called when ThumbnailGrid changes favorites)
+    func updateFavoriteIndices(_ indices: Set<Int>) {
+        storedFavoriteIndices = indices
+        notifyViewOfStateChange()
+    }
+    
+    /// Update selected indices (called when ThumbnailGrid changes selections)
+    func updateSelectedIndices(_ indices: Set<Int>) {
+        storedSelectedIndices = indices
+        notifyViewOfStateChange()
     }
     
     // MARK: - S008: Centralized Key Event Handling
@@ -323,10 +352,10 @@ class SlideWindowController {
     private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
         let hasControl = event.modifierFlags.contains(.control)
         
-        print("[SlideWindowController] handleKeyEvent: keyCode=\(event.keyCode), ctrl=\(hasControl)")
+        print("[SlideWindowController] handleKeyEvent: keyCode=\(event.keyCode), ctrl=\(hasControl), favMode=\(isFavoritesMode)")
         
         switch event.keyCode {
-        // Escape - close
+        // Escape - close fullscreen
         case 53:
             print("[SlideWindowController] → Close (Esc)")
             triggerClose()
@@ -336,11 +365,25 @@ class SlideWindowController {
         case 49:
             return event  // Let SlideKeyView handle this
             
+        // Tab - next favorite + enter Favorites Mode
+        case 48:
+            print("[SlideWindowController] → Next favorite + Favorites Mode ON (Tab)")
+            if !isFavoritesMode {
+                isFavoritesMode = true
+                notifyViewOfModeChange()
+            }
+            goToNextFavorite()
+            return nil
+            
         // Left arrow
         case 123:
             if hasControl {
                 print("[SlideWindowController] → Previous source (Ctrl+←)")
                 storedOnPreviousSource?()
+                return nil
+            } else if isFavoritesMode {
+                print("[SlideWindowController] → Previous favorite (← in Favorites Mode)")
+                goToPreviousFavorite()
                 return nil
             } else {
                 goToPrevious()
@@ -352,6 +395,10 @@ class SlideWindowController {
             if hasControl {
                 print("[SlideWindowController] → Next source (Ctrl+→)")
                 storedOnNextSource?()
+                return nil
+            } else if isFavoritesMode {
+                print("[SlideWindowController] → Next favorite (→ in Favorites Mode)")
+                goToNextFavorite()
                 return nil
             } else {
                 goToNext()
@@ -365,32 +412,58 @@ class SlideWindowController {
                     if hasControl {
                         print("[SlideWindowController] → Previous source (Ctrl+A)")
                         storedOnPreviousSource?()
+                    } else if isFavoritesMode {
+                        print("[SlideWindowController] → Previous favorite (A in Favorites Mode)")
+                        goToPreviousFavorite()
                     } else {
                         goToPrevious()
                     }
                     return nil
+                    
                 case "d":
                     if hasControl {
                         print("[SlideWindowController] → Next source (Ctrl+D)")
                         storedOnNextSource?()
+                    } else if isFavoritesMode {
+                        print("[SlideWindowController] → Next favorite (D in Favorites Mode)")
+                        goToNextFavorite()
                     } else {
                         goToNext()
                     }
                     return nil
-                case "z":
-                    goToPreviousFavorite()
-                    return nil
-                case "c":
-                    goToNextFavorite()
-                    return nil
+                    
                 case "f":
-                    print("[SlideWindowController] → Exit fullscreen (f)")
-                    triggerClose()
+                    // S010: Toggle favorite (not exit fullscreen anymore)
+                    print("[SlideWindowController] → Toggle favorite (F)")
+                    toggleFavorite()
                     return nil
+                    
+                case "x":
+                    // S010: Toggle selection
+                    print("[SlideWindowController] → Toggle selection (X)")
+                    toggleSelection()
+                    return nil
+                    
                 case "q":
-                    print("[SlideWindowController] → Close (q)")
-                    triggerClose()
+                    // S010: Exit Favorites Mode OR close fullscreen
+                    if isFavoritesMode {
+                        print("[SlideWindowController] → Exit Favorites Mode (Q)")
+                        isFavoritesMode = false
+                        notifyViewOfModeChange()
+                    } else {
+                        print("[SlideWindowController] → Close fullscreen (Q)")
+                        triggerClose()
+                    }
                     return nil
+                    
+                // S010: Disabled keys (commented out for future reference)
+                // case "z":
+                //     goToPreviousFavorite()
+                //     return nil
+                // case "c":
+                //     goToNextFavorite()
+                //     return nil
+                    
                 default:
                     return event  // Pass through unhandled
                 }
@@ -430,6 +503,7 @@ class SlideWindowController {
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
         } else if let lastFavorite = storedFavoriteIndices.max(), lastFavorite != currentIndex {
+            // Wrap around to last favorite
             currentIndex = lastFavorite
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
@@ -445,11 +519,50 @@ class SlideWindowController {
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
         } else if let firstFavorite = storedFavoriteIndices.min(), firstFavorite != currentIndex {
+            // Wrap around to first favorite
             currentIndex = firstFavorite
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
         }
     }
+    
+    // MARK: - S010: Favorite and Selection Toggles
+    
+    private func toggleFavorite() {
+        guard !storedEntries.isEmpty, currentIndex >= 0, currentIndex < storedEntries.count else { return }
+        
+        // Toggle in local state
+        if storedFavoriteIndices.contains(currentIndex) {
+            storedFavoriteIndices.remove(currentIndex)
+        } else {
+            storedFavoriteIndices.insert(currentIndex)
+        }
+        
+        // Notify ThumbnailGrid via callback
+        storedOnToggleFavorite?(currentIndex)
+        
+        // Update view
+        notifyViewOfStateChange()
+    }
+    
+    private func toggleSelection() {
+        guard !storedEntries.isEmpty, currentIndex >= 0, currentIndex < storedEntries.count else { return }
+        
+        // Toggle in local state
+        if storedSelectedIndices.contains(currentIndex) {
+            storedSelectedIndices.remove(currentIndex)
+        } else {
+            storedSelectedIndices.insert(currentIndex)
+        }
+        
+        // Notify ThumbnailGrid via callback
+        storedOnToggleSelection?(currentIndex)
+        
+        // Update view
+        notifyViewOfStateChange()
+    }
+    
+    // MARK: - Notifications
     
     /// Notify the view of index change via NotificationCenter
     private func notifyViewOfIndexChange() {
@@ -457,6 +570,27 @@ class SlideWindowController {
             name: NSNotification.Name("SlideWindowIndexChanged"),
             object: nil,
             userInfo: ["index": currentIndex]
+        )
+    }
+    
+    /// Notify the view of mode change via NotificationCenter
+    private func notifyViewOfModeChange() {
+        NotificationCenter.default.post(
+            name: NSNotification.Name("SlideWindowModeChanged"),
+            object: nil,
+            userInfo: ["isFavoritesMode": isFavoritesMode]
+        )
+    }
+    
+    /// Notify the view of state change (favorites/selections) via NotificationCenter
+    private func notifyViewOfStateChange() {
+        NotificationCenter.default.post(
+            name: NSNotification.Name("SlideWindowStateChanged"),
+            object: nil,
+            userInfo: [
+                "favoriteIndices": storedFavoriteIndices,
+                "selectedIndices": storedSelectedIndices
+            ]
         )
     }
 }
@@ -468,10 +602,12 @@ struct SlideWindowView: View {
     let imageSource: any ImageSource
     let entries: [ImageEntry]
     let initialIndex: Int
-    let favoriteIndices: Set<Int>
-    let sourceName: String          // S010
-    let sourcePosition: Int         // S010 (1-based)
-    let totalSources: Int           // S010
+    let initialFavoriteIndices: Set<Int>
+    let initialSelectedIndices: Set<Int>
+    let sourceName: String
+    let sourcePosition: Int
+    let totalSources: Int
+    let initialIsFavoritesMode: Bool
     let onClose: () -> Void
     let onExitFullScreen: () -> Void
     let onIndexChange: ((Int) -> Void)?
@@ -480,6 +616,41 @@ struct SlideWindowView: View {
     
     @State private var currentIndex: Int = 0
     @State private var showControls: Bool = true
+    @State private var isFavoritesMode: Bool = false
+    @State private var favoriteIndices: Set<Int> = []
+    @State private var selectedIndices: Set<Int> = []
+    
+    init(
+        imageSource: any ImageSource,
+        entries: [ImageEntry],
+        initialIndex: Int,
+        favoriteIndices: Set<Int>,
+        selectedIndices: Set<Int>,
+        sourceName: String,
+        sourcePosition: Int,
+        totalSources: Int,
+        isFavoritesMode: Bool,
+        onClose: @escaping () -> Void,
+        onExitFullScreen: @escaping () -> Void,
+        onIndexChange: ((Int) -> Void)?,
+        onNextSource: (() -> Void)?,
+        onPreviousSource: (() -> Void)?
+    ) {
+        self.imageSource = imageSource
+        self.entries = entries
+        self.initialIndex = initialIndex
+        self.initialFavoriteIndices = favoriteIndices
+        self.initialSelectedIndices = selectedIndices
+        self.sourceName = sourceName
+        self.sourcePosition = sourcePosition
+        self.totalSources = totalSources
+        self.initialIsFavoritesMode = isFavoritesMode
+        self.onClose = onClose
+        self.onExitFullScreen = onExitFullScreen
+        self.onIndexChange = onIndexChange
+        self.onNextSource = onNextSource
+        self.onPreviousSource = onPreviousSource
+    }
     
     var body: some View {
         ZStack {
@@ -502,6 +673,31 @@ struct SlideWindowView: View {
                 controlsOverlay
             }
             
+            // S010: Persistent Favorites Mode indicator (shown even when controls hidden)
+            if isFavoritesMode && !showControls {
+                VStack {
+                    HStack {
+                        Spacer()
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill")
+                                .font(.title3)
+                                .foregroundStyle(.yellow)
+                            Text("FAVORITES")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.yellow)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.black.opacity(0.6))
+                        .cornerRadius(8)
+                        .padding(.trailing, 16)
+                        .padding(.top, 16)
+                    }
+                    Spacer()
+                }
+            }
+            
             // Key event handler (supplementary - main handling in Controller)
             SlideKeyHandler(
                 onClose: onClose,
@@ -520,6 +716,9 @@ struct SlideWindowView: View {
         .background(Color.black)
         .onAppear {
             currentIndex = initialIndex
+            isFavoritesMode = initialIsFavoritesMode
+            favoriteIndices = initialFavoriteIndices
+            selectedIndices = initialSelectedIndices
         }
         .onChange(of: currentIndex) { _, newIndex in
             onIndexChange?(newIndex)
@@ -528,6 +727,21 @@ struct SlideWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowIndexChanged"))) { notification in
             if let index = notification.userInfo?["index"] as? Int {
                 currentIndex = index
+            }
+        }
+        // S010: Listen for mode changes from controller
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowModeChanged"))) { notification in
+            if let mode = notification.userInfo?["isFavoritesMode"] as? Bool {
+                isFavoritesMode = mode
+            }
+        }
+        // S010: Listen for state changes from controller
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowStateChanged"))) { notification in
+            if let favs = notification.userInfo?["favoriteIndices"] as? Set<Int> {
+                favoriteIndices = favs
+            }
+            if let sels = notification.userInfo?["selectedIndices"] as? Set<Int> {
+                selectedIndices = sels
             }
         }
     }
@@ -563,14 +777,14 @@ struct SlideWindowView: View {
         }
     }
     
-    // MARK: - Controls Overlay (S010: 3-row layout)
+    // MARK: - Controls Overlay (S010: 3-row layout with Favorites Mode indicator)
     
     @ViewBuilder
     private var controlsOverlay: some View {
         VStack {
             // Top bar (S010: 3-row structure)
             VStack(alignment: .leading, spacing: 4) {
-                // Row 1: Source name › Filename (position)
+                // Row 1: Source name › Filename (position) + Favorites Mode indicator
                 HStack {
                     // S010: Full path display
                     if entries.isEmpty {
@@ -600,9 +814,26 @@ struct SlideWindowView: View {
                     
                     Spacer()
                     
-                    // Exit hint
+                    // S010: Favorites Mode indicator
+                    if isFavoritesMode {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill")
+                                .font(.caption)
+                                .foregroundStyle(.yellow)
+                            Text("FAVORITES")
+                                .font(.caption)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.yellow)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.yellow.opacity(0.2))
+                        .cornerRadius(4)
+                    }
+                    
+                    // Exit hint (changed from f to Esc)
                     HStack(spacing: 4) {
-                        Text("f")
+                        Text("esc")
                             .font(.caption)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -631,7 +862,8 @@ struct SlideWindowView: View {
                         current: currentIndex + 1,
                         total: entries.count,
                         favoriteIndices: favoriteIndices,
-                        barWidth: 144  // 12 dots × 12px = 144px (matches source bar)
+                        selectedIndices: selectedIndices,
+                        barWidth: 144
                     )
                     .frame(height: 12)
                 }
@@ -641,7 +873,7 @@ struct SlideWindowView: View {
                     SourcePositionIndicator(
                         current: sourcePosition,
                         total: totalSources,
-                        barWidth: 144  // Match image bar width
+                        barWidth: 144
                     )
                     .frame(height: 16)
                 }
@@ -649,7 +881,9 @@ struct SlideWindowView: View {
             .padding()
             .background(
                 LinearGradient(
-                    colors: [.black.opacity(0.7), .clear],
+                    colors: isFavoritesMode 
+                        ? [.yellow.opacity(0.4), .black.opacity(0.3), .clear]  // Yellow tint for Favorites Mode
+                        : [.black.opacity(0.7), .clear],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -662,23 +896,40 @@ struct SlideWindowView: View {
                 Text("a/←")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.5))
-                Text("previous")
+                Text(isFavoritesMode ? "prev ★" : "previous")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.3))
                 
                 Spacer()
                 
-                // Source navigation hint
-                Text("⌃←/→")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.5))
-                Text("prev/next source")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.3))
+                // Mode-specific hints
+                if isFavoritesMode {
+                    Text("q")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.5))
+                    Text("exit ★ mode")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.3))
+                } else {
+                    Text("tab")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.5))
+                    Text("★ mode")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.3))
+                    
+                    Text("q")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.5))
+                        .padding(.leading, 8)
+                    Text("exit")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.3))
+                }
                 
                 Spacer()
                 
-                Text("next")
+                Text(isFavoritesMode ? "next ★" : "next")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.3))
                 Text("d/→")
@@ -721,7 +972,6 @@ struct SlideKeyHandler: NSViewRepresentable {
         view.onToggleControls = onToggleControls
         view.onNextSource = onNextSource
         view.onPreviousSource = onPreviousSource
-        // S008: Don't force firstResponder - controller handles keys
         return view
     }
     
@@ -766,11 +1016,12 @@ struct SlideKeyHandler: NSViewRepresentable {
 
 // MARK: - Image Position Bar (S010)
 
-/// Progress bar for image position within current source, with favorite markers
+/// Progress bar for image position within current source, with favorite and selection markers
 struct ImagePositionBar: View {
     let current: Int              // 1-based current position
     let total: Int                // Total number of images
     let favoriteIndices: Set<Int> // 0-based indices of favorites
+    let selectedIndices: Set<Int> // 0-based indices of selections
     let barWidth: CGFloat         // Fixed width to match source bar
     
     private var progress: CGFloat {
@@ -787,7 +1038,18 @@ struct ImagePositionBar: View {
                     .fill(Color.white.opacity(0.2))
                     .frame(width: barWidth, height: 3)
                 
-                // Favorite markers (★)
+                // Selection markers (×) - red
+                ForEach(Array(selectedIndices), id: \.self) { selIndex in
+                    let selProgress = total > 1 ? CGFloat(selIndex) / CGFloat(total - 1) : 0.5
+                    let selX = selProgress * barWidth
+                    
+                    Image(systemName: "xmark")
+                        .font(.system(size: 5, weight: .bold))
+                        .foregroundStyle(.red)
+                        .offset(x: selX - 2.5)
+                }
+                
+                // Favorite markers (★) - yellow
                 ForEach(Array(favoriteIndices), id: \.self) { favIndex in
                     let favProgress = total > 1 ? CGFloat(favIndex) / CGFloat(total - 1) : 0.5
                     let favX = favProgress * barWidth
