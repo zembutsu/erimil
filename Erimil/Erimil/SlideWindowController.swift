@@ -856,8 +856,10 @@ struct SlideWindowView: View {
                     .padding(.leading, 12)
                 }
                 
-                // Row 2: Image position indicator (within current source)
-                if entries.count > 1 {
+                //// Row 2: Image position indicator (within current source)
+                // if entries.count > 1 {
+                // Row 2: Image position indicator (always show for consistent layout)
+                if !entries.isEmpty {
                     ImagePositionBar(
                         current: currentIndex + 1,
                         total: entries.count,

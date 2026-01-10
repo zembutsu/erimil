@@ -243,6 +243,15 @@ struct ThumbnailGridView: View {
                 )
             }
         }
+        // S010: Watch for Slide Mode open request from sidebar double-click
+        .onChange(of: shouldReopenSlideMode) { _, newValue in
+            if newValue && !entries.isEmpty && !SlideWindowController.shared.isOpen {
+                print("[ThumbnailGridView] shouldReopenSlideMode triggered, opening Slide Mode")
+                shouldReopenSlideMode = false
+                let index = focusedIndex ?? 0
+                previewMode = .slideMode(index: index)
+            }
+        }
         // Slide Mode - opens separate fullscreen window
         .onChange(of: previewMode) { oldMode, newMode in
             print("[ThumbnailGridView] previewMode changed: \(oldMode) → \(newMode)")

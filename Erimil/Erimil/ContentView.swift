@@ -3,6 +3,7 @@
 //  Erimil
 //
 //  Created by Masahito Zembutsu on 2025/12/13.
+//  Updated: S010 (2025-01-11) - Sidebar double-click to open Slide Mode
 //
 
 import SwiftUI
@@ -19,6 +20,9 @@ struct ContentView: View {
     
     // S005: Flag to reopen Slide Mode after source switch
     @State private var shouldReopenSlideMode: Bool = false
+    
+    // S010: Flag to open Slide Mode from sidebar double-click
+    @State private var shouldOpenSlideMode: Bool = false
     
     // 確認ダイアログ用
     @State private var pendingSourceURL: URL?
@@ -40,6 +44,10 @@ struct ContentView: View {
                 onFolderSelectionAttempt: { url in
                     handleSourceSelectionAttempt(url: url, type: .folder)
                 },
+                onOpenSlideMode: { url in
+                    // S010: Open Slide Mode from sidebar double-click
+                    openSlideModeForSource(url)
+                },
                 reloadTrigger: folderReloadTrigger
             )
         } detail: {
@@ -59,6 +67,13 @@ struct ContentView: View {
                     shouldReopenSlideMode: $shouldReopenSlideMode
                 )
                 .id(imageSource.url)  // Force View recreation when source changes
+                // S010: Trigger Slide Mode open from sidebar
+                .onChange(of: shouldOpenSlideMode) { _, newValue in
+                    if newValue {
+                        shouldOpenSlideMode = false
+                        // ThumbnailGridView will handle opening Slide Mode via shouldReopenSlideMode
+                    }
+                }
             } else {
                 ContentUnavailableView(
                     "ZIPファイルまたはフォルダを選択",
@@ -178,6 +193,15 @@ struct ContentView: View {
     
     private func reloadFolder() {
         folderReloadTrigger = UUID()
+    }
+    
+    // MARK: - S010: Open Slide Mode from Sidebar
+    
+    private func openSlideModeForSource(_ url: URL) {
+        print("[ContentView] openSlideModeForSource: \(url.lastPathComponent)")
+        
+        // S010: Always set the flag - ThumbnailGridView will handle it via onChange
+        shouldReopenSlideMode = true
     }
     
     // MARK: - Source Navigation (S005)
