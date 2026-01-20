@@ -50,6 +50,22 @@ struct SidebarView: View {
             
             Divider()
             
+            let cacheInfo = CacheManager.shared.getCacheInfo()
+            if cacheInfo.fileCount > 0 {
+                HStack {
+                    Image(systemName: "photo.stack")
+                        .foregroundStyle(.secondary)
+                    Text("\(cacheInfo.fileCount)枚キャッシュ済")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("(\(formatBytes(cacheInfo.totalSize)))")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+            }
+            
             Button("フォルダを開く...") {
                 openFolderPicker()
             }
@@ -154,6 +170,12 @@ struct SidebarView: View {
         } else {
             print("[SidebarView] Folder selection cancelled or failed")
         }
+    }
+
+    private func formatBytes(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: bytes)
     }
 }
 
