@@ -8,10 +8,29 @@
 //  Updated: S008 (2025-01-09) - Centralized key handling for empty source support (#21)
 //  Updated: S010 (2025-01-11) - Added source position indicator (#23)
 //  Updated: S010 (2025-01-11) - Added Favorites Mode, f/x toggles (#23 continued)
+//  Updated: S012 (2025-01-20) - Added close animation options (#17)
 //
 
 import SwiftUI
 import AppKit
+
+/// Slide Mode close animation style (#17)
+enum SlideCloseStyle: String, CaseIterable {
+    case `default` = "default"  // macOS standard behavior
+    case instant = "instant"    // No animation
+    case fade = "fade"          // Fade out (0.2s)
+    
+    static var current: SlideCloseStyle {
+        let raw = UserDefaults.standard.string(forKey: "slideCloseStyle") ?? "default"
+        return SlideCloseStyle(rawValue: raw) ?? .default
+    }
+}
+
+/// S012: Borderless window that can receive key events (#17)
+class SlideWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
 
 /// Controller for managing the Slide Mode fullscreen window
 class SlideWindowController {
@@ -19,6 +38,7 @@ class SlideWindowController {
     static var shared = SlideWindowController()
     
     private var slideWindow: NSWindow?
+    private var backgroundWindows: [NSWindow] = []  // S012: For secondary displays
     private var currentIndex: Int = 0
     
     // S008: Event monitor for centralized key handling
@@ -124,34 +144,51 @@ class SlideWindowController {
         // Create hosting view
         let hostingView = NSHostingView(rootView: slideView)
         
-        // Create window
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+        // S012: Get screen for pseudo-fullscreen (#17)
+        guard let mainScreen = NSScreen.main else {
+            print("[SlideWindowController] No main screen available")
+            return
+        }
+        
+        // S012: Create black background windows for secondary displays first
+        for screen in NSScreen.screens where screen != mainScreen {
+            let bgWindow = NSWindow(
+                contentRect: screen.frame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            bgWindow.backgroundColor = .black
+            bgWindow.level = .screenSaver
+            bgWindow.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces]
+            bgWindow.setFrame(screen.frame, display: true)
+            bgWindow.orderFront(nil)
+            backgroundWindows.append(bgWindow)
+            print("[SlideWindowController] Background window created for secondary display")
+        }
+        
+        // S012: Create main window with SlideWindow (supports key events)
+        let window = SlideWindow(
+            contentRect: mainScreen.frame,
+            styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         
         window.contentView = hostingView
         window.title = "Slide Mode"
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
         window.backgroundColor = .black
         window.isReleasedWhenClosed = false
         
-        // Center on screen
-        window.center()
+        // S012: Pseudo-fullscreen settings
+        window.level = .screenSaver  // Stay above other windows
+        window.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces]
+        window.setFrame(mainScreen.frame, display: true)
         
-        print("[SlideWindowController] Window created, making key and ordering front")
+        print("[SlideWindowController] Window created (pseudo-fullscreen), making key and ordering front")
         
-        // Show window
+        // Show window immediately (no toggleFullScreen needed)
         window.makeKeyAndOrderFront(nil)
-        
-        // Toggle to fullscreen after a brief delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            print("[SlideWindowController] Toggling fullscreen...")
-            window.toggleFullScreen(nil)
-        }
         
         slideWindow = window
         
@@ -189,24 +226,75 @@ class SlideWindowController {
         
         guard let window = slideWindow else {
             print("[SlideWindowController] No window to close")
+            // S012: Still close background windows if any
+            closeBackgroundWindows()
             return
         }
         
-        print("[SlideWindowController] Closing window immediately (isFullScreen: \(window.styleMask.contains(.fullScreen)))")
+        let style = SlideCloseStyle.current
+        print("[SlideWindowController] Closing window with style: \(style.rawValue) (isFullScreen: \(window.styleMask.contains(.fullScreen)))")
         
-        // Clear content view to release SwiftUI hosting view
-        window.contentView = nil
-        
-        // Hide the window instantly (regardless of fullscreen state)
-        window.orderOut(nil)
-        
-        // Close the window
-        window.close()
-        
-        // Release our reference
-        slideWindow = nil
+        // S012: Close with selected animation style (#17)
+        // Note: Using pseudo-fullscreen, no system fullscreen animation to bypass
+        switch style {
+        case .default:
+            // Standard close (instant for pseudo-fullscreen)
+            window.contentView = nil
+            slideWindow = nil
+            closeBackgroundWindows()
+            window.orderOut(nil)
+            window.close()
+            
+        case .instant:
+            // Instant close
+            window.contentView = nil
+            slideWindow = nil
+            window.animationBehavior = .none
+            closeBackgroundWindows()
+            window.orderOut(nil)
+            window.close()
+            
+        case .fade:
+            // Fade out animation (0.2s) - include background windows
+            // Capture background windows before animation to avoid timing issues
+            let bgWindows = backgroundWindows
+            backgroundWindows.removeAll()
+            slideWindow = nil  // Clear reference early to prevent re-entry
+            
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.2
+                window.animator().alphaValue = 0
+                for bgWindow in bgWindows {
+                    bgWindow.animator().alphaValue = 0
+                }
+            }, completionHandler: {
+                // Dispatch to next run loop to avoid timing issues with window release
+                DispatchQueue.main.async {
+                    // Clear content view AFTER animation completes
+                    window.contentView = nil
+                    // Close all windows
+                    for bgWindow in bgWindows {
+                        bgWindow.orderOut(nil)
+                        bgWindow.close()
+                    }
+                    window.orderOut(nil)
+                    window.close()
+                    print("[SlideWindowController] Fade complete, all windows closed")
+                }
+            })
+        }
         
         print("[SlideWindowController] Window closed and released")
+    }
+    
+    /// S012: Close all background windows for secondary displays
+    private func closeBackgroundWindows() {
+        for bgWindow in backgroundWindows {
+            bgWindow.orderOut(nil)
+            bgWindow.close()
+        }
+        backgroundWindows.removeAll()
+        print("[SlideWindowController] Background windows closed")
     }
     
     /// Check if Slide Mode window is open
