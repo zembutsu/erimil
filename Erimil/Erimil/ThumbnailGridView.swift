@@ -56,11 +56,12 @@ enum PreviewMode: Equatable {
     case none
     case quickLook(index: Int)   // Window-based preview
     case slideMode(index: Int)   // Fullscreen presentation
+    case viewer(index: Int)      // S013: Windowed viewer mode (Reader Mode)
     
     var index: Int? {
         switch self {
         case .none: return nil
-        case .quickLook(let i), .slideMode(let i): return i
+        case .quickLook(let i), .slideMode(let i), .viewer(let i): return i
         }
     }
     
@@ -75,6 +76,11 @@ enum PreviewMode: Equatable {
     
     var isSlideMode: Bool {
         if case .slideMode = self { return true }
+        return false
+    }
+    
+    var isViewer: Bool {
+        if case .viewer = self { return true }
         return false
     }
 }
@@ -119,6 +125,27 @@ struct ThumbnailGridView: View {
     }
     
     var body: some View {
+        // S013: Viewer Mode - full window image display
+        if case .viewer(let viewerIndex) = previewMode {
+            ViewerView(
+                imageSource: imageSource,
+                entries: entries,
+                currentIndex: viewerIndex,
+                contentHashes: contentHashes,
+                selectedPaths: $selectedPaths,
+                favoritesVersion: $favoritesVersion,
+                onClose: {
+                    previewMode = .none
+                },
+                onIndexChange: { newIndex in
+                    focusedIndex = newIndex
+                    previewMode = .viewer(index: newIndex)
+                },
+                onEnterSlideMode: { index in
+                    previewMode = .slideMode(index: index)
+                }
+            )
+        } else {
         VStack(spacing: 0) {
             // ヘッダー
             headerView
@@ -338,6 +365,7 @@ struct ThumbnailGridView: View {
         } message: {
             Text("\(pathsToRemove.count) 件のファイルをゴミ箱に移動しますか？")
         }
+        } // end else (Grid view)
     }
     
     // MARK: - Header
@@ -803,6 +831,10 @@ struct ThumbnailGridView: View {
             }
             return true
             
+        // S013: R key - open Viewer Mode (Reader Mode)
+        case "r":
+            previewMode = .viewer(index: currentIndex)
+            return true
         
         default:
             return false
@@ -1132,6 +1164,326 @@ struct ThumbnailCell: View {
                 .truncationMode(.middle)
                 .frame(width: size)
                 .foregroundStyle(isFocused ? .primary : .secondary)
+        }
+    }
+}
+
+// MARK: - S013: ViewerView (Windowed Viewer Mode / Reader Mode)
+
+struct ViewerView: View {
+    let imageSource: any ImageSource
+    let entries: [ImageEntry]
+    let currentIndex: Int
+    let contentHashes: [String: String]
+    @Binding var selectedPaths: Set<String>
+    @Binding var favoritesVersion: Int
+    
+    var onClose: () -> Void
+    var onIndexChange: (Int) -> Void
+    var onEnterSlideMode: (Int) -> Void
+    
+    @State private var displayedImage: NSImage? = nil
+    @State private var isLoading: Bool = true
+    
+    private var currentEntry: ImageEntry? {
+        guard currentIndex >= 0, currentIndex < entries.count else { return nil }
+        return entries[currentIndex]
+    }
+    
+    private var isCurrentFavorite: Bool {
+        guard let entry = currentEntry else { return false }
+        let hash = contentHashes[entry.path]
+        let status = CacheManager.shared.getFavoriteStatus(
+            sourceURL: imageSource.url,
+            entryPath: entry.path,
+            contentHash: hash
+        )
+        return status == .direct || status == .inherited
+    }
+    
+    private var isCurrentSelected: Bool {
+        guard let entry = currentEntry else { return false }
+        return selectedPaths.contains(entry.path)
+    }
+    
+    var body: some View {
+        ZStack {
+            // Background
+            Color.black.ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                // Header bar
+                HStack {
+                    // Close button
+                    Button(action: onClose) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .help("閉じる (Esc/Q)")
+                    
+                    Spacer()
+                    
+                    // Favorite indicator
+                    if isCurrentFavorite {
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(.yellow)
+                    }
+                    
+                    // Selection indicator
+                    if isCurrentSelected {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.red)
+                    }
+                    
+                    // File name
+                    if let entry = currentEntry {
+                        Text(entry.name)
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                    }
+                    
+                    Spacer()
+                    
+                    // Position indicator
+                    Text("\(currentIndex + 1) / \(entries.count)")
+                        .foregroundStyle(.white.opacity(0.8))
+                        .monospacedDigit()
+                    
+                    // Fullscreen button
+                    Button {
+                        onEnterSlideMode(currentIndex)
+                    } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.title2)
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .help("全画面表示 (Enter)")
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.6))
+                
+                // Main image area
+                ZStack {
+                    if isLoading {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                            .tint(.white)
+                    } else if let image = displayedImage {
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        Text("画像を読み込めません")
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                    
+                    // Navigation hints (left/right edges)
+                    HStack {
+                        // Left arrow area
+                        if currentIndex > 0 {
+                            Button {
+                                navigateTo(currentIndex - 1)
+                            } label: {
+                                Rectangle()
+                                    .fill(Color.clear)
+                                    .frame(width: 60)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        
+                        Spacer()
+                        
+                        // Right arrow area
+                        if currentIndex < entries.count - 1 {
+                            Button {
+                                navigateTo(currentIndex + 1)
+                            } label: {
+                                Rectangle()
+                                    .fill(Color.clear)
+                                    .frame(width: 60)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                
+                // Footer with keyboard hints
+                HStack {
+                    Text("←→: ページ移動")
+                    Text("F: ★お気に入り")
+                    Text("X: 選択")
+                    Text("Enter: 全画面")
+                    Text("Esc/Q: 閉じる")
+                }
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.5))
+                .padding(.vertical, 4)
+                .background(Color.black.opacity(0.6))
+            }
+            
+            // Key event handler (transparent overlay)
+            ViewerKeyEventHandler { event in
+                handleKeyEvent(event)
+            }
+            .allowsHitTesting(false)
+        }
+        .onAppear {
+            loadImage()
+        }
+        .onChange(of: currentIndex) { _, _ in
+            loadImage()
+        }
+    }
+    
+    private func loadImage() {
+        isLoading = true
+        displayedImage = nil
+        
+        guard let entry = currentEntry else {
+            isLoading = false
+            return
+        }
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Use thumbnail with large maxSize to get full-resolution image
+            let image = imageSource.thumbnail(for: entry, maxSize: 4000)
+            DispatchQueue.main.async {
+                displayedImage = image
+                isLoading = false
+            }
+        }
+    }
+    
+    private func navigateTo(_ index: Int) {
+        guard index >= 0, index < entries.count else { return }
+        onIndexChange(index)
+    }
+    
+    private func handleKeyEvent(_ event: NSEvent) -> Bool {
+        switch event.keyCode {
+        // Escape
+        case 53:
+            onClose()
+            return true
+            
+        // Return/Enter - go to Slide Mode
+        case 36:
+            onEnterSlideMode(currentIndex)
+            return true
+            
+        // Left arrow
+        case 123:
+            if currentIndex > 0 {
+                navigateTo(currentIndex - 1)
+            }
+            return true
+            
+        // Right arrow
+        case 124:
+            if currentIndex < entries.count - 1 {
+                navigateTo(currentIndex + 1)
+            }
+            return true
+            
+        default:
+            break
+        }
+        
+        // Character keys
+        guard let characters = event.charactersIgnoringModifiers?.lowercased() else {
+            return false
+        }
+        
+        switch characters {
+        // Q - close
+        case "q":
+            onClose()
+            return true
+            
+        // A - previous
+        case "a":
+            if currentIndex > 0 {
+                navigateTo(currentIndex - 1)
+            }
+            return true
+            
+        // D - next
+        case "d":
+            if currentIndex < entries.count - 1 {
+                navigateTo(currentIndex + 1)
+            }
+            return true
+            
+        // F - toggle favorite
+        case "f":
+            guard let entry = currentEntry else { return true }
+            let hash = contentHashes[entry.path]
+            _ = CacheManager.shared.toggleFavorite(
+                sourceURL: imageSource.url,
+                entryPath: entry.path,
+                contentHash: hash
+            )
+            favoritesVersion += 1
+            return true
+            
+        // X - toggle selection
+        case "x":
+            guard let entry = currentEntry else { return true }
+            if selectedPaths.contains(entry.path) {
+                selectedPaths.remove(entry.path)
+            } else {
+                selectedPaths.insert(entry.path)
+            }
+            return true
+            
+        default:
+            return false
+        }
+    }
+}
+
+// MARK: - ViewerKeyEventHandler
+
+struct ViewerKeyEventHandler: NSViewRepresentable {
+    var onKeyEvent: (NSEvent) -> Bool
+    
+    func makeNSView(context: Context) -> ViewerKeyEventView {
+        let view = ViewerKeyEventView()
+        view.onKeyEvent = onKeyEvent
+        DispatchQueue.main.async {
+            view.window?.makeFirstResponder(view)
+        }
+        return view
+    }
+    
+    func updateNSView(_ nsView: ViewerKeyEventView, context: Context) {
+        nsView.onKeyEvent = onKeyEvent
+        if nsView.window?.firstResponder !== nsView {
+            DispatchQueue.main.async {
+                nsView.window?.makeFirstResponder(nsView)
+            }
+        }
+    }
+    
+    class ViewerKeyEventView: NSView {
+        var onKeyEvent: ((NSEvent) -> Bool)?
+        
+        override var acceptsFirstResponder: Bool { true }
+        
+        override func keyDown(with event: NSEvent) {
+            if let handler = onKeyEvent, handler(event) {
+                // Event consumed
+            } else {
+                super.keyDown(with: event)
+            }
         }
     }
 }
