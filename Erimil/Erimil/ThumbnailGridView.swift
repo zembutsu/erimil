@@ -132,6 +132,7 @@ struct ThumbnailGridView: View {
                 entries: entries,
                 currentIndex: viewerIndex,
                 contentHashes: contentHashes,
+                selectionMode: settings.selectionMode,
                 selectedPaths: $selectedPaths,
                 favoritesVersion: $favoritesVersion,
                 onClose: {
@@ -1168,6 +1169,161 @@ struct ThumbnailCell: View {
     }
 }
 
+// MARK: - S014: ThumbnailSidebarView
+
+struct ThumbnailSidebarView: View {
+    let imageSource: any ImageSource
+    let entries: [ImageEntry]
+    let currentIndex: Int
+    let contentHashes: [String: String]
+    let selectedPaths: Set<String>
+    let favoritesVersion: Int
+    let selectionMode: SelectionMode
+    var onSelect: (Int) -> Void
+    
+    private let thumbnailSize: CGFloat = 80
+    private let sidebarWidth: CGFloat = 100
+    
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: true) {
+                LazyVStack(spacing: 4) {
+                    ForEach(Array(entries.enumerated()), id: \.element.path) { index, entry in
+                        ThumbnailItemView(
+                            imageSource: imageSource,
+                            entry: entry,
+                            index: index,
+                            isCurrent: index == currentIndex,
+                            favoriteStatus: getFavoriteStatus(entry),
+                            isSelected: selectedPaths.contains(entry.path),
+                            selectionMode: selectionMode,
+                            size: thumbnailSize,
+                            onTap: { onSelect(index) }
+                        )
+                        .id("\(index)-\(favoritesVersion)-\(selectedPaths.contains(entry.path))")
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+            .frame(width: sidebarWidth)
+            .frame(maxHeight: .infinity)
+            .background(Color.black.opacity(0.8))
+            .onChange(of: currentIndex) { _, newIndex in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo("\(newIndex)-\(favoritesVersion)-\(selectedPaths.contains(entries[newIndex].path))", anchor: .center)
+                }
+            }
+            .onAppear {
+                if currentIndex < entries.count {
+                    proxy.scrollTo("\(currentIndex)-\(favoritesVersion)-\(selectedPaths.contains(entries[currentIndex].path))", anchor: .center)
+                }
+            }
+        }
+    }
+    
+    private func getFavoriteStatus(_ entry: ImageEntry) -> CacheManager.FavoriteStatus {
+        let hash = contentHashes[entry.path]
+        return CacheManager.shared.getFavoriteStatus(
+            sourceURL: imageSource.url,
+            entryPath: entry.path,
+            contentHash: hash
+        )
+    }
+}
+
+struct ThumbnailItemView: View {
+    let imageSource: any ImageSource
+    let entry: ImageEntry
+    let index: Int
+    let isCurrent: Bool
+    let favoriteStatus: CacheManager.FavoriteStatus
+    let isSelected: Bool
+    let selectionMode: SelectionMode
+    let size: CGFloat
+    var onTap: () -> Void
+    
+    @State private var thumbnail: NSImage? = nil
+    
+    private var overlayColor: Color {
+        switch selectionMode {
+        case .exclude:
+            return .red
+        case .keep:
+            return .green
+        }
+    }
+    
+    private var overlayIcon: String {
+        switch selectionMode {
+        case .exclude:
+            return "xmark.circle.fill"
+        case .keep:
+            return "checkmark.circle.fill"
+        }
+    }
+    
+    var body: some View {
+        ZStack {
+            // Thumbnail image
+            if let image = thumbnail {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: size, height: size)
+            } else {
+                Rectangle()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: size, height: size)
+                    .overlay {
+                        ProgressView()
+                            .scaleEffect(0.5)
+                            .tint(.white)
+                    }
+            }
+            
+            // Selection overlay (center icon)
+            if isSelected {
+                Color.black.opacity(0.4)
+                Image(systemName: overlayIcon)
+                    .font(.title2)
+                    .foregroundStyle(.white, overlayColor)
+            }
+            
+            // Favorite star (top-left) - only show direct favorites
+            VStack {
+                HStack {
+                    if favoriteStatus == .direct {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.yellow)
+                            .shadow(color: .black.opacity(0.5), radius: 1, x: 0, y: 1)
+                    }
+                    Spacer()
+                }
+                .padding(3)
+                Spacer()
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(isCurrent ? Color.blue : (isSelected ? overlayColor : Color.clear), lineWidth: 3)
+        )
+        .onTapGesture { onTap() }
+        .onAppear { loadThumbnail() }
+    }
+    
+    private func loadThumbnail() {
+        DispatchQueue.global(qos: .utility).async {
+            let image = imageSource.thumbnail(for: entry, maxSize: size * 2)
+            DispatchQueue.main.async {
+                thumbnail = image
+            }
+        }
+    }
+}
+
 // MARK: - S013: ViewerView (Windowed Viewer Mode / Reader Mode)
 
 struct ViewerView: View {
@@ -1175,6 +1331,7 @@ struct ViewerView: View {
     let entries: [ImageEntry]
     let currentIndex: Int
     let contentHashes: [String: String]
+    let selectionMode: SelectionMode
     @Binding var selectedPaths: Set<String>
     @Binding var favoritesVersion: Int
     
@@ -1198,7 +1355,7 @@ struct ViewerView: View {
             entryPath: entry.path,
             contentHash: hash
         )
-        return status == .direct || status == .inherited
+        return status == .direct
     }
     
     private var isCurrentSelected: Bool {
@@ -1211,8 +1368,21 @@ struct ViewerView: View {
             // Background
             Color.black.ignoresSafeArea()
             
-            VStack(spacing: 0) {
-                // Header bar
+            HStack(spacing: 0) {
+                // Thumbnail sidebar
+                ThumbnailSidebarView(
+                    imageSource: imageSource,
+                    entries: entries,
+                    currentIndex: currentIndex,
+                    contentHashes: contentHashes,
+                    selectedPaths: selectedPaths,
+                    favoritesVersion: favoritesVersion,
+                    selectionMode: selectionMode,
+                    onSelect: { index in navigateTo(index) }
+                )
+                
+                VStack(spacing: 0) {
+                    // Header bar
                 HStack {
                     // Close button
                     Button(action: onClose) {
@@ -1233,8 +1403,8 @@ struct ViewerView: View {
                     
                     // Selection indicator
                     if isCurrentSelected {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.red)
+                        Image(systemName: selectionMode == .exclude ? "xmark.circle.fill" : "checkmark.circle.fill")
+                            .foregroundStyle(selectionMode == .exclude ? .red : .green)
                     }
                     
                     // File name
@@ -1328,6 +1498,8 @@ struct ViewerView: View {
                 .padding(.vertical, 4)
                 .background(Color.black.opacity(0.6))
             }
+            } // HStack
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             
             // Key event handler (transparent overlay)
             ViewerKeyEventHandler { event in
