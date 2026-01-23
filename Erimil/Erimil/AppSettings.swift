@@ -74,6 +74,30 @@ enum FavoriteScope: String, CaseIterable {
     }
 }
 
+/// Viewer Mode thumbnail sidebar position
+enum ViewerThumbnailPosition: String, CaseIterable {
+    case left = "left"
+    case bottom = "bottom"
+    case hidden = "hidden"
+    
+    var displayName: String {
+        switch self {
+        case .left: return "左"
+        case .bottom: return "下"
+        case .hidden: return "非表示"
+        }
+    }
+    
+    /// Cycle to next position (for T key toggle)
+    var next: ViewerThumbnailPosition {
+        switch self {
+        case .left: return .bottom
+        case .bottom: return .hidden
+        case .hidden: return .left
+        }
+    }
+}
+
 /// Centralized app settings with UserDefaults
 class AppSettings: ObservableObject {
     static let shared = AppSettings()
@@ -89,6 +113,7 @@ class AppSettings: ObservableObject {
         static let thumbnailSize = "thumbnailSize"
         static let favoriteScope = "favoriteScope"
         static let lastOpenedFolder = "lastOpenedFolder"
+        static let viewerThumbnailPosition = "viewerThumbnailPosition"
     }
     
     // MARK: - Published Properties
@@ -139,6 +164,13 @@ class AppSettings: ObservableObject {
     @Published var favoriteScope: FavoriteScope {
         didSet {
             defaults.set(favoriteScope.rawValue, forKey: Keys.favoriteScope)
+        }
+    }
+    
+    /// Viewer Mode thumbnail position
+    @Published var viewerThumbnailPosition: ViewerThumbnailPosition {
+        didSet {
+            defaults.set(viewerThumbnailPosition.rawValue, forKey: Keys.viewerThumbnailPosition)
         }
     }
     
@@ -298,6 +330,13 @@ class AppSettings: ObservableObject {
             self.favoriteScope = .content  // Default: content-based
         }
         
+        if let posString = defaults.string(forKey: Keys.viewerThumbnailPosition),
+           let pos = ViewerThumbnailPosition(rawValue: posString) {
+            self.viewerThumbnailPosition = pos
+        } else {
+            self.viewerThumbnailPosition = .left  // Default: left sidebar
+        }
+        
         // lastOpenedFolderURL is restored via restoreAndAccessLastOpenedFolder()
         // to properly handle security-scoped bookmarks
         self.lastOpenedFolderURL = nil
@@ -321,6 +360,7 @@ class AppSettings: ObservableObject {
         thumbnailSizePreset = .medium
         thumbnailSize = 120
         favoriteScope = .content
+        viewerThumbnailPosition = .left
         lastOpenedFolderURL = nil
     }
 }

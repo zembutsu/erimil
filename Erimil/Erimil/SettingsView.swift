@@ -79,6 +79,21 @@ struct SettingsView: View {
                 Text("選択モード")
             }
             
+            // MARK: - Viewer Thumbnail Position
+            Section {
+                Picker("サムネイル位置", selection: $settings.viewerThumbnailPosition) {
+                    ForEach(ViewerThumbnailPosition.allCases, id: \.self) { position in
+                        Text(position.displayName).tag(position)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+            } header: {
+                Text("ビューアモード")
+            } footer: {
+                Text("ビューアモードでのサムネイル表示位置（Tキーでも切替可能）")
+                    .font(.caption)
+            }
+            
             // MARK: - Output Folder
             Section {
                 Toggle("デフォルトの出力先を使用", isOn: $settings.useDefaultOutputFolder)
@@ -118,7 +133,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 500)
+        .frame(width: 450, height: 550)
         .navigationTitle("設定")
         .onAppear {
             updateCacheInfo()
