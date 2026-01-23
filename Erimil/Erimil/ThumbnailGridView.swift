@@ -1524,9 +1524,9 @@ struct ViewerView: View {
             return
         }
         
+        
         DispatchQueue.global(qos: .userInitiated).async {
-            // Use thumbnail with large maxSize to get full-resolution image
-            let image = imageSource.thumbnail(for: entry, maxSize: 4000)
+            let image = imageSource.fullImage(for: entry)
             DispatchQueue.main.async {
                 displayedImage = image
                 isLoading = false
