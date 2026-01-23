@@ -1179,45 +1179,82 @@ struct ThumbnailSidebarView: View {
     let selectedPaths: Set<String>
     let favoritesVersion: Int
     let selectionMode: SelectionMode
+    let orientation: SidebarOrientation
     var onSelect: (Int) -> Void
+    
+    enum SidebarOrientation {
+        case vertical    // left sidebar
+        case horizontal  // bottom bar
+    }
     
     private let thumbnailSize: CGFloat = 80
     private let sidebarWidth: CGFloat = 100
+    private let sidebarHeight: CGFloat = 100
     
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: true) {
-                LazyVStack(spacing: 4) {
-                    ForEach(Array(entries.enumerated()), id: \.element.path) { index, entry in
-                        ThumbnailItemView(
-                            imageSource: imageSource,
-                            entry: entry,
-                            index: index,
-                            isCurrent: index == currentIndex,
-                            favoriteStatus: getFavoriteStatus(entry),
-                            isSelected: selectedPaths.contains(entry.path),
-                            selectionMode: selectionMode,
-                            size: thumbnailSize,
-                            onTap: { onSelect(index) }
-                        )
-                        .id("\(index)-\(favoritesVersion)-\(selectedPaths.contains(entry.path))")
+            if orientation == .vertical {
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVStack(spacing: 4) {
+                        thumbnailItems
+                    }
+                    .padding(.vertical, 8)
+                }
+                .frame(width: sidebarWidth)
+                .frame(maxHeight: .infinity)
+                .background(Color.black.opacity(0.8))
+                .onChange(of: currentIndex) { _, newIndex in
+                    scrollToIndex(newIndex, proxy: proxy)
+                }
+                .onAppear {
+                    if currentIndex < entries.count {
+                        scrollToIndex(currentIndex, proxy: proxy)
                     }
                 }
-                .padding(.vertical, 8)
-            }
-            .frame(width: sidebarWidth)
-            .frame(maxHeight: .infinity)
-            .background(Color.black.opacity(0.8))
-            .onChange(of: currentIndex) { _, newIndex in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    proxy.scrollTo("\(newIndex)-\(favoritesVersion)-\(selectedPaths.contains(entries[newIndex].path))", anchor: .center)
+            } else {
+                ScrollView(.horizontal, showsIndicators: true) {
+                    LazyHStack(spacing: 4) {
+                        thumbnailItems
+                    }
+                    .padding(.horizontal, 8)
+                }
+                .frame(height: sidebarHeight)
+                .frame(maxWidth: .infinity)
+                .background(Color.black.opacity(0.8))
+                .onChange(of: currentIndex) { _, newIndex in
+                    scrollToIndex(newIndex, proxy: proxy)
+                }
+                .onAppear {
+                    if currentIndex < entries.count {
+                        scrollToIndex(currentIndex, proxy: proxy)
+                    }
                 }
             }
-            .onAppear {
-                if currentIndex < entries.count {
-                    proxy.scrollTo("\(currentIndex)-\(favoritesVersion)-\(selectedPaths.contains(entries[currentIndex].path))", anchor: .center)
-                }
-            }
+        }
+    }
+    
+    @ViewBuilder
+    private var thumbnailItems: some View {
+        ForEach(Array(entries.enumerated()), id: \.element.path) { index, entry in
+            ThumbnailItemView(
+                imageSource: imageSource,
+                entry: entry,
+                index: index,
+                isCurrent: index == currentIndex,
+                favoriteStatus: getFavoriteStatus(entry),
+                isSelected: selectedPaths.contains(entry.path),
+                selectionMode: selectionMode,
+                size: thumbnailSize,
+                onTap: { onSelect(index) }
+            )
+            .id("\(index)-\(favoritesVersion)-\(selectedPaths.contains(entry.path))")
+        }
+    }
+    
+    private func scrollToIndex(_ index: Int, proxy: ScrollViewProxy) {
+        guard index >= 0, index < entries.count else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            proxy.scrollTo("\(index)-\(favoritesVersion)-\(selectedPaths.contains(entries[index].path))", anchor: .center)
         }
     }
     
@@ -1339,6 +1376,7 @@ struct ViewerView: View {
     var onIndexChange: (Int) -> Void
     var onEnterSlideMode: (Int) -> Void
     
+    @ObservedObject private var settings = AppSettings.shared
     @State private var displayedImage: NSImage? = nil
     @State private var isLoading: Bool = true
     
@@ -1368,138 +1406,45 @@ struct ViewerView: View {
             // Background
             Color.black.ignoresSafeArea()
             
-            HStack(spacing: 0) {
-                // Thumbnail sidebar
-                ThumbnailSidebarView(
-                    imageSource: imageSource,
-                    entries: entries,
-                    currentIndex: currentIndex,
-                    contentHashes: contentHashes,
-                    selectedPaths: selectedPaths,
-                    favoritesVersion: favoritesVersion,
-                    selectionMode: selectionMode,
-                    onSelect: { index in navigateTo(index) }
-                )
-                
-                VStack(spacing: 0) {
-                    // Header bar
-                HStack {
-                    // Close button
-                    Button(action: onClose) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(.white.opacity(0.8))
-                    }
-                    .buttonStyle(.plain)
-                    .help("閉じる (Esc/Q)")
-                    
-                    Spacer()
-                    
-                    // Favorite indicator
-                    if isCurrentFavorite {
-                        Image(systemName: "star.fill")
-                            .foregroundStyle(.yellow)
+            VStack(spacing: 0) {
+                // Main content area with thumbnail sidebar
+                switch settings.viewerThumbnailPosition {
+                case .left:
+                    HStack(spacing: 0) {
+                        ThumbnailSidebarView(
+                            imageSource: imageSource,
+                            entries: entries,
+                            currentIndex: currentIndex,
+                            contentHashes: contentHashes,
+                            selectedPaths: selectedPaths,
+                            favoritesVersion: favoritesVersion,
+                            selectionMode: selectionMode,
+                            orientation: .vertical,
+                            onSelect: { index in navigateTo(index) }
+                        )
+                        mainContentView
                     }
                     
-                    // Selection indicator
-                    if isCurrentSelected {
-                        Image(systemName: selectionMode == .exclude ? "xmark.circle.fill" : "checkmark.circle.fill")
-                            .foregroundStyle(selectionMode == .exclude ? .red : .green)
+                case .bottom:
+                    VStack(spacing: 0) {
+                        mainContentView
+                        ThumbnailSidebarView(
+                            imageSource: imageSource,
+                            entries: entries,
+                            currentIndex: currentIndex,
+                            contentHashes: contentHashes,
+                            selectedPaths: selectedPaths,
+                            favoritesVersion: favoritesVersion,
+                            selectionMode: selectionMode,
+                            orientation: .horizontal,
+                            onSelect: { index in navigateTo(index) }
+                        )
                     }
                     
-                    // File name
-                    if let entry = currentEntry {
-                        Text(entry.name)
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                    }
-                    
-                    Spacer()
-                    
-                    // Position indicator
-                    Text("\(currentIndex + 1) / \(entries.count)")
-                        .foregroundStyle(.white.opacity(0.8))
-                        .monospacedDigit()
-                    
-                    // Fullscreen button
-                    Button {
-                        onEnterSlideMode(currentIndex)
-                    } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.title2)
-                            .foregroundStyle(.white.opacity(0.8))
-                    }
-                    .buttonStyle(.plain)
-                    .help("全画面表示 (Enter)")
+                case .hidden:
+                    mainContentView
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(Color.black.opacity(0.6))
-                
-                // Main image area
-                ZStack {
-                    if isLoading {
-                        ProgressView()
-                            .scaleEffect(1.5)
-                            .tint(.white)
-                    } else if let image = displayedImage {
-                        Image(nsImage: image)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        Text("画像を読み込めません")
-                            .foregroundStyle(.white.opacity(0.5))
-                    }
-                    
-                    // Navigation hints (left/right edges)
-                    HStack {
-                        // Left arrow area
-                        if currentIndex > 0 {
-                            Button {
-                                navigateTo(currentIndex - 1)
-                            } label: {
-                                Rectangle()
-                                    .fill(Color.clear)
-                                    .frame(width: 60)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        
-                        Spacer()
-                        
-                        // Right arrow area
-                        if currentIndex < entries.count - 1 {
-                            Button {
-                                navigateTo(currentIndex + 1)
-                            } label: {
-                                Rectangle()
-                                    .fill(Color.clear)
-                                    .frame(width: 60)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                
-                // Footer with keyboard hints
-                HStack {
-                    Text("←→: ページ移動")
-                    Text("F: ★お気に入り")
-                    Text("X: 選択")
-                    Text("Enter: 全画面")
-                    Text("Esc/Q: 閉じる")
-                }
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.5))
-                .padding(.vertical, 4)
-                .background(Color.black.opacity(0.6))
             }
-            } // HStack
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             
             // Key event handler (transparent overlay)
             ViewerKeyEventHandler { event in
@@ -1515,6 +1460,165 @@ struct ViewerView: View {
         }
     }
     
+    // MARK: - Main Content View
+    
+    @ViewBuilder
+    private var mainContentView: some View {
+        VStack(spacing: 0) {
+            // Header bar
+            headerBar
+            
+            // Main image area
+            ZStack {
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .tint(.white)
+                } else if let image = displayedImage {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Text("画像を読み込めません")
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+                
+                // Navigation hints (left/right edges)
+                HStack {
+                    // Left arrow area
+                    if currentIndex > 0 {
+                        Button {
+                            navigateTo(currentIndex - 1)
+                        } label: {
+                            Rectangle()
+                                .fill(Color.clear)
+                                .frame(width: 60)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    
+                    Spacer()
+                    
+                    // Right arrow area
+                    if currentIndex < entries.count - 1 {
+                        Button {
+                            navigateTo(currentIndex + 1)
+                        } label: {
+                            Rectangle()
+                                .fill(Color.clear)
+                                .frame(width: 60)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            
+            // Footer with keyboard hints
+            footerBar
+        }
+    }
+    
+    // MARK: - Header Bar
+    
+    @ViewBuilder
+    private var headerBar: some View {
+        HStack {
+            // Close button
+            Button(action: onClose) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+            .buttonStyle(.plain)
+            .help("閉じる (Esc/Q)")
+            
+            Spacer()
+            
+            // Thumbnail position indicator
+            Button {
+                settings.viewerThumbnailPosition = settings.viewerThumbnailPosition.next
+            } label: {
+                Image(systemName: thumbnailPositionIcon)
+                    .font(.title3)
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+            .buttonStyle(.plain)
+            .help("サムネイル位置: \(settings.viewerThumbnailPosition.displayName) (T)")
+            
+            Spacer()
+            
+            // Favorite indicator
+            if isCurrentFavorite {
+                Image(systemName: "star.fill")
+                    .foregroundStyle(.yellow)
+            }
+            
+            // Selection indicator
+            if isCurrentSelected {
+                Image(systemName: selectionMode == .exclude ? "xmark.circle.fill" : "checkmark.circle.fill")
+                    .foregroundStyle(selectionMode == .exclude ? .red : .green)
+            }
+            
+            // File name
+            if let entry = currentEntry {
+                Text(entry.name)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+            }
+            
+            Spacer()
+            
+            // Position indicator
+            Text("\(currentIndex + 1) / \(entries.count)")
+                .foregroundStyle(.white.opacity(0.8))
+                .monospacedDigit()
+            
+            // Fullscreen button
+            Button {
+                onEnterSlideMode(currentIndex)
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.title2)
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+            .buttonStyle(.plain)
+            .help("全画面表示 (Enter)")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.6))
+    }
+    
+    private var thumbnailPositionIcon: String {
+        switch settings.viewerThumbnailPosition {
+        case .left: return "sidebar.left"
+        case .bottom: return "sidebar.bottom"
+        case .hidden: return "sidebar.squares.leading"
+        }
+    }
+    
+    // MARK: - Footer Bar
+    
+    @ViewBuilder
+    private var footerBar: some View {
+        HStack {
+            Text("←→: ページ移動")
+            Text("F: ★お気に入り")
+            Text("X: 選択")
+            Text("T: サムネイル位置")
+            Text("Enter: 全画面")
+            Text("Esc/Q: 閉じる")
+        }
+        .font(.caption)
+        .foregroundStyle(.white.opacity(0.5))
+        .padding(.vertical, 4)
+        .background(Color.black.opacity(0.6))
+    }
+    
     private func loadImage() {
         isLoading = true
         displayedImage = nil
@@ -1523,7 +1627,6 @@ struct ViewerView: View {
             isLoading = false
             return
         }
-        
         
         DispatchQueue.global(qos: .userInitiated).async {
             let image = imageSource.fullImage(for: entry)
@@ -1614,6 +1717,11 @@ struct ViewerView: View {
             } else {
                 selectedPaths.insert(entry.path)
             }
+            return true
+            
+        // T - toggle thumbnail position
+        case "t":
+            settings.viewerThumbnailPosition = settings.viewerThumbnailPosition.next
             return true
             
         default:
