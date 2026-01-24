@@ -4,6 +4,7 @@
 //
 //  Cache infrastructure with hash-based privacy design
 //  Stores thumbnails and metadata in ~/Library/Application Support/Erimil/
+//  Updated: S017 (2026-01-24) - Last position management (#52)
 //
 
 import Foundation
@@ -28,6 +29,9 @@ class CacheManager {
     /// ~/Library/Application Support/Erimil/favorites.json
     let favoritesFileURL: URL
     
+    /// ~/Library/Application Support/Erimil/last_position.json (#52)
+    private let lastPositionFileURL: URL
+    
     // MARK: - In-Memory Cache
     
     /// pathHash → contentHash mapping (loaded from index.json)
@@ -40,6 +44,10 @@ class CacheManager {
     /// Favorites lock for thread-safety
     private let favoritesLock = NSLock()
     
+    /// Last viewed position per source (#52)
+    private var lastPositions: [String: Int] = [:]
+    private let positionLock = NSLock()
+    
     // MARK: - Initialization
     
     private init() {
@@ -49,6 +57,7 @@ class CacheManager {
         cacheDirectory = baseDirectory.appendingPathComponent("cache", isDirectory: true)
         indexFileURL = baseDirectory.appendingPathComponent("index.json")
         favoritesFileURL = baseDirectory.appendingPathComponent("favorites.json")
+        lastPositionFileURL = baseDirectory.appendingPathComponent("last_position.json")
         
         // Configure cache
         thumbnailCache.countLimit = 200
@@ -56,9 +65,10 @@ class CacheManager {
         // Create directories if needed
         createDirectoriesIfNeeded()
         
-        // Load index and favorites
+        // Load index, favorites, and last positions
         loadIndex()
         loadFavorites()
+        loadLastPositions()
     }
     
     private func createDirectoriesIfNeeded() {
@@ -525,5 +535,72 @@ class CacheManager {
         }
         
         return (count, size)
+    }
+    
+    // MARK: - Last Position Management (#52)
+    
+    /// Load last positions from disk
+    private func loadLastPositions() {
+        guard FileManager.default.fileExists(atPath: lastPositionFileURL.path) else {
+            lastPositions = [:]
+            return
+        }
+        
+        do {
+            let data = try Data(contentsOf: lastPositionFileURL)
+            positionLock.lock()
+            lastPositions = try JSONDecoder().decode([String: Int].self, from: data)
+            positionLock.unlock()
+            print("[CacheManager] Loaded last positions with \(lastPositions.count) entries")
+        } catch {
+            print("[CacheManager] Failed to load last positions: \(error)")
+            lastPositions = [:]
+        }
+    }
+    
+    /// Save last positions to disk
+    private func saveLastPositions() {
+        positionLock.lock()
+        let currentPositions = lastPositions
+        positionLock.unlock()
+        
+        do {
+            let data = try JSONEncoder().encode(currentPositions)
+            try data.write(to: lastPositionFileURL)
+        } catch {
+            print("[CacheManager] Failed to save last positions: \(error)")
+        }
+    }
+    
+    /// Get last viewed position for a source
+    /// - Parameter sourceURL: The URL of the source (folder or archive)
+    /// - Returns: The last viewed index, or nil if not found
+    func getLastPosition(for sourceURL: URL) -> Int? {
+        let key = hashString(sourceURL.path)
+        positionLock.lock()
+        let result = lastPositions[key]
+        positionLock.unlock()
+        return result
+    }
+    
+    /// Set last viewed position for a source
+    /// - Parameters:
+    ///   - sourceURL: The URL of the source (folder or archive)
+    ///   - index: The current viewed index
+    func setLastPosition(for sourceURL: URL, index: Int) {
+        let key = hashString(sourceURL.path)
+        positionLock.lock()
+        lastPositions[key] = index
+        positionLock.unlock()
+        saveLastPositions()
+    }
+    
+    /// Clear last position for a source (optional, for cleanup)
+    func clearLastPosition(for sourceURL: URL) {
+        let key = hashString(sourceURL.path)
+        positionLock.lock()
+        lastPositions.removeValue(forKey: key)
+        positionLock.unlock()
+        saveLastPositions()
     }
 }

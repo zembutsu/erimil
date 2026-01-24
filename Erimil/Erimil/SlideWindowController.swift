@@ -9,6 +9,7 @@
 //  Updated: S010 (2025-01-11) - Added source position indicator (#23)
 //  Updated: S010 (2025-01-11) - Added Favorites Mode, f/x toggles (#23 continued)
 //  Updated: S017 (2026-01-24) - Added W/S/↑/↓ key bindings (#53)
+//  Updated: S017 (2026-01-24) - Resume last viewed position (#52)
 //
 
 import SwiftUI
@@ -267,8 +268,17 @@ class SlideWindowController {
         print("[SlideWindowController] new entries.count: \(entries.count), favorites: \(favoriteIndices.count)")
         print("[SlideWindowController] source: \(sourceName) (\(sourcePosition)/\(totalSources))")
         
+        // #52: Restore last position for new source
+        let startIndex: Int
+        if !entries.isEmpty, let lastIndex = CacheManager.shared.getLastPosition(for: imageSource.url) {
+            startIndex = min(lastIndex, entries.count - 1)
+            print("[SlideWindowController] Restored last position: \(startIndex)")
+        } else {
+            startIndex = 0
+        }
+        
         // S008: Update stored state for event monitor
-        currentIndex = 0
+        currentIndex = startIndex
         isFavoritesMode = false  // Reset mode on source change
         storedOnClose = onClose
         storedOnNextSource = onNextSource
@@ -293,7 +303,7 @@ class SlideWindowController {
         let slideView = SlideWindowView(
             imageSource: imageSource,
             entries: entries,
-            initialIndex: 0,  // Start from first image
+            initialIndex: startIndex,  // #52: Start from last position
             favoriteIndices: favoriteIndices,
             selectedIndices: selectedIndices,
             sourceName: sourceName,
