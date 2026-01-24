@@ -9,7 +9,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @Binding var selectedFolderURL: URL?
-    @Binding var selectedZipURL: URL?
+    @Binding var selectedSourceURL: URL?
     let hasUnsavedChanges: Bool
     let onZipSelectionAttempt: (URL) -> Void
     var onFolderSelectionAttempt: ((URL) -> Void)?
@@ -17,7 +17,6 @@ struct SidebarView: View {
     let reloadTrigger: UUID
     
     @State private var rootNode: FolderNode?
-    @State private var selectedNodeURL: URL?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -26,7 +25,7 @@ struct SidebarView: View {
                     OutlineGroup(root.children ?? [], children: \.children) { node in
                         NodeRowView(
                             node: node,
-                            isSelected: selectedNodeURL == node.url
+                            isSelected: selectedSourceURL == node.url
                         )
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) {
@@ -87,8 +86,6 @@ struct SidebarView: View {
     }
     
     private func handleNodeTap(_ node: FolderNode) {
-        selectedNodeURL = node.url
-        
         if node.isZip {
             onZipSelectionAttempt(node.url)
         } else if node.isDirectory {
@@ -99,8 +96,6 @@ struct SidebarView: View {
     
     // S010: Double-click handler
     private func handleNodeDoubleTap(_ node: FolderNode) {
-        selectedNodeURL = node.url
-        
         // First select the node (same as single tap)
         if node.isZip {
             onZipSelectionAttempt(node.url)
@@ -205,7 +200,7 @@ struct NodeRowView: View {
 #Preview {
     SidebarView(
         selectedFolderURL: .constant(nil),
-        selectedZipURL: .constant(nil),
+        selectedSourceURL: .constant(nil),  // 変更
         hasUnsavedChanges: false,
         onZipSelectionAttempt: { _ in },
         onFolderSelectionAttempt: { _ in },
