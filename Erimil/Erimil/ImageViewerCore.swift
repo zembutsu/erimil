@@ -4,6 +4,7 @@
 //
 //  Created by and for Phase 2.2 - Slide Mode
 //  Session: S003 (2025-12-17)
+//  Updated: S016 (2026-01-24) - Added prefetch support
 //
 
 import SwiftUI
@@ -20,6 +21,9 @@ struct ImageViewerCore: View {
     
     @State private var loadedImage: NSImage?
     @State private var isLoading: Bool = true
+    @State private var prefetcher = ImagePrefetcher()
+    @State private var previousIndex: Int = 0
+    @State private var currentSourceURL: URL?
     
     var body: some View {
         ZStack {
@@ -66,10 +70,22 @@ struct ImageViewerCore: View {
             }
         }
         .onAppear {
+            // Check for source change
+            if currentSourceURL != imageSource.url {
+                prefetcher.clearCache()
+                currentSourceURL = imageSource.url
+            }
+            previousIndex = currentIndex
             loadCurrentImage()
         }
-        .onChange(of: currentIndex) { _, _ in
+        .onChange(of: currentIndex) { oldValue, newValue in
+            previousIndex = oldValue
             loadCurrentImage()
+        }
+        .onChange(of: imageSource.url) { _, newURL in
+            // Source changed - clear cache
+            prefetcher.clearCache()
+            currentSourceURL = newURL
         }
     }
     
@@ -83,25 +99,57 @@ struct ImageViewerCore: View {
         }
         
         let entry = entries[currentIndex]
+        
+        // Check prefetch cache first
+        if let cachedImage = prefetcher.getCached(for: entry.path) {
+            loadedImage = cachedImage
+            isLoading = false
+            
+            // Trigger prefetch for surrounding images
+            prefetcher.prefetchAround(
+                index: currentIndex,
+                entries: entries,
+                imageSource: imageSource,
+                previousIndex: previousIndex
+            )
+            print("[ImageViewerCore] Cache HIT for \(entry.name)")
+            return
+        }
+        
+        // Cache miss - load normally
         isLoading = true
         loadedImage = nil
+        print("[ImageViewerCore] Cache MISS for \(entry.name), loading...")
         
         // Capture for async
         let capturedSource = imageSource
         let capturedEntry = entry
+        let capturedIndex = currentIndex
         
         DispatchQueue.global(qos: .userInitiated).async {
             let image = capturedSource.fullImage(for: capturedEntry)
             
             DispatchQueue.main.async {
                 // Verify still the same index
-                guard currentIndex >= 0 && currentIndex < entries.count,
-                      entries[currentIndex].path == capturedEntry.path else {
+                guard currentIndex == capturedIndex else {
                     return
+                }
+                
+                if let image = image {
+                    // Add to cache
+                    prefetcher.addToCache(path: capturedEntry.path, image: image)
                 }
                 
                 loadedImage = image
                 isLoading = false
+                
+                // Start prefetching surrounding images
+                prefetcher.prefetchAround(
+                    index: currentIndex,
+                    entries: entries,
+                    imageSource: imageSource,
+                    previousIndex: previousIndex
+                )
             }
         }
     }

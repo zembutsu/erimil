@@ -114,6 +114,7 @@ class AppSettings: ObservableObject {
         static let favoriteScope = "favoriteScope"
         static let lastOpenedFolder = "lastOpenedFolder"
         static let viewerThumbnailPosition = "viewerThumbnailPosition"
+        static let prefetchCount = "prefetchCount"
     }
     
     // MARK: - Published Properties
@@ -171,6 +172,13 @@ class AppSettings: ObservableObject {
     @Published var viewerThumbnailPosition: ViewerThumbnailPosition {
         didSet {
             defaults.set(viewerThumbnailPosition.rawValue, forKey: Keys.viewerThumbnailPosition)
+        }
+    }
+    
+    /// Prefetch count: number of images to preload in each direction (0-5)
+    @Published var prefetchCount: Int {
+        didSet {
+            defaults.set(prefetchCount, forKey: Keys.prefetchCount)
         }
     }
     
@@ -337,6 +345,9 @@ class AppSettings: ObservableObject {
             self.viewerThumbnailPosition = .left  // Default: left sidebar
         }
         
+        let savedPrefetchCount = defaults.integer(forKey: Keys.prefetchCount)
+        self.prefetchCount = savedPrefetchCount > 0 ? min(savedPrefetchCount, 5) : 2
+        
         // lastOpenedFolderURL is restored via restoreAndAccessLastOpenedFolder()
         // to properly handle security-scoped bookmarks
         self.lastOpenedFolderURL = nil
@@ -359,6 +370,7 @@ class AppSettings: ObservableObject {
         selectionMode = .exclude
         thumbnailSizePreset = .medium
         thumbnailSize = 120
+        prefetchCount = 2
         favoriteScope = .content
         viewerThumbnailPosition = .left
         lastOpenedFolderURL = nil
