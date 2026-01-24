@@ -144,7 +144,60 @@ struct ThumbnailGridView: View {
                     previewMode = .viewer(index: newIndex)
                 },
                 onEnterSlideMode: { index in
-                    previewMode = .slideMode(index: index)
+                    // Close Viewer Mode first
+                    previewMode = .none
+                    
+                    // Open Slide Mode directly
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        let positionInfo = SourceNavigator.positionInfo(for: imageSource.url)
+                        let sourceName = imageSource.url.lastPathComponent
+                        let selectedIndices = Set(entries.enumerated().compactMap { idx, entry in
+                            selectedPaths.contains(entry.path) ? idx : nil
+                        })
+                        
+                        SlideWindowController.shared.open(
+                            imageSource: imageSource,
+                            entries: entries,
+                            initialIndex: index,
+                            favoriteIndices: favoriteIndices,
+                            selectedIndices: selectedIndices,
+                            sourceName: sourceName,
+                            sourcePosition: positionInfo?.position ?? 0,
+                            totalSources: positionInfo?.total ?? 0,
+                            onClose: {
+                                print("[ThumbnailGridView] SlideWindowController closed from ViewerMode")
+                            },
+                            onIndexChange: { newIndex in
+                                focusedIndex = newIndex
+                            },
+                            onNextSource: onRequestNextSource,
+                            onPreviousSource: onRequestPreviousSource,
+                            onToggleFavorite: { [self] idx in
+                                guard idx >= 0, idx < entries.count else { return }
+                                let entry = entries[idx]
+                                let hash = contentHashes[entry.path]
+                                _ = CacheManager.shared.toggleFavorite(
+                                    sourceURL: imageSource.url,
+                                    entryPath: entry.path,
+                                    contentHash: hash
+                                )
+                                favoritesVersion += 1
+                            },
+                            onToggleSelection: { [self] idx in
+                                guard idx >= 0, idx < entries.count else { return }
+                                let entry = entries[idx]
+                                if selectedPaths.contains(entry.path) {
+                                    selectedPaths.remove(entry.path)
+                                } else {
+                                    selectedPaths.insert(entry.path)
+                                }
+                            },
+                            onExitToViewerMode: {
+                                let currentIdx = SlideWindowController.shared.getCurrentIndex
+                                previewMode = .viewer(index: currentIdx)
+                            }
+                        )
+                    }
                 },
                 onRequestNextSource: {
                     shouldReopenViewerMode = true  // 追加
@@ -156,7 +209,7 @@ struct ThumbnailGridView: View {
                 }
             )
         } else {
-        VStack(spacing: 0) {
+            VStack(spacing: 0) {
             // ヘッダー
             headerView
             
@@ -357,6 +410,11 @@ struct ThumbnailGridView: View {
                             } else {
                                 selectedPaths.insert(entry.path)
                             }
+                        },
+                        onExitToViewerMode: {
+                            // Get current index from SlideWindowController and open Viewer Mode
+                            let currentIdx = SlideWindowController.shared.getCurrentIndex
+                            previewMode = .viewer(index: currentIdx)
                         }
                     )
                 }
@@ -797,11 +855,22 @@ struct ThumbnailGridView: View {
         
         switch characters {
         // WASD keys
+        // A - previous image, Shift+A - previous source
         case "a":
-            moveFocus(by: -1)
+            if event.modifierFlags.contains(.control) {
+                onRequestPreviousSource?()
+            } else {
+                moveFocus(by: -1)
+            }
             return true
+
+        // D - next image, Shift+D - next source
         case "d":
-            moveFocus(by: 1)
+            if event.modifierFlags.contains(.control) {
+                onRequestNextSource?()
+            } else {
+                moveFocus(by: 1)
+            }
             return true
         case "w":
             moveFocus(by: -columnCount)
@@ -832,7 +901,9 @@ struct ThumbnailGridView: View {
             let hasControl = event.modifierFlags.contains(.control)
             if hasControl {
                 // Ctrl+F = Slide Mode
-                previewMode = .slideMode(index: currentIndex)
+                if let index = focusedIndex {
+                    previewMode = .slideMode(index: index)
+                }
             } else {
                 // F = Toggle favorite
                 if let index = focusedIndex, index < entries.count {
@@ -1744,6 +1815,17 @@ struct ViewerView: View {
                 navigateTo(0)  // Loop to first
             }
             return true
+
+        // F key (keyCode 3) - Ctrl+F = Slide Mode
+        case 3:
+            print("[ViewerView] keyCode 3 detected, control: \(event.modifierFlags.contains(.control))")
+            if event.modifierFlags.contains(.control) {
+                print("[ViewerView] Ctrl+F → entering Slide Mode")
+                onEnterSlideMode(currentIndex)
+                return true
+            }
+            // Plain F handled in character switch below
+            break
             
         default:
             break
@@ -1783,16 +1865,26 @@ struct ViewerView: View {
 
         // F - toggle favorite
         case "f":
-            guard let entry = currentEntry else { return true }
-            let hash = contentHashes[entry.path]
-            _ = CacheManager.shared.toggleFavorite(
-                sourceURL: imageSource.url,
-                entryPath: entry.path,
-                contentHash: hash
-            )
-            favoritesVersion += 1
+            if event.modifierFlags.contains(.control) {  // .shift → .control
+                print("[ViewerView] Ctrl+F (char) → entering Slide Mode")
+                onEnterSlideMode(currentIndex)
+            } else {
+                guard let entry = currentEntry else { return true }
+                let hash = contentHashes[entry.path]
+                _ = CacheManager.shared.toggleFavorite(
+                    sourceURL: imageSource.url,
+                    entryPath: entry.path,
+                    contentHash: hash
+                )
+                favoritesVersion += 1
+            }
             return true
-            
+        
+        // R - exit to Filer (close Viewer Mode)
+        case "r":
+            onClose()
+                return true
+        
         // X - toggle selection
         case "x":
             guard let entry = currentEntry else { return true }
