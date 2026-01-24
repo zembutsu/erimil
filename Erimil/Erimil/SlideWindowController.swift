@@ -21,6 +21,11 @@ class SlideWindowController {
     private var slideWindow: NSWindow?
     private var currentIndex: Int = 0
     
+    /// Public getter for current index
+    var getCurrentIndex: Int {
+        return currentIndex
+    }
+    
     // S008: Event monitor for centralized key handling
     private var eventMonitor: Any?
     
@@ -29,6 +34,7 @@ class SlideWindowController {
     private var storedOnNextSource: (() -> Void)?
     private var storedOnPreviousSource: (() -> Void)?
     private var storedOnIndexChange: ((Int) -> Void)?
+    private var storedOnExitToViewerMode: (() -> Void)?
     private var storedEntries: [ImageEntry] = []
     private var storedFavoriteIndices: Set<Int> = []
     
@@ -62,7 +68,8 @@ class SlideWindowController {
         onNextSource: (() -> Void)? = nil,
         onPreviousSource: (() -> Void)? = nil,
         onToggleFavorite: ((Int) -> Void)? = nil,
-        onToggleSelection: ((Int) -> Void)? = nil
+        onToggleSelection: ((Int) -> Void)? = nil,
+        onExitToViewerMode: (() -> Void)? = nil
     ) {
         print("[SlideWindowController] open() called")
         print("[SlideWindowController] entries.count: \(entries.count), initialIndex: \(initialIndex), favorites: \(favoriteIndices.count)")
@@ -91,6 +98,8 @@ class SlideWindowController {
         storedOnToggleFavorite = onToggleFavorite
         storedOnToggleSelection = onToggleSelection
         storedSelectedIndices = selectedIndices
+        
+        storedOnExitToViewerMode = onExitToViewerMode
         
         // Create the SwiftUI view
         let slideView = SlideWindowView(
@@ -175,6 +184,7 @@ class SlideWindowController {
         storedOnIndexChange = nil
         storedOnToggleFavorite = nil
         storedOnToggleSelection = nil
+        storedOnExitToViewerMode = nil
         storedEntries = []
         storedFavoriteIndices = []
         storedSelectedIndices = []
@@ -228,7 +238,8 @@ class SlideWindowController {
         onNextSource: (() -> Void)? = nil,
         onPreviousSource: (() -> Void)? = nil,
         onToggleFavorite: ((Int) -> Void)? = nil,
-        onToggleSelection: ((Int) -> Void)? = nil
+        onToggleSelection: ((Int) -> Void)? = nil,
+        onExitToViewerMode: (() -> Void)? = nil
     ) {
         guard let window = slideWindow else {
             print("[SlideWindowController] updateSource: no window, falling back to open()")
@@ -274,6 +285,8 @@ class SlideWindowController {
         storedOnToggleFavorite = onToggleFavorite
         storedOnToggleSelection = onToggleSelection
         storedSelectedIndices = selectedIndices
+        
+        storedOnExitToViewerMode = onExitToViewerMode
         
         // Create new SwiftUI view with updated content
         let slideView = SlideWindowView(
@@ -404,6 +417,15 @@ class SlideWindowController {
                 goToNext()
                 return nil
             }
+        
+        // R - exit to Viewer Mode (Reader)
+        case 15:
+            print("[SlideWindowController] → Exit to Viewer Mode (R)")
+            if let exitToViewer = storedOnExitToViewerMode {
+                close()
+                exitToViewer()
+            }
+            return nil
             
         default:
             if let chars = event.charactersIgnoringModifiers?.lowercased() {
