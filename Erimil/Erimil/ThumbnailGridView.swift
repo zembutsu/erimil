@@ -866,9 +866,15 @@ struct ThumbnailGridView: View {
         
         let newIndex = current + offset
         
-        // Clamp to valid range
+        // Clamp to valid range or loop
         if newIndex >= 0 && newIndex < entries.count {
             focusedIndex = newIndex
+        } else if settings.loopWithinSource {
+            if newIndex < 0 {
+                focusedIndex = entries.count - 1  // Loop to last
+            } else if newIndex >= entries.count {
+                focusedIndex = 0  // Loop to first
+            }
         }
     }
     
@@ -1723,6 +1729,8 @@ struct ViewerView: View {
                 onRequestPreviousSource?()
             } else if currentIndex > 0 {
                 navigateTo(currentIndex - 1)
+            } else if settings.loopWithinSource {
+                navigateTo(entries.count - 1)  // Loop to last
             }
             return true
             
@@ -1732,8 +1740,11 @@ struct ViewerView: View {
                 onRequestNextSource?()
             } else if currentIndex < entries.count - 1 {
                 navigateTo(currentIndex + 1)
+            } else if settings.loopWithinSource {
+                navigateTo(0)  // Loop to first
             }
             return true
+            
         default:
             break
         }
@@ -1754,6 +1765,8 @@ struct ViewerView: View {
                 onRequestPreviousSource?()
             } else if currentIndex > 0 {
                 navigateTo(currentIndex - 1)
+            } else if settings.loopWithinSource {
+                navigateTo(entries.count - 1)
             }
             return true
             
@@ -1763,8 +1776,11 @@ struct ViewerView: View {
                 onRequestNextSource?()
             } else if currentIndex < entries.count - 1 {
                 navigateTo(currentIndex + 1)
+            } else if settings.loopWithinSource {
+                navigateTo(0)
             }
             return true
+
         // F - toggle favorite
         case "f":
             guard let entry = currentEntry else { return true }

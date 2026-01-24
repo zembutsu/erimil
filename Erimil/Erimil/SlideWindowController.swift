@@ -481,15 +481,31 @@ class SlideWindowController {
     // MARK: - S008: Navigation (moved from View for centralized control)
     
     private func goToPrevious() {
-        guard !storedEntries.isEmpty, currentIndex > 0 else { return }
-        currentIndex -= 1
+        guard !storedEntries.isEmpty else { return }
+        
+        if currentIndex > 0 {
+            currentIndex -= 1
+        } else if AppSettings.shared.loopWithinSource {
+            currentIndex = storedEntries.count - 1  // Loop to last
+        } else {
+            return
+        }
+        
         storedOnIndexChange?(currentIndex)
         notifyViewOfIndexChange()
     }
     
     private func goToNext() {
-        guard !storedEntries.isEmpty, currentIndex < storedEntries.count - 1 else { return }
-        currentIndex += 1
+        guard !storedEntries.isEmpty else { return }
+        
+        if currentIndex < storedEntries.count - 1 {
+            currentIndex += 1
+        } else if AppSettings.shared.loopWithinSource {
+            currentIndex = 0  // Loop to first
+        } else {
+            return
+        }
+        
         storedOnIndexChange?(currentIndex)
         notifyViewOfIndexChange()
     }
@@ -502,8 +518,10 @@ class SlideWindowController {
             currentIndex = targetIndex
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
-        } else if let lastFavorite = storedFavoriteIndices.max(), lastFavorite != currentIndex {
-            // Wrap around to last favorite
+        } else if AppSettings.shared.loopWithinSource,
+                  let lastFavorite = storedFavoriteIndices.max(),
+                  lastFavorite != currentIndex {
+            // Wrap around to last favorite (if loop enabled)
             currentIndex = lastFavorite
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
@@ -518,8 +536,10 @@ class SlideWindowController {
             currentIndex = targetIndex
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
-        } else if let firstFavorite = storedFavoriteIndices.min(), firstFavorite != currentIndex {
-            // Wrap around to first favorite
+        } else if AppSettings.shared.loopWithinSource,
+                  let firstFavorite = storedFavoriteIndices.min(),
+                  firstFavorite != currentIndex {
+            // Wrap around to first favorite (if loop enabled)
             currentIndex = firstFavorite
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
