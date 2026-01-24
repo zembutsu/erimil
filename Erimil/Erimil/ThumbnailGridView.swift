@@ -144,7 +144,9 @@ struct ThumbnailGridView: View {
                 },
                 onEnterSlideMode: { index in
                     previewMode = .slideMode(index: index)
-                }
+                },
+                onRequestNextSource: onRequestNextSource,
+                onRequestPreviousSource: onRequestPreviousSource
             )
         } else {
         VStack(spacing: 0) {
@@ -1375,6 +1377,8 @@ struct ViewerView: View {
     var onClose: () -> Void
     var onIndexChange: (Int) -> Void
     var onEnterSlideMode: (Int) -> Void
+    var onRequestNextSource: (() -> Void)?
+    var onRequestPreviousSource: (() -> Void)?
     
     @ObservedObject private var settings = AppSettings.shared
     @State private var displayedImage: NSImage? = nil
@@ -1617,12 +1621,13 @@ struct ViewerView: View {
     @ViewBuilder
     private var footerBar: some View {
         HStack {
-            Text("←→: ページ移動")
-            Text("F: ★お気に入り")
+            Text("←→: ページ")
+            Text("Ctrl+←→: ソース")
+            Text("F: ★")
             Text("X: 選択")
-            Text("T: サムネイル位置")
+            Text("T: サムネイル")
             Text("Enter: 全画面")
-            Text("Esc/Q: 閉じる")
+            Text("Esc: 閉じる")
         }
         .font(.caption)
         .foregroundStyle(.white.opacity(0.5))
@@ -1700,18 +1705,21 @@ struct ViewerView: View {
             
         // Left arrow
         case 123:
-            if currentIndex > 0 {
+            if event.modifierFlags.contains(.control) {
+                onRequestPreviousSource?()
+            } else if currentIndex > 0 {
                 navigateTo(currentIndex - 1)
             }
             return true
             
         // Right arrow
         case 124:
-            if currentIndex < entries.count - 1 {
+            if event.modifierFlags.contains(.control) {
+                onRequestNextSource?()
+            } else if currentIndex < entries.count - 1 {
                 navigateTo(currentIndex + 1)
             }
             return true
-            
         default:
             break
         }
@@ -1726,21 +1734,23 @@ struct ViewerView: View {
         case "q":
             onClose()
             return true
-            
-        // A - previous
+        // A - previous (Ctrl+A = previous source)
         case "a":
-            if currentIndex > 0 {
+            if event.modifierFlags.contains(.control) {
+                onRequestPreviousSource?()
+            } else if currentIndex > 0 {
                 navigateTo(currentIndex - 1)
             }
             return true
             
-        // D - next
+        // D - next (Ctrl+D = next source)
         case "d":
-            if currentIndex < entries.count - 1 {
+            if event.modifierFlags.contains(.control) {
+                onRequestNextSource?()
+            } else if currentIndex < entries.count - 1 {
                 navigateTo(currentIndex + 1)
             }
             return true
-            
         // F - toggle favorite
         case "f":
             guard let entry = currentEntry else { return true }
