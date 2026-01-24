@@ -8,6 +8,7 @@
 //  Updated: S008 (2025-01-09) - Centralized key handling for empty source support (#21)
 //  Updated: S010 (2025-01-11) - Added source position indicator (#23)
 //  Updated: S010 (2025-01-11) - Added Favorites Mode, f/x toggles (#23 continued)
+//  Updated: S017 (2026-01-24) - Added W/S/↑/↓ key bindings (#53)
 //
 
 import SwiftUI
@@ -418,6 +419,36 @@ class SlideWindowController {
                 return nil
             }
         
+        // Up arrow (same as Left) - S017
+        case 126:
+            if hasControl {
+                print("[SlideWindowController] → Previous source (Ctrl+↑)")
+                storedOnPreviousSource?()
+                return nil
+            } else if isFavoritesMode {
+                print("[SlideWindowController] → Previous favorite (↑ in Favorites Mode)")
+                goToPreviousFavorite()
+                return nil
+            } else {
+                goToPrevious()
+                return nil
+            }
+            
+        // Down arrow (same as Right) - S017
+        case 125:
+            if hasControl {
+                print("[SlideWindowController] → Next source (Ctrl+↓)")
+                storedOnNextSource?()
+                return nil
+            } else if isFavoritesMode {
+                print("[SlideWindowController] → Next favorite (↓ in Favorites Mode)")
+                goToNextFavorite()
+                return nil
+            } else {
+                goToNext()
+                return nil
+            }
+        
         // R - exit to Viewer Mode (Reader)
         case 15:
             print("[SlideWindowController] → Exit to Viewer Mode (R)")
@@ -448,6 +479,32 @@ class SlideWindowController {
                         storedOnNextSource?()
                     } else if isFavoritesMode {
                         print("[SlideWindowController] → Next favorite (D in Favorites Mode)")
+                        goToNextFavorite()
+                    } else {
+                        goToNext()
+                    }
+                    return nil
+                
+                // S017: W key (same as A)
+                case "w":
+                    if hasControl {
+                        print("[SlideWindowController] → Previous source (Ctrl+W)")
+                        storedOnPreviousSource?()
+                    } else if isFavoritesMode {
+                        print("[SlideWindowController] → Previous favorite (W in Favorites Mode)")
+                        goToPreviousFavorite()
+                    } else {
+                        goToPrevious()
+                    }
+                    return nil
+                    
+                // S017: S key (same as D)
+                case "s":
+                    if hasControl {
+                        print("[SlideWindowController] → Next source (Ctrl+S)")
+                        storedOnNextSource?()
+                    } else if isFavoritesMode {
+                        print("[SlideWindowController] → Next favorite (S in Favorites Mode)")
                         goToNextFavorite()
                     } else {
                         goToNext()
