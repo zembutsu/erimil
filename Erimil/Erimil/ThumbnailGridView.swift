@@ -92,6 +92,7 @@ struct ThumbnailGridView: View {
     var onRequestNextSource: (() -> Void)?      // S005: Source navigation
     var onRequestPreviousSource: (() -> Void)?  // S005: Source navigation
     @Binding var shouldReopenSlideMode: Bool    // S005: Reopen after source switch
+    @Binding var shouldReopenViewerMode: Bool   // S016: Reopen Viewer Mode after source switch
     
     @ObservedObject private var settings = AppSettings.shared
     
@@ -145,8 +146,14 @@ struct ThumbnailGridView: View {
                 onEnterSlideMode: { index in
                     previewMode = .slideMode(index: index)
                 },
-                onRequestNextSource: onRequestNextSource,
-                onRequestPreviousSource: onRequestPreviousSource
+                onRequestNextSource: {
+                    shouldReopenViewerMode = true  // 追加
+                    onRequestNextSource?()
+                },
+                onRequestPreviousSource: {
+                    shouldReopenViewerMode = true  // 追加
+                    onRequestPreviousSource?()
+                }
             )
         } else {
         VStack(spacing: 0) {
@@ -237,6 +244,13 @@ struct ThumbnailGridView: View {
             print("[ThumbnailGridView] onChange(url): \(oldURL.lastPathComponent) → \(newURL.lastPathComponent)")
             if currentSourceURL != newURL {
                 loadSource()
+            }
+        }
+        .onChange(of: entries) { _, newEntries in
+            // S016: Reopen Viewer Mode if flag is set
+            if shouldReopenViewerMode && !newEntries.isEmpty {
+                previewMode = .viewer(index: 0)
+                shouldReopenViewerMode = false
             }
         }
         .onAppear {
@@ -1827,6 +1841,7 @@ struct ViewerKeyEventHandler: NSViewRepresentable {
         imageSource: ArchiveManager(zipURL: URL(fileURLWithPath: "/tmp/test.zip")),
         selectedPaths: .constant([]),
         onExportSuccess: nil,
-        shouldReopenSlideMode: .constant(false)
+        shouldReopenSlideMode: .constant(false),
+        shouldReopenViewerMode: .constant(false)
     )
 }

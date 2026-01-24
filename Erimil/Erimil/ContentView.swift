@@ -24,6 +24,9 @@ struct ContentView: View {
     // S010: Flag to open Slide Mode from sidebar double-click
     @State private var shouldOpenSlideMode: Bool = false
     
+    // S016: Flag to reopen Viewer Mode after source switch
+    @State private var shouldReopenViewerMode: Bool = false
+    
     // 確認ダイアログ用
     @State private var pendingSourceURL: URL?
     @State private var pendingSourceType: ImageSourceType?
@@ -33,11 +36,8 @@ struct ContentView: View {
         NavigationSplitView {
             SidebarView(
                 selectedFolderURL: $selectedFolderURL,
-                selectedZipURL: Binding(
-                    get: { selectedSourceType == .archive ? selectedSourceURL : nil },
-                    set: { _ in }
-                ),
-                hasUnsavedChanges: !selectedPaths.isEmpty,  // Changed: use selectedPaths
+                selectedSourceURL: $selectedSourceURL,  // シンプルに直接バインド
+                hasUnsavedChanges: !selectedPaths.isEmpty,
                 onZipSelectionAttempt: { url in
                     handleSourceSelectionAttempt(url: url, type: .archive)
                 },
@@ -45,7 +45,6 @@ struct ContentView: View {
                     handleSourceSelectionAttempt(url: url, type: .folder)
                 },
                 onOpenSlideMode: { url in
-                    // S010: Open Slide Mode from sidebar double-click
                     openSlideModeForSource(url)
                 },
                 reloadTrigger: folderReloadTrigger
@@ -64,7 +63,8 @@ struct ContentView: View {
                     onRequestPreviousSource: {
                         navigateToPreviousSource()
                     },
-                    shouldReopenSlideMode: $shouldReopenSlideMode
+                    shouldReopenSlideMode: $shouldReopenSlideMode,
+                    shouldReopenViewerMode: $shouldReopenViewerMode
                 )
                 .id(imageSource.url)  // Force View recreation when source changes
                 // S010: Trigger Slide Mode open from sidebar
@@ -216,12 +216,12 @@ struct ContentView: View {
             print("[ContentView] navigateToNextSource: \(currentURL.lastPathComponent) → \(nextURL.lastPathComponent)")
             let type = inferSourceType(nextURL)
             
-            // S005: Set flag to update Slide Mode content (don't close window)
+            // S005: Set flag to reopen mode after source switch
             if SlideWindowController.shared.isOpen {
                 shouldReopenSlideMode = true
             }
+            // S016: shouldReopenViewerMode is set by ViewerView before calling this
             
-            // Skip unsaved changes check - user is in Slide Mode, selections not applicable
             selectedPaths.removeAll()
             selectedSourceURL = nextURL
             selectedSourceType = type
@@ -240,12 +240,12 @@ struct ContentView: View {
             print("[ContentView] navigateToPreviousSource: \(currentURL.lastPathComponent) → \(prevURL.lastPathComponent)")
             let type = inferSourceType(prevURL)
             
-            // S005: Set flag to update Slide Mode content (don't close window)
+            // S005: Set flag to reopen mode after source switch
             if SlideWindowController.shared.isOpen {
                 shouldReopenSlideMode = true
             }
+            // S016: shouldReopenViewerMode is set by ViewerView before calling this
             
-            // Skip unsaved changes check - user is in Slide Mode, selections not applicable
             selectedPaths.removeAll()
             selectedSourceURL = prevURL
             selectedSourceType = type
