@@ -3,6 +3,7 @@
 //  Erimil
 //
 //  Created by Masahito Zembutsu on 2025/12/13.
+//  Updated: S017 (2026-01-24) - Added W/S/↑/↓ key bindings (#53)
 //
 
 import SwiftUI
@@ -804,16 +805,32 @@ struct ThumbnailGridView: View {
         switch event.keyCode {
         // Arrow keys
         case 123: // Left arrow
-            moveFocus(by: -1)
+            if event.modifierFlags.contains(.control) {
+                onRequestPreviousSource?()
+            } else {
+                moveFocus(by: -1)
+            }
             return true
         case 124: // Right arrow
-            moveFocus(by: 1)
+            if event.modifierFlags.contains(.control) {
+                onRequestNextSource?()
+            } else {
+                moveFocus(by: 1)
+            }
             return true
-        case 126: // Up arrow
-            moveFocus(by: -columnCount)
+        case 126: // Up arrow - S017: added Ctrl+ for source nav
+            if event.modifierFlags.contains(.control) {
+                onRequestPreviousSource?()
+            } else {
+                moveFocus(by: -columnCount)
+            }
             return true
-        case 125: // Down arrow
-            moveFocus(by: columnCount)
+        case 125: // Down arrow - S017: added Ctrl+ for source nav
+            if event.modifierFlags.contains(.control) {
+                onRequestNextSource?()
+            } else {
+                moveFocus(by: columnCount)
+            }
             return true
             
         // Escape
@@ -872,11 +889,21 @@ struct ThumbnailGridView: View {
                 moveFocus(by: 1)
             }
             return true
+        // S017: W - row up, Ctrl+W - previous source
         case "w":
-            moveFocus(by: -columnCount)
+            if event.modifierFlags.contains(.control) {
+                onRequestPreviousSource?()
+            } else {
+                moveFocus(by: -columnCount)
+            }
             return true
+        // S017: S - row down, Ctrl+S - next source
         case "s":
-            moveFocus(by: columnCount)
+            if event.modifierFlags.contains(.control) {
+                onRequestNextSource?()
+            } else {
+                moveFocus(by: columnCount)
+            }
             return true
             
         // X key - toggle selection
@@ -1815,6 +1842,28 @@ struct ViewerView: View {
                 navigateTo(0)  // Loop to first
             }
             return true
+        
+        // Up arrow (same as Left) - S017
+        case 126:
+            if event.modifierFlags.contains(.control) {
+                onRequestPreviousSource?()
+            } else if currentIndex > 0 {
+                navigateTo(currentIndex - 1)
+            } else if settings.loopWithinSource {
+                navigateTo(entries.count - 1)
+            }
+            return true
+            
+        // Down arrow (same as Right) - S017
+        case 125:
+            if event.modifierFlags.contains(.control) {
+                onRequestNextSource?()
+            } else if currentIndex < entries.count - 1 {
+                navigateTo(currentIndex + 1)
+            } else if settings.loopWithinSource {
+                navigateTo(0)
+            }
+            return true
 
         // F key (keyCode 3) - Ctrl+F = Slide Mode
         case 3:
@@ -1854,6 +1903,28 @@ struct ViewerView: View {
             
         // D - next (Ctrl+D = next source)
         case "d":
+            if event.modifierFlags.contains(.control) {
+                onRequestNextSource?()
+            } else if currentIndex < entries.count - 1 {
+                navigateTo(currentIndex + 1)
+            } else if settings.loopWithinSource {
+                navigateTo(0)
+            }
+            return true
+        
+        // S017: W - previous (Ctrl+W = previous source)
+        case "w":
+            if event.modifierFlags.contains(.control) {
+                onRequestPreviousSource?()
+            } else if currentIndex > 0 {
+                navigateTo(currentIndex - 1)
+            } else if settings.loopWithinSource {
+                navigateTo(entries.count - 1)
+            }
+            return true
+            
+        // S017: S - next (Ctrl+S = next source)
+        case "s":
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else if currentIndex < entries.count - 1 {
