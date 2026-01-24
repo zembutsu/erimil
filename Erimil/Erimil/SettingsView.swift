@@ -90,14 +90,16 @@ struct SettingsView: View {
                 Stepper(
                     "先読み枚数: \(settings.prefetchCount)",
                     value: $settings.prefetchCount,
-                    in: 0...5
+                    in: 0...10
                 )
+                Toggle("ソース内ループナビゲーション", isOn: $settings.loopWithinSource)
             } header: {
                 Text("ビューアモード")
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("サムネイル位置はTキーでも切替可能")
                     Text("先読み: 0=無効、大きいほど快適だがメモリ使用増加")
+                    Text("ループ: 末尾→先頭、先頭→末尾のナビゲーション")
                 }
                 .font(.caption)
             }

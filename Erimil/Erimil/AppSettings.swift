@@ -115,6 +115,7 @@ class AppSettings: ObservableObject {
         static let lastOpenedFolder = "lastOpenedFolder"
         static let viewerThumbnailPosition = "viewerThumbnailPosition"
         static let prefetchCount = "prefetchCount"
+        static let loopWithinSource = "loopWithinSource"
     }
     
     // MARK: - Published Properties
@@ -179,6 +180,13 @@ class AppSettings: ObservableObject {
     @Published var prefetchCount: Int {
         didSet {
             defaults.set(prefetchCount, forKey: Keys.prefetchCount)
+        }
+    }
+    
+    /// Loop navigation within source (last→first, first→last)
+    @Published var loopWithinSource: Bool {
+        didSet {
+            defaults.set(loopWithinSource, forKey: Keys.loopWithinSource)
         }
     }
     
@@ -351,6 +359,12 @@ class AppSettings: ObservableObject {
         // lastOpenedFolderURL is restored via restoreAndAccessLastOpenedFolder()
         // to properly handle security-scoped bookmarks
         self.lastOpenedFolderURL = nil
+        
+        // prefetchCount の読み込みの後に追加
+        // self.loopWithinSource = defaults.bool(forKey: Keys.loopWithinSource)
+        // Note: bool(forKey:) returns false if not set, so default is OFF
+        // If you want default ON, use:
+        self.loopWithinSource = defaults.object(forKey: Keys.loopWithinSource) == nil ? true : defaults.bool(forKey: Keys.loopWithinSource)
     }
     
     // MARK: - Helper Methods
@@ -374,5 +388,6 @@ class AppSettings: ObservableObject {
         favoriteScope = .content
         viewerThumbnailPosition = .left
         lastOpenedFolderURL = nil
+        loopWithinSource = true  // or false, depending on preferred default
     }
 }
