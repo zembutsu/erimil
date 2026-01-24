@@ -5,11 +5,24 @@
 //  Cache infrastructure with hash-based privacy design
 //  Stores thumbnails and metadata in ~/Library/Application Support/Erimil/
 //  Updated: S017 (2026-01-24) - Last position management (#52)
+//  Updated: S018 (2026-01-24) - Source settings with reading direction (#54)
 //
 
 import Foundation
 import AppKit
 import CryptoKit
+
+/// Per-source settings (#54)
+struct SourceSettings: Codable {
+    var lastPosition: Int?
+    var readingDirection: ReadingDirection?  // nil = use global default
+    // var singlePageIndices: Set<Int>?      // #56: Reserved for future use
+    
+    /// Check if settings are empty (can be removed)
+    var isEmpty: Bool {
+        lastPosition == nil && readingDirection == nil
+    }
+}
 
 /// Manages thumbnail cache and metadata with privacy-first hash-based storage
 class CacheManager {
@@ -29,8 +42,11 @@ class CacheManager {
     /// ~/Library/Application Support/Erimil/favorites.json
     let favoritesFileURL: URL
     
-    /// ~/Library/Application Support/Erimil/last_position.json (#52)
+    /// ~/Library/Application Support/Erimil/last_position.json (legacy, for migration)
     private let lastPositionFileURL: URL
+    
+    /// ~/Library/Application Support/Erimil/source_settings.json (#54)
+    private let sourceSettingsFileURL: URL
     
     // MARK: - In-Memory Cache
     
@@ -44,9 +60,9 @@ class CacheManager {
     /// Favorites lock for thread-safety
     private let favoritesLock = NSLock()
     
-    /// Last viewed position per source (#52)
-    private var lastPositions: [String: Int] = [:]
-    private let positionLock = NSLock()
+    /// Source settings per source (#54, replaces lastPositions)
+    private var sourceSettings: [String: SourceSettings] = [:]
+    private let settingsLock = NSLock()
     
     // MARK: - Initialization
     
@@ -58,6 +74,7 @@ class CacheManager {
         indexFileURL = baseDirectory.appendingPathComponent("index.json")
         favoritesFileURL = baseDirectory.appendingPathComponent("favorites.json")
         lastPositionFileURL = baseDirectory.appendingPathComponent("last_position.json")
+        sourceSettingsFileURL = baseDirectory.appendingPathComponent("source_settings.json")
         
         // Configure cache
         thumbnailCache.countLimit = 200
@@ -65,10 +82,12 @@ class CacheManager {
         // Create directories if needed
         createDirectoriesIfNeeded()
         
-        // Load index, favorites, and last positions
+        // Load index and favorites
         loadIndex()
         loadFavorites()
-        loadLastPositions()
+        
+        // Load source settings (with migration from legacy format)
+        loadSourceSettings()
     }
     
     private func createDirectoriesIfNeeded() {
@@ -239,128 +258,125 @@ class CacheManager {
         var contentHash: String?  // For bySource entries, link to content
     }
     
-    /// In-memory favorites
-    private var favoritesByContent: Set<String> = []  // contentHash
-    private var favoritesBySource: Set<String> = []   // sourceKey (hash of sourceURL+entryPath)
-    private var sourceToContent: [String: String] = [:] // sourceKey → contentHash mapping
-    
-    /// Hybrid favorites file URL
-    private var hybridFavoritesFileURL: URL {
-        return baseDirectory.appendingPathComponent("favorites_hybrid.json")
-    }
+    /// In-memory favorites (simplified sets for fast lookup)
+    private var favoritesByContent: Set<String> = []  // contentHashes
+    private var favoritesBySource: Set<String> = []   // sourceKeys
+    private var sourceToContent: [String: String] = [:] // sourceKey → contentHash
     
     private func loadFavorites() {
-        let fileURL = hybridFavoritesFileURL
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            favoritesByContent = []
-            favoritesBySource = []
-            sourceToContent = [:]
-            print("[CacheManager] No hybrid favorites file")
-            return
+        let fm = FileManager.default
+        let hybridURL = baseDirectory.appendingPathComponent("favorites_hybrid.json")
+        
+        // Try hybrid format first
+        if fm.fileExists(atPath: hybridURL.path) {
+            do {
+                let data = try Data(contentsOf: hybridURL)
+                let hybrid = try JSONDecoder().decode(HybridFavoritesFile.self, from: data)
+                
+                favoritesLock.lock()
+                favoritesByContent = Set(hybrid.byContent.keys)
+                favoritesBySource = Set(hybrid.bySource.keys)
+                sourceToContent = [:]
+                for (sourceKey, metadata) in hybrid.bySource {
+                    if let cHash = metadata.contentHash {
+                        sourceToContent[sourceKey] = cHash
+                    }
+                }
+                favoritesLock.unlock()
+                
+                print("[CacheManager] Loaded hybrid favorites: \(favoritesByContent.count) by content, \(favoritesBySource.count) by source")
+                return
+            } catch {
+                print("[CacheManager] Failed to load hybrid favorites: \(error)")
+            }
         }
         
-        do {
-            let data = try Data(contentsOf: fileURL)
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            let file = try decoder.decode(HybridFavoritesFile.self, from: data)
-            
-            favoritesLock.lock()
-            favoritesByContent = Set(file.byContent.keys)
-            favoritesBySource = Set(file.bySource.keys)
-            
-            // Build sourceToContent mapping
-            sourceToContent = [:]
-            for (sourceKey, metadata) in file.bySource {
-                if let contentHash = metadata.contentHash {
-                    sourceToContent[sourceKey] = contentHash
-                }
+        // Legacy format migration
+        if fm.fileExists(atPath: favoritesFileURL.path) {
+            do {
+                let data = try Data(contentsOf: favoritesFileURL)
+                let legacyFavorites = try JSONDecoder().decode([String].self, from: data)
+                
+                favoritesLock.lock()
+                favoritesByContent = Set(legacyFavorites)
+                favoritesBySource = []
+                sourceToContent = [:]
+                favoritesLock.unlock()
+                
+                print("[CacheManager] Migrated \(legacyFavorites.count) legacy favorites")
+                saveFavorites()  // Save in new format
+                return
+            } catch {
+                print("[CacheManager] Failed to load legacy favorites: \(error)")
             }
-            favoritesLock.unlock()
-            
-            print("[CacheManager] Loaded \(favoritesBySource.count) source favorites, \(favoritesByContent.count) content favorites")
-        } catch {
-            print("[CacheManager] Failed to load favorites: \(error)")
-            favoritesByContent = []
-            favoritesBySource = []
-            sourceToContent = [:]
         }
+        
+        // No favorites file
+        favoritesByContent = []
+        favoritesBySource = []
+        sourceToContent = [:]
     }
     
     private func saveFavorites() {
         favoritesLock.lock()
-        let contentFavs = favoritesByContent
-        let sourceFavs = favoritesBySource
-        let s2c = sourceToContent
-        favoritesLock.unlock()
         
         var byContent: [String: FavoriteMetadata] = [:]
-        for hash in contentFavs {
-            byContent[hash] = FavoriteMetadata(addedAt: Date(), contentHash: nil)
+        for cHash in favoritesByContent {
+            byContent[cHash] = FavoriteMetadata(addedAt: Date(), contentHash: nil)
         }
         
         var bySource: [String: FavoriteMetadata] = [:]
-        for key in sourceFavs {
-            bySource[key] = FavoriteMetadata(addedAt: Date(), contentHash: s2c[key])
+        for sKey in favoritesBySource {
+            let cHash = sourceToContent[sKey]
+            bySource[sKey] = FavoriteMetadata(addedAt: Date(), contentHash: cHash)
         }
         
-        let file = HybridFavoritesFile(version: 2, byContent: byContent, bySource: bySource)
+        favoritesLock.unlock()
+        
+        let hybrid = HybridFavoritesFile(version: 2, byContent: byContent, bySource: bySource)
+        let hybridURL = baseDirectory.appendingPathComponent("favorites_hybrid.json")
         
         do {
             let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = .prettyPrinted
-            let data = try encoder.encode(file)
-            try data.write(to: hybridFavoritesFileURL)
+            let data = try encoder.encode(hybrid)
+            try data.write(to: hybridURL)
         } catch {
             print("[CacheManager] Failed to save favorites: \(error)")
         }
     }
     
-    /// Generate source key (hash of sourceURL + entryPath)
-    func sourceKey(sourceURL: URL, entryPath: String) -> String {
-        let fullPath = sourceURL.path + "/" + entryPath
-        return hashString(fullPath)
+    /// Generate source key for favorite lookup
+    private func sourceKey(sourceURL: URL, entryPath: String) -> String {
+        return hashString(sourceURL.absoluteString + "::" + entryPath)
     }
     
     /// Get favorite status for an entry
     func getFavoriteStatus(sourceURL: URL, entryPath: String, contentHash: String?) -> FavoriteStatus {
-        favoritesLock.lock()
-        defer { favoritesLock.unlock() }
-        
-        // Check source first (direct favorite in this source)
         let sKey = sourceKey(sourceURL: sourceURL, entryPath: entryPath)
-        if favoritesBySource.contains(sKey) {
-            return .direct
-        }
         
-        // Check content (inherited from other source)
-        if let cHash = contentHash, favoritesByContent.contains(cHash) {
+        favoritesLock.lock()
+        let isDirect = favoritesBySource.contains(sKey)
+        let isInherited = contentHash != nil && favoritesByContent.contains(contentHash!)
+        favoritesLock.unlock()
+        
+        if isDirect {
+            return .direct
+        } else if isInherited {
             return .inherited
         }
-        
         return .none
     }
     
-    /// Check if directly favorited in this source (for delete protection)
-    func isDirectFavorite(sourceURL: URL, entryPath: String) -> Bool {
-        let sKey = sourceKey(sourceURL: sourceURL, entryPath: entryPath)
-        favoritesLock.lock()
-        let result = favoritesBySource.contains(sKey)
-        favoritesLock.unlock()
-        return result
-    }
-    
-    /// Toggle favorite - adds/removes from both bySource and byContent
-    /// Returns new FavoriteStatus
+    /// Toggle favorite status for an entry
+    /// Returns new status after toggle
+    @discardableResult
     func toggleFavorite(sourceURL: URL, entryPath: String, contentHash: String?) -> FavoriteStatus {
         let sKey = sourceKey(sourceURL: sourceURL, entryPath: entryPath)
         
         favoritesLock.lock()
         
-        let wasDirectFavorite = favoritesBySource.contains(sKey)
-        
-        if wasDirectFavorite {
+        if favoritesBySource.contains(sKey) {
             // Remove from source
             favoritesBySource.remove(sKey)
             sourceToContent.removeValue(forKey: sKey)
@@ -392,6 +408,16 @@ class CacheManager {
             return .direct
         }
     }
+
+    /// Check if entry is directly favorited in this source (not inherited)
+    func isDirectFavorite(sourceURL: URL, entryPath: String) -> Bool {
+        let sKey = sourceKey(sourceURL: sourceURL, entryPath: entryPath)
+        favoritesLock.lock()
+        let result = favoritesBySource.contains(sKey)
+        favoritesLock.unlock()
+        return result
+    }
+    
     
     /// Get content hash for a path (if cached)
     func getContentHashForPath(_ path: String) -> String? {
@@ -537,50 +563,104 @@ class CacheManager {
         return (count, size)
     }
     
-    // MARK: - Last Position Management (#52)
+    // MARK: - Source Settings Management (#54)
     
-    /// Load last positions from disk
-    private func loadLastPositions() {
-        guard FileManager.default.fileExists(atPath: lastPositionFileURL.path) else {
-            lastPositions = [:]
-            return
+    /// Load source settings (with migration from legacy last_position.json)
+    private func loadSourceSettings() {
+        let fm = FileManager.default
+        
+        // Try new format first
+        if fm.fileExists(atPath: sourceSettingsFileURL.path) {
+            do {
+                let data = try Data(contentsOf: sourceSettingsFileURL)
+                settingsLock.lock()
+                sourceSettings = try JSONDecoder().decode([String: SourceSettings].self, from: data)
+                settingsLock.unlock()
+                print("[CacheManager] Loaded source settings with \(sourceSettings.count) entries")
+                return
+            } catch {
+                print("[CacheManager] Failed to load source settings: \(error)")
+            }
         }
         
+        // Migration from legacy last_position.json
+        if fm.fileExists(atPath: lastPositionFileURL.path) {
+            do {
+                let data = try Data(contentsOf: lastPositionFileURL)
+                let legacyPositions = try JSONDecoder().decode([String: Int].self, from: data)
+                
+                settingsLock.lock()
+                sourceSettings = [:]
+                for (key, position) in legacyPositions {
+                    sourceSettings[key] = SourceSettings(lastPosition: position, readingDirection: nil)
+                }
+                settingsLock.unlock()
+                
+                print("[CacheManager] Migrated \(legacyPositions.count) entries from last_position.json")
+                saveSourceSettings()
+                
+                // Remove legacy file after successful migration
+                try? fm.removeItem(at: lastPositionFileURL)
+                print("[CacheManager] Removed legacy last_position.json")
+                return
+            } catch {
+                print("[CacheManager] Failed to migrate legacy positions: \(error)")
+            }
+        }
+        
+        // No settings file
+        sourceSettings = [:]
+    }
+    
+    /// Save source settings to disk
+    private func saveSourceSettings() {
+        settingsLock.lock()
+        let currentSettings = sourceSettings
+        settingsLock.unlock()
+        
         do {
-            let data = try Data(contentsOf: lastPositionFileURL)
-            positionLock.lock()
-            lastPositions = try JSONDecoder().decode([String: Int].self, from: data)
-            positionLock.unlock()
-            print("[CacheManager] Loaded last positions with \(lastPositions.count) entries")
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            let data = try encoder.encode(currentSettings)
+            try data.write(to: sourceSettingsFileURL)
         } catch {
-            print("[CacheManager] Failed to load last positions: \(error)")
-            lastPositions = [:]
+            print("[CacheManager] Failed to save source settings: \(error)")
         }
     }
     
-    /// Save last positions to disk
-    private func saveLastPositions() {
-        positionLock.lock()
-        let currentPositions = lastPositions
-        positionLock.unlock()
-        
-        do {
-            let data = try JSONEncoder().encode(currentPositions)
-            try data.write(to: lastPositionFileURL)
-        } catch {
-            print("[CacheManager] Failed to save last positions: \(error)")
-        }
+    /// Get settings for a source
+    func getSourceSettings(for sourceURL: URL) -> SourceSettings? {
+        let key = hashString(sourceURL.path)
+        settingsLock.lock()
+        let result = sourceSettings[key]
+        settingsLock.unlock()
+        return result
     }
+    
+    /// Update settings for a source
+    func updateSourceSettings(for sourceURL: URL, update: (inout SourceSettings) -> Void) {
+        let key = hashString(sourceURL.path)
+        settingsLock.lock()
+        var settings = sourceSettings[key] ?? SourceSettings()
+        update(&settings)
+        
+        // Remove if empty
+        if settings.isEmpty {
+            sourceSettings.removeValue(forKey: key)
+        } else {
+            sourceSettings[key] = settings
+        }
+        settingsLock.unlock()
+        saveSourceSettings()
+    }
+    
+    // MARK: - Last Position (convenience methods, backward compatible)
     
     /// Get last viewed position for a source
     /// - Parameter sourceURL: The URL of the source (folder or archive)
     /// - Returns: The last viewed index, or nil if not found
     func getLastPosition(for sourceURL: URL) -> Int? {
-        let key = hashString(sourceURL.path)
-        positionLock.lock()
-        let result = lastPositions[key]
-        positionLock.unlock()
-        return result
+        return getSourceSettings(for: sourceURL)?.lastPosition
     }
     
     /// Set last viewed position for a source
@@ -588,19 +668,50 @@ class CacheManager {
     ///   - sourceURL: The URL of the source (folder or archive)
     ///   - index: The current viewed index
     func setLastPosition(for sourceURL: URL, index: Int) {
-        let key = hashString(sourceURL.path)
-        positionLock.lock()
-        lastPositions[key] = index
-        positionLock.unlock()
-        saveLastPositions()
+        updateSourceSettings(for: sourceURL) { settings in
+            settings.lastPosition = index
+        }
     }
     
     /// Clear last position for a source (optional, for cleanup)
     func clearLastPosition(for sourceURL: URL) {
-        let key = hashString(sourceURL.path)
-        positionLock.lock()
-        lastPositions.removeValue(forKey: key)
-        positionLock.unlock()
-        saveLastPositions()
+        updateSourceSettings(for: sourceURL) { settings in
+            settings.lastPosition = nil
+        }
+    }
+    
+    // MARK: - Reading Direction (#54)
+    
+    /// Get reading direction for a source (nil = use global default)
+    func getReadingDirection(for sourceURL: URL) -> ReadingDirection? {
+        return getSourceSettings(for: sourceURL)?.readingDirection
+    }
+    
+    /// Get effective reading direction (per-source if set, otherwise global)
+    func getEffectiveReadingDirection(for sourceURL: URL) -> ReadingDirection {
+        if let perSource = getReadingDirection(for: sourceURL) {
+            return perSource
+        }
+        return AppSettings.shared.defaultReadingDirection
+    }
+    
+    /// Set reading direction for a source (nil to use global default)
+    func setReadingDirection(for sourceURL: URL, direction: ReadingDirection?) {
+        updateSourceSettings(for: sourceURL) { settings in
+            settings.readingDirection = direction
+        }
+        print("[CacheManager] Set reading direction for \(sourceURL.lastPathComponent): \(direction?.displayName ?? "global default")")
+    }
+    
+    /// Toggle reading direction for a source
+    /// If currently using global default, sets to opposite of global
+    /// If already per-source, toggles between ltr/rtl
+    /// Returns the new effective direction
+    @discardableResult
+    func toggleReadingDirection(for sourceURL: URL) -> ReadingDirection {
+        let current = getEffectiveReadingDirection(for: sourceURL)
+        let new = current.toggled
+        setReadingDirection(for: sourceURL, direction: new)
+        return new
     }
 }

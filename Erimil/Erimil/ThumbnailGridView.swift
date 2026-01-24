@@ -120,6 +120,9 @@ struct ThumbnailGridView: View {
     @State private var favoritesVersion: Int = 0
     // Temporary feedback when trying to select protected item
     @State private var protectedFeedbackPath: String? = nil
+
+    // #54: Reading direction change trigger
+    @State private var readingDirectionVersion: Int = 0
     
     /// Dynamic columns based on thumbnail size
     private var columns: [GridItem] {
@@ -135,7 +138,13 @@ struct ThumbnailGridView: View {
         }
         return nil
     }
-    
+    /// #54: Effective reading direction for this source
+    private var effectiveReadingDirection: ReadingDirection {
+        // Reference readingDirectionVersion to trigger re-render
+        _ = readingDirectionVersion
+        return CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
+    }
+
     var body: some View {
         // S013: Viewer Mode - full window image display
         if case .viewer(let viewerIndex) = previewMode {
@@ -271,6 +280,7 @@ struct ThumbnailGridView: View {
                                     }
                                 }
                                 .padding()
+                                .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection) // #54
                             }
                             .onChange(of: focusedIndex) { _, newIndex in
                                 if let index = newIndex {
@@ -982,11 +992,14 @@ struct ThumbnailGridView: View {
             return true
             
         // S013: R key - open Viewer Mode (Reader Mode)
-        // #52: R = open from bookmark (default), Ctrl+R = open from current (ignore bookmark)
+        // #52: R = open from bookmark (default)
+        // #54: Ctrl+R = toggle reading direction (RTL/LTR)
         case "r":
             if event.modifierFlags.contains(.control) {
-                // Ctrl+R: Open from current focused (ignore bookmark)
-                previewMode = .viewer(index: currentIndex)
+                // Ctrl+R: Toggle reading direction
+                let newDirection = CacheManager.shared.toggleReadingDirection(for: imageSource.url)
+                readingDirectionVersion += 1
+                print("[Filer] Reading direction toggled to: \(newDirection.displayName)")
             } else {
                 // R: Open from bookmark (last viewed), fallback to current
                 let startIndex = lastViewedIndex ?? currentIndex
@@ -1555,6 +1568,11 @@ struct ViewerView: View {
     @State private var previousViewerIndex: Int = 0
     @State private var currentSourceURL: URL?
     
+    /// #54: Effective reading direction for this source
+    private var effectiveReadingDirection: ReadingDirection {
+        CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
+    }
+
     private var currentEntry: ImageEntry? {
         guard currentIndex >= 0, currentIndex < entries.count else { return nil }
         return entries[currentIndex]
@@ -1599,6 +1617,8 @@ struct ViewerView: View {
                         )
                         mainContentView
                     }
+                    // .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)  // #54: RTL support
+                    
                     
                 case .bottom:
                     VStack(spacing: 0) {
@@ -1615,6 +1635,7 @@ struct ViewerView: View {
                             onSelect: { index in navigateTo(index) }
                         )
                     }
+                    .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)  // #54: RTL support
                     
                 case .hidden:
                     mainContentView
@@ -2005,12 +2026,21 @@ struct ViewerView: View {
             return true
         
         // R - exit to Filer (close Viewer Mode)
+        // #54: Ctrl+R = toggle reading direction
         case "r":
-            // #52: Update focusedIndex before closing so Filer shows the last viewed image
-            onIndexChange(currentIndex)
-            onClose()
+            if event.modifierFlags.contains(.control) {
+                // Ctrl+R: Toggle reading direction
+                let newDirection = CacheManager.shared.toggleReadingDirection(for: imageSource.url)
+                // ViewerView doesn't have readingDirectionVersion, but parent will update on next open
+                print("[ViewerView] Reading direction toggled to: \(newDirection.displayName)")
+            } else {
+                // R: Exit to Filer
+                // #52: Update focusedIndex before closing so Filer shows the last viewed image
+                onIndexChange(currentIndex)
+                onClose()
+            }
             return true
-        
+
         // X - toggle selection
         case "x":
             guard let entry = currentEntry else { return true }

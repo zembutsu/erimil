@@ -3,10 +3,12 @@
 //  Erimil
 //
 //  Application settings with UserDefaults persistence
+//  Updated: S018 (2026-01-24) - Added ReadingDirection (#54)
 //
 
 import Foundation
 import Combine
+import SwiftUI  // For LayoutDirection
 
 /// Selection mode for image marking
 enum SelectionMode: String, CaseIterable {
@@ -88,12 +90,48 @@ enum ViewerThumbnailPosition: String, CaseIterable {
         }
     }
     
-    /// Cycle to next position (for T key toggle)
+    /// Cycle to next position (for Ctrl+T key toggle)
     var next: ViewerThumbnailPosition {
         switch self {
         case .left: return .bottom
         case .bottom: return .hidden
         case .hidden: return .left
+        }
+    }
+}
+
+/// Reading direction for manga/book viewing (#54)
+enum ReadingDirection: String, CaseIterable, Codable {
+    case ltr = "ltr"  // Left-to-Right (Western books, default)
+    case rtl = "rtl"  // Right-to-Left (Japanese manga, vertical text books)
+    
+    var displayName: String {
+        switch self {
+        case .ltr: return "左→右 (LTR)"
+        case .rtl: return "右→左 (RTL)"
+        }
+    }
+    
+    var shortName: String {
+        switch self {
+        case .ltr: return "LTR"
+        case .rtl: return "RTL"
+        }
+    }
+    
+    /// SwiftUI LayoutDirection for environment
+    var layoutDirection: LayoutDirection {
+        switch self {
+        case .ltr: return .leftToRight
+        case .rtl: return .rightToLeft
+        }
+    }
+    
+    /// Toggle to opposite direction
+    var toggled: ReadingDirection {
+        switch self {
+        case .ltr: return .rtl
+        case .rtl: return .ltr
         }
     }
 }
@@ -116,6 +154,7 @@ class AppSettings: ObservableObject {
         static let viewerThumbnailPosition = "viewerThumbnailPosition"
         static let prefetchCount = "prefetchCount"
         static let loopWithinSource = "loopWithinSource"
+        static let defaultReadingDirection = "defaultReadingDirection"  // #54
     }
     
     // MARK: - Published Properties
@@ -187,6 +226,14 @@ class AppSettings: ObservableObject {
     @Published var loopWithinSource: Bool {
         didSet {
             defaults.set(loopWithinSource, forKey: Keys.loopWithinSource)
+        }
+    }
+    
+    /// Default reading direction for new sources (#54)
+    @Published var defaultReadingDirection: ReadingDirection {
+        didSet {
+            defaults.set(defaultReadingDirection.rawValue, forKey: Keys.defaultReadingDirection)
+            print("[AppSettings] Default reading direction changed to: \(defaultReadingDirection.displayName)")
         }
     }
     
@@ -356,14 +403,19 @@ class AppSettings: ObservableObject {
         let savedPrefetchCount = defaults.integer(forKey: Keys.prefetchCount)
         self.prefetchCount = savedPrefetchCount > 0 ? min(savedPrefetchCount, 5) : 2
         
+        // #54: Reading direction
+        if let dirString = defaults.string(forKey: Keys.defaultReadingDirection),
+           let dir = ReadingDirection(rawValue: dirString) {
+            self.defaultReadingDirection = dir
+        } else {
+            self.defaultReadingDirection = .ltr  // Default: Left-to-Right
+        }
+        
         // lastOpenedFolderURL is restored via restoreAndAccessLastOpenedFolder()
         // to properly handle security-scoped bookmarks
         self.lastOpenedFolderURL = nil
         
-        // prefetchCount の読み込みの後に追加
-        // self.loopWithinSource = defaults.bool(forKey: Keys.loopWithinSource)
-        // Note: bool(forKey:) returns false if not set, so default is OFF
-        // If you want default ON, use:
+        // loopWithinSource: default is ON
         self.loopWithinSource = defaults.object(forKey: Keys.loopWithinSource) == nil ? true : defaults.bool(forKey: Keys.loopWithinSource)
     }
     
@@ -388,6 +440,7 @@ class AppSettings: ObservableObject {
         favoriteScope = .content
         viewerThumbnailPosition = .left
         lastOpenedFolderURL = nil
-        loopWithinSource = true  // or false, depending on preferred default
+        loopWithinSource = true
+        defaultReadingDirection = .ltr  // #54
     }
 }
