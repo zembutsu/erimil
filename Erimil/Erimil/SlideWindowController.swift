@@ -37,6 +37,7 @@ class SlideWindowController {
     private var storedOnPreviousSource: (() -> Void)?
     private var storedOnIndexChange: ((Int) -> Void)?
     private var storedOnExitToViewerMode: (() -> Void)?
+    private var storedImageSource: (any ImageSource)?  // #54: For reading direction toggle
     private var storedEntries: [ImageEntry] = []
     private var storedFavoriteIndices: Set<Int> = []
     
@@ -85,6 +86,7 @@ class SlideWindowController {
         
         // S008: Store callbacks and state for event monitor
         storedOnClose = onClose
+        storedImageSource = imageSource  // #54
         storedOnNextSource = onNextSource
         storedOnPreviousSource = onPreviousSource
         storedOnIndexChange = onIndexChange
@@ -181,6 +183,7 @@ class SlideWindowController {
         
         // S008: Clear stored callbacks
         storedOnClose = nil
+        storedImageSource = nil  // #54
         storedOnNextSource = nil
         storedOnPreviousSource = nil
         storedOnIndexChange = nil
@@ -281,6 +284,7 @@ class SlideWindowController {
         currentIndex = startIndex
         isFavoritesMode = false  // Reset mode on source change
         storedOnClose = onClose
+        storedImageSource = imageSource  // #54
         storedOnNextSource = onNextSource
         storedOnPreviousSource = onPreviousSource
         storedOnIndexChange = onIndexChange
@@ -460,13 +464,24 @@ class SlideWindowController {
             }
         
         // R - exit to Viewer Mode (Reader)
+        // #54: Ctrl+R = toggle reading direction
         case 15:
-            print("[SlideWindowController] → Exit to Viewer Mode (R)")
-            if let exitToViewer = storedOnExitToViewerMode {
-                close()
-                exitToViewer()
+            if hasControl {
+                // Ctrl+R: Toggle reading direction
+                if let source = storedImageSource {
+                    let newDirection = CacheManager.shared.toggleReadingDirection(for: source.url)
+                    print("[SlideMode] Reading direction toggled to: \(newDirection.displayName)")
+                    // Note: View will need to observe this change
+                }
+                return nil
+            } else {
+                print("[SlideWindowController] → Exit to Viewer Mode (R)")
+                if let exitToViewer = storedOnExitToViewerMode {
+                    close()
+                    exitToViewer()
+                }
+                return nil
             }
-            return nil
             
         default:
             if let chars = event.charactersIgnoringModifiers?.lowercased() {
