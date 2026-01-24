@@ -4,6 +4,7 @@
 //
 //  Created by Masahito Zembutsu on 2025/12/13.
 //  Updated: S017 (2026-01-24) - Added W/S/↑/↓ key bindings (#53)
+//  Updated: S017 (2026-01-24) - Resume last viewed position (#52)
 //
 
 import SwiftUI
@@ -126,6 +127,15 @@ struct ThumbnailGridView: View {
         return [GridItem(.adaptive(minimum: size, maximum: size + 30), spacing: 8)]
     }
     
+    /// #52: Last viewed index for this source (for bookmark display)
+    private var lastViewedIndex: Int? {
+        guard !entries.isEmpty else { return nil }
+        if let lastIndex = CacheManager.shared.getLastPosition(for: imageSource.url) {
+            return min(lastIndex, entries.count - 1)
+        }
+        return nil
+    }
+    
     var body: some View {
         // S013: Viewer Mode - full window image display
         if case .viewer(let viewerIndex) = previewMode {
@@ -143,6 +153,8 @@ struct ThumbnailGridView: View {
                 onIndexChange: { newIndex in
                     focusedIndex = newIndex
                     previewMode = .viewer(index: newIndex)
+                    // #52: Save last position
+                    CacheManager.shared.setLastPosition(for: imageSource.url, index: newIndex)
                 },
                 onEnterSlideMode: { index in
                     // Close Viewer Mode first
@@ -170,6 +182,8 @@ struct ThumbnailGridView: View {
                             },
                             onIndexChange: { newIndex in
                                 focusedIndex = newIndex
+                                // #52: Save last position
+                                CacheManager.shared.setLastPosition(for: imageSource.url, index: newIndex)
                             },
                             onNextSource: onRequestNextSource,
                             onPreviousSource: onRequestPreviousSource,
@@ -238,7 +252,8 @@ struct ThumbnailGridView: View {
                                             favoriteStatus: getFavoriteStatus(entry),
                                             selectionMode: settings.selectionMode,
                                             size: settings.effectiveThumbnailSize,
-                                            showProtectedFeedback: protectedFeedbackPath == entry.path
+                                            showProtectedFeedback: protectedFeedbackPath == entry.path,
+                                            isLastViewed: index == lastViewedIndex  // #52
                                         )
                                         .id(index)
                                         .onTapGesture(count: 2) {
@@ -303,7 +318,14 @@ struct ThumbnailGridView: View {
         .onChange(of: entries) { _, newEntries in
             // S016: Reopen Viewer Mode if flag is set
             if shouldReopenViewerMode && !newEntries.isEmpty {
-                previewMode = .viewer(index: 0)
+                // #52: Restore last position when reopening Viewer Mode after source switch
+                let startIndex: Int
+                if let lastIndex = CacheManager.shared.getLastPosition(for: imageSource.url) {
+                    startIndex = min(lastIndex, newEntries.count - 1)
+                } else {
+                    startIndex = 0
+                }
+                previewMode = .viewer(index: startIndex)
                 shouldReopenViewerMode = false
             }
         }
@@ -387,6 +409,8 @@ struct ThumbnailGridView: View {
                         },
                         onIndexChange: { newIndex in
                             focusedIndex = newIndex
+                            // #52: Save last position
+                            CacheManager.shared.setLastPosition(for: imageSource.url, index: newIndex)
                         },
                         onNextSource: onRequestNextSource,
                         onPreviousSource: onRequestPreviousSource,
@@ -633,6 +657,12 @@ struct ThumbnailGridView: View {
         previewMode = .none  // Close preview when source changes
         entries = imageSource.listImageEntries()
         
+        // #52: Filer does not restore last position
+        // Last position is restored when entering Viewer/Slide Mode
+        if !entries.isEmpty {
+            focusedIndex = 0
+        }
+        
         print("[ThumbnailGridView] Loaded \(entries.count) entries:")
         for (index, entry) in entries.prefix(10).enumerated() {
             print("  [\(index)] \(entry.name) - path: \(entry.path)")
@@ -671,6 +701,8 @@ struct ThumbnailGridView: View {
                     },
                     onIndexChange: { newIndex in
                         focusedIndex = newIndex
+                        // #52: Save last position
+                        CacheManager.shared.setLastPosition(for: imageSource.url, index: newIndex)
                     },
                     onNextSource: onRequestNextSource,
                     onPreviousSource: onRequestPreviousSource,
@@ -842,13 +874,15 @@ struct ThumbnailGridView: View {
             }
             return true
             
-        // Return/Enter
+        // Return/Enter - #52: Open Slide Mode from bookmark (default)
         case 36:
             if previewMode.isPresented {
                 previewMode = .none
             } else {
                 // S010: Open Slide Mode from filer
-                previewMode = .slideMode(index: currentIndex)
+                // #52: Start from bookmark if available
+                let startIndex = lastViewedIndex ?? currentIndex
+                previewMode = .slideMode(index: startIndex)
             }
             return true
             
@@ -924,10 +958,11 @@ struct ThumbnailGridView: View {
         //    return true
 
         // F key - toggle favorite / Ctrl+F = Slide Mode (S010)
+        // #52: Ctrl+F opens from current (ignores bookmark)
         case "f":
             let hasControl = event.modifierFlags.contains(.control)
             if hasControl {
-                // Ctrl+F = Slide Mode
+                // Ctrl+F = Slide Mode from current (explicit selection)
                 if let index = focusedIndex {
                     previewMode = .slideMode(index: index)
                 }
@@ -947,8 +982,16 @@ struct ThumbnailGridView: View {
             return true
             
         // S013: R key - open Viewer Mode (Reader Mode)
+        // #52: R = open from bookmark (default), Ctrl+R = open from current (ignore bookmark)
         case "r":
-            previewMode = .viewer(index: currentIndex)
+            if event.modifierFlags.contains(.control) {
+                // Ctrl+R: Open from current focused (ignore bookmark)
+                previewMode = .viewer(index: currentIndex)
+            } else {
+                // R: Open from bookmark (last viewed), fallback to current
+                let startIndex = lastViewedIndex ?? currentIndex
+                previewMode = .viewer(index: startIndex)
+            }
             return true
         
         default:
@@ -1158,6 +1201,7 @@ struct ThumbnailCell: View {
     let selectionMode: SelectionMode
     let size: CGFloat
     let showProtectedFeedback: Bool  // Temporary feedback when trying to select protected item
+    let isLastViewed: Bool  // #52: Show bookmark icon for last viewed position
     
     private var overlayColor: Color {
         switch selectionMode {
@@ -1232,26 +1276,31 @@ struct ThumbnailCell: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 
-                // Favorite star overlay (top-left)
+                // Favorite star overlay (top-left) and bookmark (top-right)
                 // ★ (yellow) = direct favorite in this source
-                // ☆ (gray/white) = inherited from other source
+                // 🔖 (bookmark) = last viewed position (#52)
                 VStack {
                     HStack {
+                        // Left: Favorite star
                         switch favoriteStatus {
                         case .direct:
                             Image(systemName: "star.fill")
                                 .font(size < 100 ? .caption : .body)
                                 .foregroundStyle(.yellow)
                                 .shadow(color: .black.opacity(0.5), radius: 1, x: 0, y: 1)
-                        case .inherited:
-                            Image(systemName: "star")
-                                .font(size < 100 ? .caption : .body)
-                                .foregroundStyle(.white)
-                                .shadow(color: .black.opacity(0.7), radius: 1, x: 0, y: 1)
-                        case .none:
+                        case .inherited, .none:
                             EmptyView()
                         }
+                        
                         Spacer()
+                        
+                        // Right: Bookmark for last viewed position (#52)
+                        if isLastViewed {
+                            Image(systemName: "bookmark.fill")
+                                .font(size < 100 ? .caption : .body)
+                                .foregroundStyle(.orange)
+                                .shadow(color: .black.opacity(0.5), radius: 1, x: 0, y: 1)
+                        }
                     }
                     .padding(4)
                     
@@ -1813,6 +1862,8 @@ struct ViewerView: View {
         switch event.keyCode {
         // Escape
         case 53:
+            // #52: Update focusedIndex before closing
+            onIndexChange(currentIndex)
             onClose()
             return true
             
@@ -1888,6 +1939,8 @@ struct ViewerView: View {
         switch characters {
         // Q - close
         case "q":
+            // #52: Update focusedIndex before closing
+            onIndexChange(currentIndex)
             onClose()
             return true
         // A - previous (Ctrl+A = previous source)
@@ -1953,8 +2006,10 @@ struct ViewerView: View {
         
         // R - exit to Filer (close Viewer Mode)
         case "r":
+            // #52: Update focusedIndex before closing so Filer shows the last viewed image
+            onIndexChange(currentIndex)
             onClose()
-                return true
+            return true
         
         // X - toggle selection
         case "x":
