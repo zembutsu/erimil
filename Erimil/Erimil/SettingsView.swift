@@ -87,11 +87,19 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.radioGroup)
+                Stepper(
+                    "先読み枚数: \(settings.prefetchCount)",
+                    value: $settings.prefetchCount,
+                    in: 0...5
+                )
             } header: {
                 Text("ビューアモード")
             } footer: {
-                Text("ビューアモードでのサムネイル表示位置（Tキーでも切替可能）")
-                    .font(.caption)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("サムネイル位置はTキーでも切替可能")
+                    Text("先読み: 0=無効、大きいほど快適だがメモリ使用増加")
+                }
+                .font(.caption)
             }
             
             // MARK: - Output Folder

@@ -1380,6 +1380,10 @@ struct ViewerView: View {
     @State private var displayedImage: NSImage? = nil
     @State private var isLoading: Bool = true
     
+    @State private var prefetcher = ImagePrefetcher()
+    @State private var previousViewerIndex: Int = 0
+    @State private var currentSourceURL: URL?
+    
     private var currentEntry: ImageEntry? {
         guard currentIndex >= 0, currentIndex < entries.count else { return nil }
         return entries[currentIndex]
@@ -1452,10 +1456,17 @@ struct ViewerView: View {
             }
             .allowsHitTesting(false)
         }
+
         .onAppear {
+            if currentSourceURL != imageSource.url {
+                prefetcher.clearCache()
+                currentSourceURL = imageSource.url
+            }
+            previousViewerIndex = currentIndex
             loadImage()
         }
-        .onChange(of: currentIndex) { _, _ in
+        .onChange(of: currentIndex) { oldValue, _ in
+            previousViewerIndex = oldValue
             loadImage()
         }
     }
@@ -1619,26 +1630,59 @@ struct ViewerView: View {
         .background(Color.black.opacity(0.6))
     }
     
+
     private func loadImage() {
-        isLoading = true
-        displayedImage = nil
-        
         guard let entry = currentEntry else {
             isLoading = false
             return
         }
         
+        // Check prefetch cache first
+        if let cachedImage = prefetcher.getCached(for: entry.path) {
+            displayedImage = cachedImage
+            isLoading = false
+            
+            // Trigger prefetch
+            prefetcher.prefetchAround(
+                index: currentIndex,
+                entries: entries,
+                imageSource: imageSource,
+                previousIndex: previousViewerIndex
+            )
+            return
+        }
+        
+        // Cache miss - load normally
+        isLoading = true
+        displayedImage = nil
+        
+        let capturedIndex = currentIndex
+        
         DispatchQueue.global(qos: .userInitiated).async {
             let image = imageSource.fullImage(for: entry)
             DispatchQueue.main.async {
+                guard currentIndex == capturedIndex else { return }
+                
+                if let image = image {
+                    prefetcher.addToCache(path: entry.path, image: image)
+                }
                 displayedImage = image
                 isLoading = false
+                
+                // Start prefetch
+                prefetcher.prefetchAround(
+                    index: currentIndex,
+                    entries: entries,
+                    imageSource: imageSource,
+                    previousIndex: previousViewerIndex
+                )
             }
         }
     }
     
     private func navigateTo(_ index: Int) {
         guard index >= 0, index < entries.count else { return }
+        previousViewerIndex = currentIndex
         onIndexChange(index)
     }
     
