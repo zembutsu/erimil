@@ -4,6 +4,7 @@
 //
 //  Created for Issue #23 - Source position indicator
 //  Session: S010 (2025-01-11)
+//  Updated: S019 (2026-01-25) - RTL support (#54)
 //
 
 import SwiftUI
@@ -14,6 +15,7 @@ struct SourcePositionIndicator: View {
     let current: Int      // 1-based current position
     let total: Int        // Total number of sources
     let barWidth: CGFloat // Fixed width to match image bar
+    let isRTL: Bool       // #54: RTL direction support
     
     private let maxDots = 12  // Maximum visible dots
     
@@ -38,7 +40,8 @@ struct SourcePositionIndicator: View {
         if total <= maxDots {
             // Show individual dots
             HStack(spacing: 4) {
-                ForEach(0..<total, id: \.self) { index in
+                let indices = isRTL ? (0..<total).reversed().map { $0 } : Array(0..<total)
+                ForEach(indices, id: \.self) { index in
                     Circle()
                         .fill(index == current - 1 ? Color.white : Color.white.opacity(0.3))
                         .frame(width: 8, height: 8)
@@ -46,7 +49,8 @@ struct SourcePositionIndicator: View {
             }
         } else {
             // Too many sources: show proportional bar with position marker
-            let markerPosition = CGFloat(current - 1) / CGFloat(total - 1) * barWidth
+            let rawPosition = CGFloat(current - 1) / CGFloat(total - 1)
+            let markerPosition = (isRTL ? (1.0 - rawPosition) : rawPosition) * barWidth
             
             ZStack(alignment: .leading) {
                 // Background bar
@@ -67,13 +71,25 @@ struct SourcePositionIndicator: View {
 
 // MARK: - Preview
 
-#Preview("Few Sources") {
+#Preview("Few Sources LTR") {
     ZStack {
         Color.black
         VStack(spacing: 20) {
-            SourcePositionIndicator(current: 1, total: 5, barWidth: 144)
-            SourcePositionIndicator(current: 3, total: 5, barWidth: 144)
-            SourcePositionIndicator(current: 5, total: 5, barWidth: 144)
+            SourcePositionIndicator(current: 1, total: 5, barWidth: 144, isRTL: false)
+            SourcePositionIndicator(current: 3, total: 5, barWidth: 144, isRTL: false)
+            SourcePositionIndicator(current: 5, total: 5, barWidth: 144, isRTL: false)
+        }
+        .padding()
+    }
+}
+
+#Preview("Few Sources RTL") {
+    ZStack {
+        Color.black
+        VStack(spacing: 20) {
+            SourcePositionIndicator(current: 1, total: 5, barWidth: 144, isRTL: true)
+            SourcePositionIndicator(current: 3, total: 5, barWidth: 144, isRTL: true)
+            SourcePositionIndicator(current: 5, total: 5, barWidth: 144, isRTL: true)
         }
         .padding()
     }
@@ -83,22 +99,10 @@ struct SourcePositionIndicator: View {
     ZStack {
         Color.black
         VStack(spacing: 20) {
-            SourcePositionIndicator(current: 1, total: 50, barWidth: 144)
-            SourcePositionIndicator(current: 25, total: 50, barWidth: 144)
-            SourcePositionIndicator(current: 50, total: 50, barWidth: 144)
-        }
-        .padding()
-    }
-}
-
-#Preview("Edge Cases") {
-    ZStack {
-        Color.black
-        VStack(spacing: 20) {
-            SourcePositionIndicator(current: 1, total: 1, barWidth: 144)
-            SourcePositionIndicator(current: 1, total: 12, barWidth: 144)
-            SourcePositionIndicator(current: 7, total: 12, barWidth: 144)
-            SourcePositionIndicator(current: 1, total: 13, barWidth: 144)
+            SourcePositionIndicator(current: 1, total: 50, barWidth: 144, isRTL: false)
+            SourcePositionIndicator(current: 25, total: 50, barWidth: 144, isRTL: false)
+            SourcePositionIndicator(current: 25, total: 50, barWidth: 144, isRTL: true)
+            SourcePositionIndicator(current: 50, total: 50, barWidth: 144, isRTL: true)
         }
         .padding()
     }

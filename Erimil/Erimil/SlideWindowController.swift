@@ -744,6 +744,11 @@ struct SlideWindowView: View {
     @State private var favoriteIndices: Set<Int> = []
     @State private var selectedIndices: Set<Int> = []
     
+    // #54: Effective reading direction
+    private var isRTL: Bool {
+        CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url) == .rtl
+    }
+    
     init(
         imageSource: any ImageSource,
         entries: [ImageEntry],
@@ -989,7 +994,8 @@ struct SlideWindowView: View {
                         total: entries.count,
                         favoriteIndices: favoriteIndices,
                         selectedIndices: selectedIndices,
-                        barWidth: 144
+                        barWidth: 144,
+                        isRTL: isRTL
                     )
                     .frame(height: 12)
                 }
@@ -999,7 +1005,8 @@ struct SlideWindowView: View {
                     SourcePositionIndicator(
                         current: sourcePosition,
                         total: totalSources,
-                        barWidth: 144
+                        barWidth: 144,
+                        isRTL: isRTL
                     )
                     .frame(height: 16)
                 }
@@ -1144,49 +1151,46 @@ struct SlideKeyHandler: NSViewRepresentable {
 
 /// Progress bar for image position within current source, with favorite and selection markers
 struct ImagePositionBar: View {
-    let current: Int              // 1-based current position
-    let total: Int                // Total number of images
-    let favoriteIndices: Set<Int> // 0-based indices of favorites
-    let selectedIndices: Set<Int> // 0-based indices of selections
-    let barWidth: CGFloat         // Fixed width to match source bar
+    let current: Int
+    let total: Int
+    let favoriteIndices: Set<Int>
+    let selectedIndices: Set<Int>
+    let barWidth: CGFloat
+    let isRTL: Bool  // #54
     
     private var progress: CGFloat {
         guard total > 1 else { return 1.0 }
-        return CGFloat(current - 1) / CGFloat(total - 1)
+        let rawProgress = CGFloat(current - 1) / CGFloat(total - 1)
+        return isRTL ? (1.0 - rawProgress) : rawProgress
+    }
+    
+    private func markerX(for index: Int) -> CGFloat {
+        let rawProgress = total > 1 ? CGFloat(index) / CGFloat(total - 1) : 0.5
+        let adjustedProgress = isRTL ? (1.0 - rawProgress) : rawProgress
+        return adjustedProgress * barWidth
     }
     
     var body: some View {
         HStack(spacing: 6) {
-            // Progress bar with fixed width
             ZStack(alignment: .leading) {
-                // Background track
                 Capsule()
                     .fill(Color.white.opacity(0.2))
                     .frame(width: barWidth, height: 3)
                 
-                // Selection markers (×) - red
                 ForEach(Array(selectedIndices), id: \.self) { selIndex in
-                    let selProgress = total > 1 ? CGFloat(selIndex) / CGFloat(total - 1) : 0.5
-                    let selX = selProgress * barWidth
-                    
                     Image(systemName: "xmark")
                         .font(.system(size: 5, weight: .bold))
                         .foregroundStyle(.red)
-                        .offset(x: selX - 2.5)
+                        .offset(x: markerX(for: selIndex) - 2.5)
                 }
                 
-                // Favorite markers (★) - yellow
                 ForEach(Array(favoriteIndices), id: \.self) { favIndex in
-                    let favProgress = total > 1 ? CGFloat(favIndex) / CGFloat(total - 1) : 0.5
-                    let favX = favProgress * barWidth
-                    
                     Image(systemName: "star.fill")
                         .font(.system(size: 6))
                         .foregroundStyle(.yellow)
-                        .offset(x: favX - 3)
+                        .offset(x: markerX(for: favIndex) - 3)
                 }
                 
-                // Position marker (current)
                 Circle()
                     .fill(Color.white)
                     .frame(width: 8, height: 8)
@@ -1196,7 +1200,6 @@ struct ImagePositionBar: View {
             
             Spacer()
             
-            // Numeric indicator (right-aligned)
             Text("\(current)/\(total)")
                 .font(.caption)
                 .monospacedDigit()
