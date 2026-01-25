@@ -103,6 +103,21 @@ struct SettingsView: View {
                 }
                 .font(.caption)
             }
+
+            // MARK: - Reading Direction (#54)
+            Section {
+                Picker("デフォルト方向", selection: $settings.defaultReadingDirection) {
+                    ForEach(ReadingDirection.allCases, id: \.self) { direction in
+                        Text(direction.displayName).tag(direction)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+            } header: {
+                Text("読み取り方向")
+            } footer: {
+                Text("新しいソースを開いた時のデフォルト。Ctrl+Rでソースごとに切替可能")
+                    .font(.caption)
+            }
             
             // MARK: - Output Folder
             Section {
