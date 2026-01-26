@@ -5,6 +5,7 @@
 //  Created by Masahito Zembutsu on 2025/12/13.
 //  Updated: S003 (2025-12-17) - Phase 2.2 Quick Look + navigation
 //  Updated: S020 (2026-01-26) - Spread (two-page) view support (#55)
+//  Updated: S021 (2026-01-26) - Refactoring: Use SpreadNavigationHelper (#67)
 //
 
 import SwiftUI
@@ -34,37 +35,15 @@ struct ImagePreviewView: View {
         AppSettings.shared.isSpreadModeEnabled
     }
     
-    // #55: Check if current index should be shown as single page
-    private func shouldShowSinglePage(at index: Int) -> Bool {
-        // Spread mode disabled
-        if !isSpreadEnabled { return true }
-        
-        // Has single page marker
-        if CacheManager.shared.hasSinglePageMarker(for: imageSource.url, at: index) { return true }
-        
-        // Last page
-        if index >= entries.count - 1 { return true }
-        
-        // Next page has marker
-        if CacheManager.shared.hasSinglePageMarker(for: imageSource.url, at: index + 1) { return true }
-        
-        return false
-    }
-    
-    // #55: Calculate navigation step
-    private func navigationStep(at index: Int) -> Int {
-        return shouldShowSinglePage(at: index) ? 1 : 2
-    }
-    
     var body: some View {
         ZStack {
-            // #55: Spread-aware image viewer
+            // #55/#67: Spread-aware image viewer (now from separate file)
             SpreadImageViewer(
                 imageSource: imageSource,
                 entries: entries,
                 currentIndex: $currentIndex,
                 favoriteIndices: favoriteIndices,
-                reloadTrigger: spreadUpdateTrigger  // #55: Pass reload trigger
+                reloadTrigger: spreadUpdateTrigger
             )
             
             // Header overlay
@@ -194,37 +173,33 @@ struct ImagePreviewView: View {
         )
     }
     
-    // MARK: - Navigation (#55: Spread-aware)
+    // MARK: - Navigation (#55/#67: Spread-aware using SpreadNavigationHelper)
     
     private func goToPrevious() {
         guard currentIndex > 0 else { return }
         
-        // #55: Calculate step based on previous page's spread state
-        let step: Int
-        if currentIndex >= 2 && !shouldShowSinglePage(at: currentIndex - 2) {
-            step = 2
-        } else {
-            step = 1
-        }
-        
-        if currentIndex >= step {
-            currentIndex -= step
-        } else {
-            currentIndex = 0
+        // #67: Use SpreadNavigationHelper for spread-aware navigation
+        if let newIndex = SpreadNavigationHelper.previousIndex(
+            from: currentIndex,
+            sourceURL: imageSource.url,
+            totalCount: entries.count,
+            loop: false  // Quick Look doesn't loop
+        ) {
+            currentIndex = newIndex
         }
     }
     
     private func goToNext() {
         guard currentIndex < entries.count - 1 else { return }
         
-        // #55: Calculate step based on current spread state
-        let step = navigationStep(at: currentIndex)
-        let nextIndex = currentIndex + step
-        
-        if nextIndex < entries.count {
-            currentIndex = nextIndex
-        } else {
-            currentIndex = entries.count - 1
+        // #67: Use SpreadNavigationHelper for spread-aware navigation
+        if let newIndex = SpreadNavigationHelper.nextIndex(
+            from: currentIndex,
+            sourceURL: imageSource.url,
+            totalCount: entries.count,
+            loop: false  // Quick Look doesn't loop
+        ) {
+            currentIndex = newIndex
         }
     }
     
