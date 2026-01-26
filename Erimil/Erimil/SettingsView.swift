@@ -142,7 +142,7 @@ struct SettingsView: View {
                 Text("見開きモード")
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Tキーで特定ページを単独表示に指定可能")
+                    Text("Vキーで特定ページを単独表示に指定可能")
                     Text("横長画像（見開きスキャン）は自動で検出されます")
                 }
                 .font(.caption)

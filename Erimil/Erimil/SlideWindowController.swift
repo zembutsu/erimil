@@ -561,7 +561,7 @@ class SlideWindowController {
                     }
                     return nil
                 
-                case "t":
+                case "v":
                     // #55: Toggle single page marker
                     if let source = storedImageSource {
                         let added = CacheManager.shared.toggleSinglePageMarker(for: source.url, at: currentIndex)
@@ -1107,7 +1107,7 @@ struct SlideWindowView: View {
                 } else {
                     // #55: Single page marker hint (only when spread mode enabled)
                     if AppSettings.shared.isSpreadModeEnabled {
-                        Text("t")
+                        Text("v")
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.5))
                         Text("single")
@@ -1288,12 +1288,14 @@ struct SpreadImageViewer: View {
     let entries: [ImageEntry]
     @Binding var currentIndex: Int
     let favoriteIndices: Set<Int>
+    var reloadTrigger: Bool = false  // #55: External trigger for reload
     
-    @State private var leftImage: NSImage?
-    @State private var rightImage: NSImage?
+    // Double buffering: two layers, switch instantly when ready
+    @State private var bufferA: (left: NSImage?, right: NSImage?, index: Int)? = nil
+    @State private var bufferB: (left: NSImage?, right: NSImage?, index: Int)? = nil
+    @State private var activeBuffer: Int = 0  // 0 = A, 1 = B
     @State private var isLoading: Bool = true
     @State private var spreadUpdateTrigger: Bool = false
-    @State private var loadedPair: (left: NSImage?, right: NSImage?)? = nil  // For atomic display
     
     /// Check if spread mode is enabled
     private var isSpreadEnabled: Bool {
@@ -1322,22 +1324,22 @@ struct SpreadImageViewer: View {
         CacheManager.shared.hasSinglePageMarker(for: imageSource.url, at: index)
     }
     
-    /// Determine if current page should be shown as single (based on loaded images)
-    private func shouldShowSingle(left: NSImage?, right: NSImage?) -> Bool {
+    /// Determine if page at given index should be shown as single (based on loaded images)
+    private func shouldShowSingle(atIndex index: Int, left: NSImage?, right: NSImage?) -> Bool {
         // Spread mode disabled
         if !isSpreadEnabled { return true }
         
-        // Current page has marker
-        if hasSingleMarker(currentIndex) { return true }
+        // Page has marker
+        if hasSingleMarker(index) { return true }
         
-        // Current page is wide (auto-detect)
+        // Page is wide (auto-detect)
         if isWideImage(left) { return true }
         
         // No next page
-        if currentIndex + 1 >= entries.count { return true }
+        if index + 1 >= entries.count { return true }
         
         // Next page has marker
-        if hasSingleMarker(currentIndex + 1) { return true }
+        if hasSingleMarker(index + 1) { return true }
         
         // Next page is wide
         if isWideImage(right) { return true }
@@ -1352,29 +1354,22 @@ struct SpreadImageViewer: View {
         ZStack {
             Color.black
             
-            if isLoading {
-                ProgressView("読み込み中...")
-                    .foregroundStyle(.white)
-            } else if let pair = loadedPair, let left = pair.left {
-                if shouldShowSingle(left: left, right: pair.right) {
-                    // Single page display
-                    singlePageView(image: left)
-                } else if let right = pair.right {
-                    // Spread display (both images ready)
-                    spreadPageView(leftImage: left, rightImage: right)
-                } else {
-                    // Fallback to single
-                    singlePageView(image: left)
+            // Only render the active buffer (prevents flash from old buffer)
+            if activeBuffer == 0 {
+                if let buffer = bufferA {
+                    bufferView(buffer: buffer)
                 }
             } else {
-                // Failed to load
-                VStack {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.largeTitle)
-                        .foregroundStyle(.yellow)
-                    Text("画像を読み込めませんでした")
-                        .foregroundStyle(.white)
+                if let buffer = bufferB {
+                    bufferView(buffer: buffer)
                 }
+            }
+            
+            // Loading indicator (only on initial load)
+            if isLoading && bufferA == nil && bufferB == nil {
+                ProgressView("読み込み中...")
+                    .foregroundStyle(.white)
+                    .zIndex(2)
             }
         }
         .onAppear {
@@ -1386,9 +1381,27 @@ struct SpreadImageViewer: View {
         .onChange(of: imageSource.url) { _, _ in
             loadImages()
         }
+        .onChange(of: reloadTrigger) { _, _ in
+            loadImages()
+        }
+        .onChange(of: spreadUpdateTrigger) { _, _ in
+            loadImages()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowSpreadChanged"))) { _ in
-            // Trigger re-evaluation of spread layout
             spreadUpdateTrigger.toggle()
+        }
+    }
+    
+    @ViewBuilder
+    private func bufferView(buffer: (left: NSImage?, right: NSImage?, index: Int)) -> some View {
+        if let left = buffer.left {
+            if shouldShowSingle(atIndex: buffer.index, left: left, right: buffer.right) {
+                singlePageView(image: left)
+            } else if let right = buffer.right {
+                spreadPageView(leftImage: left, rightImage: right)
+            } else {
+                singlePageView(image: left)
+            }
         }
     }
     
@@ -1463,13 +1476,11 @@ struct SpreadImageViewer: View {
     
     private func loadImages() {
         guard currentIndex >= 0 && currentIndex < entries.count else {
-            loadedPair = nil
+            bufferA = nil
+            bufferB = nil
             isLoading = false
             return
         }
-        
-        isLoading = true
-        loadedPair = nil
         
         let capturedSource = imageSource
         let capturedIndex = currentIndex
@@ -1477,8 +1488,11 @@ struct SpreadImageViewer: View {
         let rightEntry = currentIndex + 1 < entries.count ? entries[currentIndex + 1] : nil
         let needsSpread = isSpreadEnabled && rightEntry != nil && !hasSingleMarker(currentIndex) && !hasSingleMarker(currentIndex + 1)
         
+        // Determine which buffer to load into (the inactive one)
+        let loadIntoA = activeBuffer == 1
+        
         if needsSpread, let rightEntry = rightEntry {
-            // Load both images in parallel, display when both ready
+            // Load both images in parallel
             var loadedLeft: NSImage?
             var loadedRight: NSImage?
             let group = DispatchGroup()
@@ -1497,18 +1511,38 @@ struct SpreadImageViewer: View {
             
             group.notify(queue: .main) {
                 guard currentIndex == capturedIndex else { return }
-                loadedPair = (left: loadedLeft, right: loadedRight)
-                isLoading = false
+                
+                // Update buffer and switch instantly (no animation)
+                withTransaction(Transaction(animation: nil)) {
+                    if loadIntoA {
+                        bufferA = (left: loadedLeft, right: loadedRight, index: capturedIndex)
+                        activeBuffer = 0
+                    } else {
+                        bufferB = (left: loadedLeft, right: loadedRight, index: capturedIndex)
+                        activeBuffer = 1
+                    }
+                    isLoading = false
+                }
             }
         } else {
-            // Single page mode - load left only
+            // Single page mode
             DispatchQueue.global(qos: .userInitiated).async {
                 let left = capturedSource.fullImage(for: leftEntry)
                 
                 DispatchQueue.main.async {
                     guard currentIndex == capturedIndex else { return }
-                    loadedPair = (left: left, right: nil)
-                    isLoading = false
+                    
+                    // Update buffer and switch instantly (no animation)
+                    withTransaction(Transaction(animation: nil)) {
+                        if loadIntoA {
+                            bufferA = (left: left, right: nil, index: capturedIndex)
+                            activeBuffer = 0
+                        } else {
+                            bufferB = (left: left, right: nil, index: capturedIndex)
+                            activeBuffer = 1
+                        }
+                        isLoading = false
+                    }
                 }
             }
         }

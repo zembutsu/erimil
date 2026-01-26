@@ -5,6 +5,7 @@
 //  Created by Masahito Zembutsu on 2025/12/13.
 //  Updated: S017 (2026-01-24) - Added W/S/↑/↓ key bindings (#53)
 //  Updated: S017 (2026-01-24) - Resume last viewed position (#52)
+//  Updated: S020 (2026-01-26) - V key for single page marker (#55)
 //
 
 import SwiftUI
@@ -956,10 +957,10 @@ struct ThumbnailGridView: View {
             toggleSelection(entry)
             return true
             
-        // V key - toggle favorite
+        // #55: V key - toggle single page marker (previously: favorite)
         case "v":
-            let entry = entries[currentIndex]
-            toggleFavorite(entry)
+            let added = CacheManager.shared.toggleSinglePageMarker(for: imageSource.url, at: currentIndex)
+            print("[ThumbnailGridView] Single page marker at \(currentIndex): \(added ? "ON" : "OFF")")
             return true
             
         // F key - open Slide Mode directly (S006)
@@ -1814,6 +1815,10 @@ struct ViewerView: View {
             Text("F: ★")
             Text("X: 選択")
             Text("T: サムネイル")
+            // #55: Show V key hint only when spread mode is enabled
+            if AppSettings.shared.isSpreadModeEnabled {
+                Text("V: 単独")
+            }
             Text("Enter: 全画面")
             Text("Esc: 閉じる")
         }
@@ -2054,6 +2059,13 @@ struct ViewerView: View {
         // T - toggle thumbnail position
         case "t":
             settings.viewerThumbnailPosition = settings.viewerThumbnailPosition.next
+            return true
+        
+        // #55: V - toggle single page marker
+        case "v":
+            let added = CacheManager.shared.toggleSinglePageMarker(for: imageSource.url, at: currentIndex)
+            print("[ViewerView] Single page marker at \(currentIndex): \(added ? "ON" : "OFF")")
+            // Note: ViewerView doesn't support spread display yet, marker is saved for Slide Mode
             return true
             
         default:
