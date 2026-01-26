@@ -593,58 +593,39 @@ class SlideWindowController {
         callback?()
     }
     
-    // MARK: - #55/#67: Spread Navigation (using SpreadNavigationHelper)
-    
-    /// Check if current index should be shown as single page (marker-based, not image size)
-    /// Image size detection is done in View side
-    private func shouldShowSinglePage(at index: Int) -> Bool {
-        guard let source = storedImageSource else { return true }
-        return SpreadNavigationHelper.shouldShowSinglePage(
-            for: source.url,
-            at: index,
-            totalCount: storedEntries.count
-        )
-    }
-    
-    /// Calculate step size for navigation (1 for single, 2 for spread)
-    private func navigationStep(at index: Int) -> Int {
-        guard let source = storedImageSource else { return 1 }
-        return SpreadNavigationHelper.navigationStep(
-            for: source.url,
-            at: index,
-            totalCount: storedEntries.count
-        )
-    }
-    
-    // MARK: - S008: Navigation (moved from View for centralized control)
+    // MARK: - S008: Navigation (#67: Simple ±1 navigation)
+    // Note: Spread-aware navigation deferred due to wide image detection complexity.
+    // SpreadImageViewer handles display, navigation is always ±1.
     
     private func goToPrevious() {
-        guard !storedEntries.isEmpty, let source = storedImageSource else { return }
+        guard !storedEntries.isEmpty else { return }
+        print("[SlideWindowController] goToPrevious called, current: \(currentIndex)")
         
-        // #67: Use SpreadNavigationHelper for spread-aware navigation
-        if let newIndex = SpreadNavigationHelper.previousIndex(
-            from: currentIndex,
-            sourceURL: source.url,
-            totalCount: storedEntries.count,
-            loop: AppSettings.shared.loopWithinSource
-        ) {
-            currentIndex = newIndex
+        if currentIndex > 0 {
+            currentIndex -= 1
+            print("[SlideWindowController] → new index: \(currentIndex)")
+            storedOnIndexChange?(currentIndex)
+            notifyViewOfIndexChange()
+        } else if AppSettings.shared.loopWithinSource {
+            currentIndex = storedEntries.count - 1
+            print("[SlideWindowController] → looped to: \(currentIndex)")
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
         }
     }
     
     private func goToNext() {
-        guard !storedEntries.isEmpty, let source = storedImageSource else { return }
+        guard !storedEntries.isEmpty else { return }
+        print("[SlideWindowController] goToNext called, current: \(currentIndex)")
         
-        // #67: Use SpreadNavigationHelper for spread-aware navigation
-        if let newIndex = SpreadNavigationHelper.nextIndex(
-            from: currentIndex,
-            sourceURL: source.url,
-            totalCount: storedEntries.count,
-            loop: AppSettings.shared.loopWithinSource
-        ) {
-            currentIndex = newIndex
+        if currentIndex < storedEntries.count - 1 {
+            currentIndex += 1
+            print("[SlideWindowController] → new index: \(currentIndex)")
+            storedOnIndexChange?(currentIndex)
+            notifyViewOfIndexChange()
+        } else if AppSettings.shared.loopWithinSource {
+            currentIndex = 0
+            print("[SlideWindowController] → looped to: \(currentIndex)")
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
         }

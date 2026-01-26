@@ -140,6 +140,8 @@ struct SpreadImageViewer: View {
     @Binding var currentIndex: Int
     let favoriteIndices: Set<Int>
     var reloadTrigger: Bool = false  // External trigger for reload
+    @Binding var isShowingSpread: Bool  // #67: Notify parent if currently showing spread
+    @Binding var couldBeSpreadWithPrevious: Bool  // #67: Could form spread with previous page
     
     // Double buffering: two layers, switch instantly when ready
     @State private var bufferA: (left: NSImage?, right: NSImage?, index: Int)? = nil
@@ -147,6 +149,42 @@ struct SpreadImageViewer: View {
     @State private var activeBuffer: Int = 0  // 0 = A, 1 = B
     @State private var isLoading: Bool = true
     @State private var spreadUpdateTrigger: Bool = false
+    
+    // Convenience initializer without bindings (for backward compatibility)
+    init(
+        imageSource: any ImageSource,
+        entries: [ImageEntry],
+        currentIndex: Binding<Int>,
+        favoriteIndices: Set<Int>,
+        reloadTrigger: Bool = false
+    ) {
+        self.imageSource = imageSource
+        self.entries = entries
+        self._currentIndex = currentIndex
+        self.favoriteIndices = favoriteIndices
+        self.reloadTrigger = reloadTrigger
+        self._isShowingSpread = .constant(false)
+        self._couldBeSpreadWithPrevious = .constant(false)
+    }
+    
+    // Full initializer with bindings
+    init(
+        imageSource: any ImageSource,
+        entries: [ImageEntry],
+        currentIndex: Binding<Int>,
+        favoriteIndices: Set<Int>,
+        reloadTrigger: Bool = false,
+        isShowingSpread: Binding<Bool>,
+        couldBeSpreadWithPrevious: Binding<Bool>
+    ) {
+        self.imageSource = imageSource
+        self.entries = entries
+        self._currentIndex = currentIndex
+        self.favoriteIndices = favoriteIndices
+        self.reloadTrigger = reloadTrigger
+        self._isShowingSpread = isShowingSpread
+        self._couldBeSpreadWithPrevious = couldBeSpreadWithPrevious
+    }
     
     /// Check if spread mode is enabled
     private var isSpreadEnabled: Bool {
@@ -332,69 +370,98 @@ struct SpreadImageViewer: View {
             bufferA = nil
             bufferB = nil
             isLoading = false
+            isShowingSpread = false
+            couldBeSpreadWithPrevious = false
             return
         }
         
         let capturedSource = imageSource
         let capturedIndex = currentIndex
         let leftEntry = entries[currentIndex]
-        let rightEntry = currentIndex + 1 < entries.count ? entries[currentIndex + 1] : nil
-        let needsSpread = isSpreadEnabled && rightEntry != nil && !hasSingleMarker(currentIndex) && !hasSingleMarker(currentIndex + 1)
         
         // Determine which buffer to load into (the inactive one)
         let loadIntoA = activeBuffer == 1
         
-        if needsSpread, let rightEntry = rightEntry {
-            // Load both images in parallel
-            var loadedLeft: NSImage?
-            var loadedRight: NSImage?
-            let group = DispatchGroup()
+        // #67 Fix: Load left image first, then decide if we need spread
+        DispatchQueue.global(qos: .userInitiated).async {
+            let loadedLeft = capturedSource.fullImage(for: leftEntry)
             
-            group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
-                loadedLeft = capturedSource.fullImage(for: leftEntry)
-                group.leave()
-            }
-            
-            group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
-                loadedRight = capturedSource.fullImage(for: rightEntry)
-                group.leave()
-            }
-            
-            group.notify(queue: .main) {
+            DispatchQueue.main.async {
                 guard currentIndex == capturedIndex else { return }
                 
-                // Update buffer and switch instantly (no animation)
-                withTransaction(Transaction(animation: nil)) {
-                    if loadIntoA {
-                        bufferA = (left: loadedLeft, right: loadedRight, index: capturedIndex)
-                        activeBuffer = 0
-                    } else {
-                        bufferB = (left: loadedLeft, right: loadedRight, index: capturedIndex)
-                        activeBuffer = 1
-                    }
-                    isLoading = false
-                }
-            }
-        } else {
-            // Single page mode
-            DispatchQueue.global(qos: .userInitiated).async {
-                let left = capturedSource.fullImage(for: leftEntry)
+                // Check conditions
+                let spreadDisabled = !isSpreadEnabled
+                let hasMarker = hasSingleMarker(capturedIndex)
+                let isWide = isWideImage(loadedLeft)
+                let isLastPage = capturedIndex + 1 >= entries.count
+                let nextHasMarker = !isLastPage && hasSingleMarker(capturedIndex + 1)
                 
-                DispatchQueue.main.async {
-                    guard currentIndex == capturedIndex else { return }
-                    
-                    // Update buffer and switch instantly (no animation)
+                // Early single-page conditions (no need to load right)
+                let earlyExit = spreadDisabled || hasMarker || isWide || isLastPage || nextHasMarker
+                
+                // #67: Can this page form spread with previous?
+                // True if: spread enabled, no marker, not wide, has previous page
+                let canSpreadWithPrev = isSpreadEnabled && !hasMarker && !isWide && capturedIndex > 0
+                
+                if earlyExit {
+                    // Single page display
                     withTransaction(Transaction(animation: nil)) {
                         if loadIntoA {
-                            bufferA = (left: left, right: nil, index: capturedIndex)
+                            bufferA = (left: loadedLeft, right: nil, index: capturedIndex)
                             activeBuffer = 0
                         } else {
-                            bufferB = (left: left, right: nil, index: capturedIndex)
+                            bufferB = (left: loadedLeft, right: nil, index: capturedIndex)
                             activeBuffer = 1
                         }
                         isLoading = false
+                        isShowingSpread = false
+                        couldBeSpreadWithPrevious = canSpreadWithPrev
+                        print("[SpreadImageViewer] Single display at \(capturedIndex), couldBeSpreadWithPrevious: \(canSpreadWithPrev)")
+                    }
+                    return
+                }
+                
+                // Need to check right image for spread
+                let rightEntry = entries[capturedIndex + 1]
+                
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let loadedRight = capturedSource.fullImage(for: rightEntry)
+                    
+                    DispatchQueue.main.async {
+                        guard currentIndex == capturedIndex else { return }
+                        
+                        // Check if right image is wide (should be single)
+                        if isWideImage(loadedRight) {
+                            // Right is wide - show left only as single
+                            withTransaction(Transaction(animation: nil)) {
+                                if loadIntoA {
+                                    bufferA = (left: loadedLeft, right: nil, index: capturedIndex)
+                                    activeBuffer = 0
+                                } else {
+                                    bufferB = (left: loadedLeft, right: nil, index: capturedIndex)
+                                    activeBuffer = 1
+                                }
+                                isLoading = false
+                                isShowingSpread = false
+                                couldBeSpreadWithPrevious = canSpreadWithPrev
+                                print("[SpreadImageViewer] Single (right wide) at \(capturedIndex), couldBeSpreadWithPrevious: \(canSpreadWithPrev)")
+                            }
+                        } else {
+                            // Both are portrait - show spread
+                            withTransaction(Transaction(animation: nil)) {
+                                if loadIntoA {
+                                    bufferA = (left: loadedLeft, right: loadedRight, index: capturedIndex)
+                                    activeBuffer = 0
+                                } else {
+                                    bufferB = (left: loadedLeft, right: loadedRight, index: capturedIndex)
+                                    activeBuffer = 1
+                                }
+                                isLoading = false
+                                isShowingSpread = true
+                                couldBeSpreadWithPrevious = false  // Already in spread
+                                print("[SpreadImageViewer] Spread display at \(capturedIndex)|\(capturedIndex+1)")
+                            }
+                        }
                     }
                 }
             }

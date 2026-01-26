@@ -1352,8 +1352,12 @@ struct ThumbnailCell: View {
         }
     }
 }
-
 // MARK: - S014: ThumbnailSidebarView
+//
+// Note: Spread thumbnail display is deferred to a future issue.
+// Currently displays all thumbnails as single items.
+// The main image area (SpreadImageViewer) handles spread display.
+//
 
 struct ThumbnailSidebarView: View {
     let imageSource: any ImageSource
@@ -1577,6 +1581,12 @@ struct ViewerView: View {
     // #67: Local index state for SpreadImageViewer binding
     @State private var viewerIndex: Int = 0
     @State private var spreadUpdateTrigger: Bool = false  // #67: For V key updates
+    @State private var isShowingSpread: Bool = false  // #67: Track if currently showing spread
+    @State private var couldBeSpreadWithPrevious: Bool = false  // #67: Could form spread with prev
+    
+    // #67: Navigation correction for backward spread
+    @State private var preNavIndex: Int = 0  // Index before navigation
+    @State private var navDirection: Int = 0  // 0=none, -1=backward, 1=forward
     
     // #67: Removed - now handled by SpreadImageViewer
     // @State private var displayedImage: NSImage? = nil
@@ -1683,6 +1693,16 @@ struct ViewerView: View {
                 onIndexChange(newValue)
             }
         }
+        .onChange(of: isShowingSpread) { _, _ in
+            // #67: Correct backward navigation if needed
+            correctBackwardSpread()
+        }
+        .onChange(of: couldBeSpreadWithPrevious) { _, newValue in
+            // #67: If could form spread with previous, and navigating backward, go back more
+            if newValue {
+                correctBackwardSpread()
+            }
+        }
     }
     
     // MARK: - Main Content View (#67: Now using SpreadImageViewer)
@@ -1700,7 +1720,9 @@ struct ViewerView: View {
                     entries: entries,
                     currentIndex: $viewerIndex,
                     favoriteIndices: favoriteIndices,
-                    reloadTrigger: spreadUpdateTrigger
+                    reloadTrigger: spreadUpdateTrigger,
+                    isShowingSpread: $isShowingSpread,
+                    couldBeSpreadWithPrevious: $couldBeSpreadWithPrevious
                 )
                 
                 // Navigation hints (left/right edges) - #67: Spread-aware
@@ -1843,34 +1865,73 @@ struct ViewerView: View {
         .background(Color.black.opacity(0.6))
     }
     
-    // MARK: - Navigation (#67: Spread-aware)
+    // MARK: - Navigation (#67: Spread-aware using isShowingSpread)
     
     private func navigateTo(_ index: Int) {
         guard index >= 0, index < entries.count else { return }
+        print("[ViewerView] navigateTo: \(viewerIndex) → \(index)")
         previousViewerIndex = viewerIndex
         viewerIndex = index
     }
     
     private func goToPrevious() {
-        if let newIndex = SpreadNavigationHelper.previousIndex(
-            from: viewerIndex,
-            sourceURL: imageSource.url,
-            totalCount: entries.count,
-            loop: settings.loopWithinSource
-        ) {
-            navigateTo(newIndex)
+        print("[ViewerView] goToPrevious called, current: \(viewerIndex), isShowingSpread: \(isShowingSpread)")
+        preNavIndex = viewerIndex
+        navDirection = -1  // backward
+        
+        if viewerIndex > 0 {
+            navigateTo(viewerIndex - 1)
+        } else if settings.loopWithinSource {
+            navigateTo(entries.count - 1)
         }
     }
     
     private func goToNext() {
-        if let newIndex = SpreadNavigationHelper.nextIndex(
-            from: viewerIndex,
-            sourceURL: imageSource.url,
-            totalCount: entries.count,
-            loop: settings.loopWithinSource
-        ) {
-            navigateTo(newIndex)
+        print("[ViewerView] goToNext called, current: \(viewerIndex), isShowingSpread: \(isShowingSpread)")
+        preNavIndex = viewerIndex
+        navDirection = 1  // forward
+        
+        // If showing spread, skip the right page (it's already visible)
+        let step = isShowingSpread ? 2 : 1
+        let nextIndex = viewerIndex + step
+        
+        if nextIndex < entries.count {
+            navigateTo(nextIndex)
+        } else if settings.loopWithinSource {
+            navigateTo(0)
+        } else if viewerIndex < entries.count - 1 {
+            // If step would overshoot but there's still a page, go to last page
+            navigateTo(entries.count - 1)
         }
+    }
+    
+    /// #67: Correct backward navigation when landing on spread that includes previous page
+    /// or when current page could form spread with previous
+    private func correctBackwardSpread() {
+        guard navDirection == -1 else {
+            navDirection = 0
+            return
+        }
+        
+        if isShowingSpread {
+            // Spread表示で、右ページが元いた場所なら、さらに1つ戻る
+            if preNavIndex == viewerIndex + 1 && viewerIndex > 0 {
+                print("[ViewerView] Correcting backward spread (showing spread): \(viewerIndex) → \(viewerIndex - 1)")
+                preNavIndex = viewerIndex
+                viewerIndex -= 1
+                return  // Keep navDirection for chained corrections
+            }
+        } else if couldBeSpreadWithPrevious {
+            // 単独表示だが、前のページとspreadになれる可能性がある → 戻ってみる
+            if viewerIndex > 0 {
+                print("[ViewerView] Correcting backward spread (could be spread): \(viewerIndex) → \(viewerIndex - 1)")
+                preNavIndex = viewerIndex
+                viewerIndex -= 1
+                return  // Keep navDirection for chained corrections
+            }
+        }
+        
+        navDirection = 0
     }
     
     // MARK: - Key Event Handling (#67: Spread-aware navigation)
@@ -2084,7 +2145,6 @@ struct ViewerKeyEventHandler: NSViewRepresentable {
         }
     }
 }
-
 
 #Preview {
     ThumbnailGridView(

@@ -173,33 +173,22 @@ struct ImagePreviewView: View {
         )
     }
     
-    // MARK: - Navigation (#55/#67: Spread-aware using SpreadNavigationHelper)
+    // MARK: - Navigation (#67: Simple ±1 navigation)
+    // Note: Spread-aware navigation deferred due to wide image detection complexity.
     
     private func goToPrevious() {
-        guard currentIndex > 0 else { return }
-        
-        // #67: Use SpreadNavigationHelper for spread-aware navigation
-        if let newIndex = SpreadNavigationHelper.previousIndex(
-            from: currentIndex,
-            sourceURL: imageSource.url,
-            totalCount: entries.count,
-            loop: false  // Quick Look doesn't loop
-        ) {
-            currentIndex = newIndex
+        print("[ImagePreviewView] goToPrevious called, current: \(currentIndex)")
+        if currentIndex > 0 {
+            currentIndex -= 1
+            print("[ImagePreviewView] → new index: \(currentIndex)")
         }
     }
     
     private func goToNext() {
-        guard currentIndex < entries.count - 1 else { return }
-        
-        // #67: Use SpreadNavigationHelper for spread-aware navigation
-        if let newIndex = SpreadNavigationHelper.nextIndex(
-            from: currentIndex,
-            sourceURL: imageSource.url,
-            totalCount: entries.count,
-            loop: false  // Quick Look doesn't loop
-        ) {
-            currentIndex = newIndex
+        print("[ImagePreviewView] goToNext called, current: \(currentIndex)")
+        if currentIndex < entries.count - 1 {
+            currentIndex += 1
+            print("[ImagePreviewView] → new index: \(currentIndex)")
         }
     }
     
