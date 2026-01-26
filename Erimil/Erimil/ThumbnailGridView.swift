@@ -154,6 +154,7 @@ struct ThumbnailGridView: View {
                 entries: entries,
                 currentIndex: viewerIndex,
                 contentHashes: contentHashes,
+                favoriteIndices: favoriteIndices,  // #67: Add for SpreadImageViewer
                 selectionMode: settings.selectionMode,
                 selectedPaths: $selectedPaths,
                 favoritesVersion: $favoritesVersion,
@@ -1544,13 +1545,23 @@ struct ThumbnailItemView: View {
     }
 }
 
-// MARK: - S013: ViewerView (Windowed Viewer Mode / Reader Mode)
+// MARK: - ViewerView (S021: Refactored for SpreadImageViewer #67)
+//
+// This replaces the ViewerView struct in ThumbnailGridView.swift (lines 1549-2075)
+// Changes:
+// - Added favoriteIndices parameter for SpreadImageViewer
+// - Replaced single image display with SpreadImageViewer
+// - Added @State viewerIndex for SpreadImageViewer binding
+// - Navigation uses SpreadNavigationHelper
+// - Removed displayedImage, isLoading, prefetcher (SpreadImageViewer handles these)
+//
 
 struct ViewerView: View {
     let imageSource: any ImageSource
     let entries: [ImageEntry]
     let currentIndex: Int
     let contentHashes: [String: String]
+    let favoriteIndices: Set<Int>  // #67: Added for SpreadImageViewer
     let selectionMode: SelectionMode
     @Binding var selectedPaths: Set<String>
     @Binding var favoritesVersion: Int
@@ -1562,10 +1573,16 @@ struct ViewerView: View {
     var onRequestPreviousSource: (() -> Void)?
     
     @ObservedObject private var settings = AppSettings.shared
-    @State private var displayedImage: NSImage? = nil
-    @State private var isLoading: Bool = true
     
-    @State private var prefetcher = ImagePrefetcher()
+    // #67: Local index state for SpreadImageViewer binding
+    @State private var viewerIndex: Int = 0
+    @State private var spreadUpdateTrigger: Bool = false  // #67: For V key updates
+    
+    // #67: Removed - now handled by SpreadImageViewer
+    // @State private var displayedImage: NSImage? = nil
+    // @State private var isLoading: Bool = true
+    // @State private var prefetcher = ImagePrefetcher()
+    
     @State private var previousViewerIndex: Int = 0
     @State private var currentSourceURL: URL?
     
@@ -1575,8 +1592,8 @@ struct ViewerView: View {
     }
 
     private var currentEntry: ImageEntry? {
-        guard currentIndex >= 0, currentIndex < entries.count else { return nil }
-        return entries[currentIndex]
+        guard viewerIndex >= 0, viewerIndex < entries.count else { return nil }
+        return entries[viewerIndex]
     }
     
     private var isCurrentFavorite: Bool {
@@ -1608,7 +1625,7 @@ struct ViewerView: View {
                         ThumbnailSidebarView(
                             imageSource: imageSource,
                             entries: entries,
-                            currentIndex: currentIndex,
+                            currentIndex: viewerIndex,
                             contentHashes: contentHashes,
                             selectedPaths: selectedPaths,
                             favoritesVersion: favoritesVersion,
@@ -1618,8 +1635,6 @@ struct ViewerView: View {
                         )
                         mainContentView
                     }
-                    // .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)  // #54: RTL support
-                    
                     
                 case .bottom:
                     VStack(spacing: 0) {
@@ -1627,7 +1642,7 @@ struct ViewerView: View {
                         ThumbnailSidebarView(
                             imageSource: imageSource,
                             entries: entries,
-                            currentIndex: currentIndex,
+                            currentIndex: viewerIndex,
                             contentHashes: contentHashes,
                             selectedPaths: selectedPaths,
                             favoritesVersion: favoritesVersion,
@@ -1636,7 +1651,7 @@ struct ViewerView: View {
                             onSelect: { index in navigateTo(index) }
                         )
                     }
-                    .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)  // #54: RTL support
+                    .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)
                     
                 case .hidden:
                     mainContentView
@@ -1649,22 +1664,28 @@ struct ViewerView: View {
             }
             .allowsHitTesting(false)
         }
-
         .onAppear {
             if currentSourceURL != imageSource.url {
-                prefetcher.clearCache()
                 currentSourceURL = imageSource.url
             }
+            viewerIndex = currentIndex
             previousViewerIndex = currentIndex
-            loadImage()
         }
-        .onChange(of: currentIndex) { oldValue, _ in
+        .onChange(of: currentIndex) { oldValue, newValue in
+            // External index change (from parent)
             previousViewerIndex = oldValue
-            loadImage()
+            viewerIndex = newValue
+        }
+        .onChange(of: viewerIndex) { oldValue, newValue in
+            // Internal index change (from SpreadImageViewer or navigation)
+            if newValue != currentIndex {
+                previousViewerIndex = oldValue
+                onIndexChange(newValue)
+            }
         }
     }
     
-    // MARK: - Main Content View
+    // MARK: - Main Content View (#67: Now using SpreadImageViewer)
     
     @ViewBuilder
     private var mainContentView: some View {
@@ -1672,28 +1693,22 @@ struct ViewerView: View {
             // Header bar
             headerBar
             
-            // Main image area
+            // #67: Main image area - now using SpreadImageViewer
             ZStack {
-                if isLoading {
-                    ProgressView()
-                        .scaleEffect(1.5)
-                        .tint(.white)
-                } else if let image = displayedImage {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    Text("画像を読み込めません")
-                        .foregroundStyle(.white.opacity(0.5))
-                }
+                SpreadImageViewer(
+                    imageSource: imageSource,
+                    entries: entries,
+                    currentIndex: $viewerIndex,
+                    favoriteIndices: favoriteIndices,
+                    reloadTrigger: spreadUpdateTrigger
+                )
                 
-                // Navigation hints (left/right edges)
+                // Navigation hints (left/right edges) - #67: Spread-aware
                 HStack {
                     // Left arrow area
-                    if currentIndex > 0 {
+                    if viewerIndex > 0 {
                         Button {
-                            navigateTo(currentIndex - 1)
+                            goToPrevious()
                         } label: {
                             Rectangle()
                                 .fill(Color.clear)
@@ -1706,9 +1721,9 @@ struct ViewerView: View {
                     Spacer()
                     
                     // Right arrow area
-                    if currentIndex < entries.count - 1 {
+                    if viewerIndex < entries.count - 1 {
                         Button {
-                            navigateTo(currentIndex + 1)
+                            goToNext()
                         } label: {
                             Rectangle()
                                 .fill(Color.clear)
@@ -1777,13 +1792,13 @@ struct ViewerView: View {
             Spacer()
             
             // Position indicator
-            Text("\(currentIndex + 1) / \(entries.count)")
+            Text("\(viewerIndex + 1) / \(entries.count)")
                 .foregroundStyle(.white.opacity(0.8))
                 .monospacedDigit()
             
             // Fullscreen button
             Button {
-                onEnterSlideMode(currentIndex)
+                onEnterSlideMode(viewerIndex)
             } label: {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
                     .font(.title2)
@@ -1828,84 +1843,57 @@ struct ViewerView: View {
         .background(Color.black.opacity(0.6))
     }
     
-
-    private func loadImage() {
-        guard let entry = currentEntry else {
-            isLoading = false
-            return
-        }
-        
-        // Check prefetch cache first
-        if let cachedImage = prefetcher.getCached(for: entry.path) {
-            displayedImage = cachedImage
-            isLoading = false
-            
-            // Trigger prefetch
-            prefetcher.prefetchAround(
-                index: currentIndex,
-                entries: entries,
-                imageSource: imageSource,
-                previousIndex: previousViewerIndex
-            )
-            return
-        }
-        
-        // Cache miss - load normally
-        isLoading = true
-        displayedImage = nil
-        
-        let capturedIndex = currentIndex
-        
-        DispatchQueue.global(qos: .userInitiated).async {
-            let image = imageSource.fullImage(for: entry)
-            DispatchQueue.main.async {
-                guard currentIndex == capturedIndex else { return }
-                
-                if let image = image {
-                    prefetcher.addToCache(path: entry.path, image: image)
-                }
-                displayedImage = image
-                isLoading = false
-                
-                // Start prefetch
-                prefetcher.prefetchAround(
-                    index: currentIndex,
-                    entries: entries,
-                    imageSource: imageSource,
-                    previousIndex: previousViewerIndex
-                )
-            }
-        }
-    }
+    // MARK: - Navigation (#67: Spread-aware)
     
     private func navigateTo(_ index: Int) {
         guard index >= 0, index < entries.count else { return }
-        previousViewerIndex = currentIndex
-        onIndexChange(index)
+        previousViewerIndex = viewerIndex
+        viewerIndex = index
     }
+    
+    private func goToPrevious() {
+        if let newIndex = SpreadNavigationHelper.previousIndex(
+            from: viewerIndex,
+            sourceURL: imageSource.url,
+            totalCount: entries.count,
+            loop: settings.loopWithinSource
+        ) {
+            navigateTo(newIndex)
+        }
+    }
+    
+    private func goToNext() {
+        if let newIndex = SpreadNavigationHelper.nextIndex(
+            from: viewerIndex,
+            sourceURL: imageSource.url,
+            totalCount: entries.count,
+            loop: settings.loopWithinSource
+        ) {
+            navigateTo(newIndex)
+        }
+    }
+    
+    // MARK: - Key Event Handling (#67: Spread-aware navigation)
     
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
         switch event.keyCode {
         // Escape
         case 53:
-            // #52: Update focusedIndex before closing
-            onIndexChange(currentIndex)
+            onIndexChange(viewerIndex)
             onClose()
             return true
             
         // Return/Enter - go to Slide Mode
         case 36:
-            onEnterSlideMode(currentIndex)
+            onEnterSlideMode(viewerIndex)
             return true
             
         // Left arrow
         case 123:
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
-            } else if currentIndex > 0 {
-                navigateTo(currentIndex - 1)
-            } else if settings.loopWithinSource {
-                navigateTo(entries.count - 1)  // Loop to last
+            } else {
+                goToPrevious()
             }
             return true
             
@@ -1913,10 +1901,8 @@ struct ViewerView: View {
         case 124:
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
-            } else if currentIndex < entries.count - 1 {
-                navigateTo(currentIndex + 1)
-            } else if settings.loopWithinSource {
-                navigateTo(0)  // Loop to first
+            } else {
+                goToNext()
             }
             return true
         
@@ -1924,10 +1910,8 @@ struct ViewerView: View {
         case 126:
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
-            } else if currentIndex > 0 {
-                navigateTo(currentIndex - 1)
-            } else if settings.loopWithinSource {
-                navigateTo(entries.count - 1)
+            } else {
+                goToPrevious()
             }
             return true
             
@@ -1935,10 +1919,8 @@ struct ViewerView: View {
         case 125:
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
-            } else if currentIndex < entries.count - 1 {
-                navigateTo(currentIndex + 1)
-            } else if settings.loopWithinSource {
-                navigateTo(0)
+            } else {
+                goToNext()
             }
             return true
 
@@ -1947,7 +1929,7 @@ struct ViewerView: View {
             print("[ViewerView] keyCode 3 detected, control: \(event.modifierFlags.contains(.control))")
             if event.modifierFlags.contains(.control) {
                 print("[ViewerView] Ctrl+F → entering Slide Mode")
-                onEnterSlideMode(currentIndex)
+                onEnterSlideMode(viewerIndex)
                 return true
             }
             // Plain F handled in character switch below
@@ -1965,18 +1947,16 @@ struct ViewerView: View {
         switch characters {
         // Q - close
         case "q":
-            // #52: Update focusedIndex before closing
-            onIndexChange(currentIndex)
+            onIndexChange(viewerIndex)
             onClose()
             return true
+            
         // A - previous (Ctrl+A = previous source)
         case "a":
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
-            } else if currentIndex > 0 {
-                navigateTo(currentIndex - 1)
-            } else if settings.loopWithinSource {
-                navigateTo(entries.count - 1)
+            } else {
+                goToPrevious()
             }
             return true
             
@@ -1984,10 +1964,8 @@ struct ViewerView: View {
         case "d":
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
-            } else if currentIndex < entries.count - 1 {
-                navigateTo(currentIndex + 1)
-            } else if settings.loopWithinSource {
-                navigateTo(0)
+            } else {
+                goToNext()
             }
             return true
         
@@ -1995,10 +1973,8 @@ struct ViewerView: View {
         case "w":
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
-            } else if currentIndex > 0 {
-                navigateTo(currentIndex - 1)
-            } else if settings.loopWithinSource {
-                navigateTo(entries.count - 1)
+            } else {
+                goToPrevious()
             }
             return true
             
@@ -2006,18 +1982,16 @@ struct ViewerView: View {
         case "s":
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
-            } else if currentIndex < entries.count - 1 {
-                navigateTo(currentIndex + 1)
-            } else if settings.loopWithinSource {
-                navigateTo(0)
+            } else {
+                goToNext()
             }
             return true
 
         // F - toggle favorite
         case "f":
-            if event.modifierFlags.contains(.control) {  // .shift → .control
+            if event.modifierFlags.contains(.control) {
                 print("[ViewerView] Ctrl+F (char) → entering Slide Mode")
-                onEnterSlideMode(currentIndex)
+                onEnterSlideMode(viewerIndex)
             } else {
                 guard let entry = currentEntry else { return true }
                 let hash = contentHashes[entry.path]
@@ -2036,12 +2010,11 @@ struct ViewerView: View {
             if event.modifierFlags.contains(.control) {
                 // Ctrl+R: Toggle reading direction
                 let newDirection = CacheManager.shared.toggleReadingDirection(for: imageSource.url)
-                // ViewerView doesn't have readingDirectionVersion, but parent will update on next open
                 print("[ViewerView] Reading direction toggled to: \(newDirection.displayName)")
+                spreadUpdateTrigger.toggle()  // #67: Trigger SpreadImageViewer refresh
             } else {
                 // R: Exit to Filer
-                // #52: Update focusedIndex before closing so Filer shows the last viewed image
-                onIndexChange(currentIndex)
+                onIndexChange(viewerIndex)
                 onClose()
             }
             return true
@@ -2061,11 +2034,11 @@ struct ViewerView: View {
             settings.viewerThumbnailPosition = settings.viewerThumbnailPosition.next
             return true
         
-        // #55: V - toggle single page marker
+        // #55/#67: V - toggle single page marker
         case "v":
-            let added = CacheManager.shared.toggleSinglePageMarker(for: imageSource.url, at: currentIndex)
-            print("[ViewerView] Single page marker at \(currentIndex): \(added ? "ON" : "OFF")")
-            // Note: ViewerView doesn't support spread display yet, marker is saved for Slide Mode
+            let added = CacheManager.shared.toggleSinglePageMarker(for: imageSource.url, at: viewerIndex)
+            print("[ViewerView] Single page marker at \(viewerIndex): \(added ? "ON" : "OFF")")
+            spreadUpdateTrigger.toggle()  // #67: Trigger SpreadImageViewer refresh
             return true
             
         default:
@@ -2074,7 +2047,7 @@ struct ViewerView: View {
     }
 }
 
-// MARK: - ViewerKeyEventHandler
+// MARK: - ViewerKeyEventHandler (unchanged)
 
 struct ViewerKeyEventHandler: NSViewRepresentable {
     var onKeyEvent: (NSEvent) -> Bool
@@ -2111,6 +2084,7 @@ struct ViewerKeyEventHandler: NSViewRepresentable {
         }
     }
 }
+
 
 #Preview {
     ThumbnailGridView(
