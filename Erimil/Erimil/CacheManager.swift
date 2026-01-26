@@ -12,15 +12,15 @@ import Foundation
 import AppKit
 import CryptoKit
 
-/// Per-source settings (#54)
+/// Per-source settings (#54, #56)
 struct SourceSettings: Codable {
     var lastPosition: Int?
     var readingDirection: ReadingDirection?  // nil = use global default
-    // var singlePageIndices: Set<Int>?      // #56: Reserved for future use
+    var singlePageIndices: Set<Int>?         // #56: Manual single page markers
     
     /// Check if settings are empty (can be removed)
     var isEmpty: Bool {
-        lastPosition == nil && readingDirection == nil
+        lastPosition == nil && readingDirection == nil && (singlePageIndices == nil || singlePageIndices!.isEmpty)
     }
 }
 
@@ -713,5 +713,37 @@ class CacheManager {
         let new = current.toggled
         setReadingDirection(for: sourceURL, direction: new)
         return new
+    }
+    
+    // MARK: - Single Page Markers (#56)
+    
+    /// Get single page indices for a source
+    func getSinglePageIndices(for sourceURL: URL) -> Set<Int> {
+        return getSourceSettings(for: sourceURL)?.singlePageIndices ?? []
+    }
+    
+    /// Toggle single page marker for an index
+    /// Returns true if marker was added, false if removed
+    @discardableResult
+    func toggleSinglePageMarker(for sourceURL: URL, at index: Int) -> Bool {
+        var added = false
+        updateSourceSettings(for: sourceURL) { settings in
+            var indices = settings.singlePageIndices ?? []
+            if indices.contains(index) {
+                indices.remove(index)
+                added = false
+            } else {
+                indices.insert(index)
+                added = true
+            }
+            settings.singlePageIndices = indices.isEmpty ? nil : indices
+        }
+        print("[CacheManager] Single page marker at \(index): \(added ? "added" : "removed")")
+        return added
+    }
+    
+    /// Check if index has single page marker
+    func hasSinglePageMarker(for sourceURL: URL, at index: Int) -> Bool {
+        return getSinglePageIndices(for: sourceURL).contains(index)
     }
 }

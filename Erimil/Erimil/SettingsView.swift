@@ -119,6 +119,35 @@ struct SettingsView: View {
                     .font(.caption)
             }
             
+            // MARK: - Spread Mode (#55)
+            Section {
+                Toggle("見開き表示", isOn: $settings.isSpreadModeEnabled)
+                
+                if settings.isSpreadModeEnabled {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("横長検出しきい値:")
+                            Spacer()
+                            Text(String(format: "%.1f", settings.spreadThreshold))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: $settings.spreadThreshold, in: 1.0...2.0, step: 0.1)
+                        Text("幅/高さ > しきい値 の画像は自動で単独表示")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("見開きモード")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Tキーで特定ページを単独表示に指定可能")
+                    Text("横長画像（見開きスキャン）は自動で検出されます")
+                }
+                .font(.caption)
+            }
+            
             // MARK: - Output Folder
             Section {
                 Toggle("デフォルトの出力先を使用", isOn: $settings.useDefaultOutputFolder)
@@ -158,7 +187,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 550)
+        .frame(width: 450, height: 680)
         .navigationTitle("設定")
         .onAppear {
             updateCacheInfo()

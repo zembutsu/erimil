@@ -155,6 +155,8 @@ class AppSettings: ObservableObject {
         static let prefetchCount = "prefetchCount"
         static let loopWithinSource = "loopWithinSource"
         static let defaultReadingDirection = "defaultReadingDirection"  // #54
+        static let isSpreadModeEnabled = "isSpreadModeEnabled"      // #55
+        static let spreadThreshold = "spreadThreshold"              // #55
     }
     
     // MARK: - Published Properties
@@ -234,6 +236,23 @@ class AppSettings: ObservableObject {
         didSet {
             defaults.set(defaultReadingDirection.rawValue, forKey: Keys.defaultReadingDirection)
             print("[AppSettings] Default reading direction changed to: \(defaultReadingDirection.displayName)")
+        }
+    }
+    
+    /// Spread (two-page) mode enabled (#55)
+    @Published var isSpreadModeEnabled: Bool {
+        didSet {
+            defaults.set(isSpreadModeEnabled, forKey: Keys.isSpreadModeEnabled)
+            print("[AppSettings] Spread mode: \(isSpreadModeEnabled ? "ON" : "OFF")")
+        }
+    }
+    
+    /// Threshold for auto-detecting spread scans (#55)
+    /// Images with aspect ratio (width/height) > this value are shown as single page
+    @Published var spreadThreshold: Double {
+        didSet {
+            defaults.set(spreadThreshold, forKey: Keys.spreadThreshold)
+            print("[AppSettings] Spread threshold: \(spreadThreshold)")
         }
     }
     
@@ -411,6 +430,13 @@ class AppSettings: ObservableObject {
             self.defaultReadingDirection = .ltr  // Default: Left-to-Right
         }
         
+        // #55: Spread mode (default ON)
+        self.isSpreadModeEnabled = defaults.object(forKey: Keys.isSpreadModeEnabled) == nil ? true : defaults.bool(forKey: Keys.isSpreadModeEnabled)
+        
+        // #55: Spread threshold (default 1.2)
+        let savedThreshold = defaults.double(forKey: Keys.spreadThreshold)
+        self.spreadThreshold = savedThreshold > 0 ? savedThreshold : 1.2
+        
         // lastOpenedFolderURL is restored via restoreAndAccessLastOpenedFolder()
         // to properly handle security-scoped bookmarks
         self.lastOpenedFolderURL = nil
@@ -442,5 +468,7 @@ class AppSettings: ObservableObject {
         lastOpenedFolderURL = nil
         loopWithinSource = true
         defaultReadingDirection = .ltr  // #54
+        isSpreadModeEnabled = true      // #55
+        spreadThreshold = 1.2           // #55
     }
 }
