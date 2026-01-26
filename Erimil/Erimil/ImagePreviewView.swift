@@ -4,6 +4,7 @@
 //
 //  Created by Masahito Zembutsu on 2025/12/13.
 //  Updated: S003 (2025-12-17) - Phase 2.2 Quick Look + navigation
+//  Updated: S020 (2026-01-26) - Spread (two-page) view support (#55)
 //
 
 import SwiftUI
@@ -16,6 +17,7 @@ import AppKit
 /// - z: previous favorite
 /// - c: next favorite
 /// - f: toggle fullscreen (Slide Mode)
+/// - v: toggle single page marker (#55)
 struct ImagePreviewView: View {
     let imageSource: any ImageSource
     let entries: [ImageEntry]
@@ -25,16 +27,44 @@ struct ImagePreviewView: View {
     let onToggleFullScreen: () -> Void  // Callback to switch between Quick Look / Slide Mode
     
     @State private var currentIndex: Int = 0
+    @State private var spreadUpdateTrigger: Bool = false  // #55: For triggering view update
+    
+    // #55: Check if spread mode is enabled
+    private var isSpreadEnabled: Bool {
+        AppSettings.shared.isSpreadModeEnabled
+    }
+    
+    // #55: Check if current index should be shown as single page
+    private func shouldShowSinglePage(at index: Int) -> Bool {
+        // Spread mode disabled
+        if !isSpreadEnabled { return true }
+        
+        // Has single page marker
+        if CacheManager.shared.hasSinglePageMarker(for: imageSource.url, at: index) { return true }
+        
+        // Last page
+        if index >= entries.count - 1 { return true }
+        
+        // Next page has marker
+        if CacheManager.shared.hasSinglePageMarker(for: imageSource.url, at: index + 1) { return true }
+        
+        return false
+    }
+    
+    // #55: Calculate navigation step
+    private func navigationStep(at index: Int) -> Int {
+        return shouldShowSinglePage(at: index) ? 1 : 2
+    }
     
     var body: some View {
         ZStack {
-            // Image viewer (fills entire space)
-            ImageViewerCore(
+            // #55: Spread-aware image viewer
+            SpreadImageViewer(
                 imageSource: imageSource,
                 entries: entries,
                 currentIndex: $currentIndex,
-                showPositionIndicator: false,  // Position shown in header instead
-                favoriteIndices: favoriteIndices
+                favoriteIndices: favoriteIndices,
+                reloadTrigger: spreadUpdateTrigger  // #55: Pass reload trigger
             )
             
             // Header overlay
@@ -50,7 +80,8 @@ struct ImagePreviewView: View {
                 onNext: { goToNext() },
                 onPreviousFavorite: { goToPreviousFavorite() },
                 onNextFavorite: { goToNextFavorite() },
-                onToggleFullScreen: onToggleFullScreen
+                onToggleFullScreen: onToggleFullScreen,
+                onToggleSinglePage: { toggleSinglePageMarker() }  // #55
             )
             .allowsHitTesting(false)
         }
@@ -106,6 +137,19 @@ struct ImagePreviewView: View {
             .disabled(currentIndex >= entries.count - 1)
             .opacity(currentIndex >= entries.count - 1 ? 0.3 : 1.0)
             
+            // #55: Single page marker hint (only when spread mode enabled)
+            if isSpreadEnabled {
+                Text("v")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.white.opacity(0.2))
+                    .cornerRadius(4)
+                    .padding(.leading, 8)
+                    .help("Toggle single page marker")
+            }
+            
             // Fullscreen button (for debugging / alternative to f key)
             Button {
                 print("[ImagePreviewView] Fullscreen button clicked")
@@ -150,16 +194,38 @@ struct ImagePreviewView: View {
         )
     }
     
-    // MARK: - Navigation
+    // MARK: - Navigation (#55: Spread-aware)
     
     private func goToPrevious() {
         guard currentIndex > 0 else { return }
-        currentIndex -= 1
+        
+        // #55: Calculate step based on previous page's spread state
+        let step: Int
+        if currentIndex >= 2 && !shouldShowSinglePage(at: currentIndex - 2) {
+            step = 2
+        } else {
+            step = 1
+        }
+        
+        if currentIndex >= step {
+            currentIndex -= step
+        } else {
+            currentIndex = 0
+        }
     }
     
     private func goToNext() {
         guard currentIndex < entries.count - 1 else { return }
-        currentIndex += 1
+        
+        // #55: Calculate step based on current spread state
+        let step = navigationStep(at: currentIndex)
+        let nextIndex = currentIndex + step
+        
+        if nextIndex < entries.count {
+            currentIndex = nextIndex
+        } else {
+            currentIndex = entries.count - 1
+        }
     }
     
     private func goToPreviousFavorite() {
@@ -187,6 +253,13 @@ struct ImagePreviewView: View {
             currentIndex = firstFavorite
         }
     }
+    
+    // #55: Toggle single page marker
+    private func toggleSinglePageMarker() {
+        let added = CacheManager.shared.toggleSinglePageMarker(for: imageSource.url, at: currentIndex)
+        print("[ImagePreviewView] Single page marker at \(currentIndex): \(added ? "ON" : "OFF")")
+        spreadUpdateTrigger.toggle()
+    }
 }
 
 // MARK: - Key Event Handler for Quick Look
@@ -198,6 +271,7 @@ struct QuickLookKeyHandler: NSViewRepresentable {
     let onPreviousFavorite: () -> Void
     let onNextFavorite: () -> Void
     let onToggleFullScreen: () -> Void
+    let onToggleSinglePage: () -> Void  // #55
     
     func makeNSView(context: Context) -> QuickLookKeyView {
         let view = QuickLookKeyView()
@@ -207,6 +281,7 @@ struct QuickLookKeyHandler: NSViewRepresentable {
         view.onPreviousFavorite = onPreviousFavorite
         view.onNextFavorite = onNextFavorite
         view.onToggleFullScreen = onToggleFullScreen
+        view.onToggleSinglePage = onToggleSinglePage  // #55
         print("[QuickLookKeyHandler] makeNSView called")
         DispatchQueue.main.async {
             view.window?.makeFirstResponder(view)
@@ -222,6 +297,7 @@ struct QuickLookKeyHandler: NSViewRepresentable {
         nsView.onPreviousFavorite = onPreviousFavorite
         nsView.onNextFavorite = onNextFavorite
         nsView.onToggleFullScreen = onToggleFullScreen
+        nsView.onToggleSinglePage = onToggleSinglePage  // #55
     }
     
     class QuickLookKeyView: NSView {
@@ -231,6 +307,7 @@ struct QuickLookKeyHandler: NSViewRepresentable {
         var onPreviousFavorite: (() -> Void)?
         var onNextFavorite: (() -> Void)?
         var onToggleFullScreen: (() -> Void)?
+        var onToggleSinglePage: (() -> Void)?  // #55
         
         override var acceptsFirstResponder: Bool { true }
         
@@ -272,6 +349,9 @@ struct QuickLookKeyHandler: NSViewRepresentable {
                     case "f":
                         print("[QuickLookKeyView] → FullScreen (f) triggered, calling onToggleFullScreen")
                         onToggleFullScreen?()
+                    case "v":  // #55
+                        print("[QuickLookKeyView] → Toggle single page (v) triggered")
+                        onToggleSinglePage?()
                     default:
                         print("[QuickLookKeyView] → Unhandled key, passing to super")
                         super.keyDown(with: event)
