@@ -173,22 +173,56 @@ struct ImagePreviewView: View {
         )
     }
     
-    // MARK: - Navigation (#67: Simple ±1 navigation)
-    // Note: Spread-aware navigation deferred due to wide image detection complexity.
+    // MARK: - Navigation (#67: Cache-based spread-aware navigation)
     
     private func goToPrevious() {
         print("[ImagePreviewView] goToPrevious called, current: \(currentIndex)")
-        if currentIndex > 0 {
-            currentIndex -= 1
-            print("[ImagePreviewView] → new index: \(currentIndex)")
+        guard currentIndex > 0 else { return }
+        
+        // #67: Try to determine step using cached aspect ratios
+        if currentIndex >= 2 {
+            let prevIndex = currentIndex - 2
+            let wouldBeSingle = SpreadNavigationHelper.shouldShowSinglePage(
+                for: imageSource.url,
+                at: prevIndex,
+                totalCount: entries.count,
+                entries: entries
+            )
+            
+            if !wouldBeSingle {
+                print("[ImagePreviewView] goToPrevious: cached spread at \(prevIndex), stepping -2")
+                currentIndex = prevIndex
+                return
+            }
         }
+        
+        // Fallback: step -1
+        currentIndex -= 1
+        print("[ImagePreviewView] → new index: \(currentIndex)")
     }
     
     private func goToNext() {
         print("[ImagePreviewView] goToNext called, current: \(currentIndex)")
-        if currentIndex < entries.count - 1 {
-            currentIndex += 1
+        guard currentIndex < entries.count - 1 else { return }
+        
+        // #67: Calculate step using cached aspect ratios
+        let isSingle = SpreadNavigationHelper.shouldShowSinglePage(
+            for: imageSource.url,
+            at: currentIndex,
+            totalCount: entries.count,
+            entries: entries
+        )
+        let step = isSingle ? 1 : 2
+        print("[ImagePreviewView] goToNext: step = \(step) (single: \(isSingle))")
+        
+        let nextIndex = currentIndex + step
+        if nextIndex < entries.count {
+            currentIndex = nextIndex
             print("[ImagePreviewView] → new index: \(currentIndex)")
+        } else if currentIndex < entries.count - 1 {
+            // Step would overshoot but there's still a page
+            currentIndex = entries.count - 1
+            print("[ImagePreviewView] → last page: \(currentIndex)")
         }
     }
     

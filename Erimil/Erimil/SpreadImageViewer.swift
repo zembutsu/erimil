@@ -34,7 +34,8 @@ enum SpreadNavigationHelper {
     static func shouldShowSinglePage(
         for sourceURL: URL,
         at index: Int,
-        totalCount: Int
+        totalCount: Int,
+        entries: [ImageEntry]? = nil
     ) -> Bool {
         // Spread mode disabled
         if !AppSettings.shared.isSpreadModeEnabled { return true }
@@ -47,6 +48,22 @@ enum SpreadNavigationHelper {
         
         // Next page has marker
         if CacheManager.shared.hasSinglePageMarker(for: sourceURL, at: index + 1) { return true }
+        
+        // #67 Phase 3: Check cached aspect ratios for wide images
+        if let entries = entries {
+            // Current page is wide → single
+            if let isWide = CacheManager.shared.isWideImage(for: sourceURL, path: entries[index].path),
+               isWide {
+                return true
+            }
+            
+            // Next page is wide → current should be single
+            if index + 1 < totalCount,
+               let isNextWide = CacheManager.shared.isWideImage(for: sourceURL, path: entries[index + 1].path),
+               isNextWide {
+                return true
+            }
+        }
         
         return false
     }
@@ -386,6 +403,12 @@ struct SpreadImageViewer: View {
         DispatchQueue.global(qos: .userInitiated).async {
             let loadedLeft = capturedSource.fullImage(for: leftEntry)
             
+            // #67 Phase 3: Record aspect ratio for future navigation decisions
+            if let image = loadedLeft, image.size.height > 0 {
+                let ratio = image.size.width / image.size.height
+                CacheManager.shared.setAspectRatio(for: capturedSource.url, path: leftEntry.path, ratio: ratio)
+            }
+            
             DispatchQueue.main.async {
                 guard currentIndex == capturedIndex else { return }
                 
@@ -426,6 +449,12 @@ struct SpreadImageViewer: View {
                 
                 DispatchQueue.global(qos: .userInitiated).async {
                     let loadedRight = capturedSource.fullImage(for: rightEntry)
+                    
+                    // #67 Phase 3: Record aspect ratio for future navigation decisions
+                    if let image = loadedRight, image.size.height > 0 {
+                        let ratio = image.size.width / image.size.height
+                        CacheManager.shared.setAspectRatio(for: capturedSource.url, path: rightEntry.path, ratio: ratio)
+                    }
                     
                     DispatchQueue.main.async {
                         guard currentIndex == capturedIndex else { return }

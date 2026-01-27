@@ -64,6 +64,12 @@ class CacheManager {
     private var sourceSettings: [String: SourceSettings] = [:]
     private let settingsLock = NSLock()
     
+    /// Aspect ratio cache for spread detection (#67 Phase 3)
+    /// In-memory only - no persistence needed
+    /// Key: sourceURL.path + "/" + entryPath
+    private var aspectRatioCache: [String: CGFloat] = [:]
+    private let aspectRatioLock = NSLock()
+    
     // MARK: - Initialization
     
     private init() {
@@ -745,5 +751,48 @@ class CacheManager {
     /// Check if index has single page marker
     func hasSinglePageMarker(for sourceURL: URL, at index: Int) -> Bool {
         return getSinglePageIndices(for: sourceURL).contains(index)
+    }
+    
+    // MARK: - Aspect Ratio Cache (#67 Phase 3)
+
+    /// Make cache key for aspect ratio
+    private func aspectRatioCacheKey(sourceURL: URL, path: String) -> String {
+        return "\(sourceURL.path)/\(path)"
+    }
+
+    /// Set aspect ratio for an image
+    func setAspectRatio(for sourceURL: URL, path: String, ratio: CGFloat) {
+        let key = aspectRatioCacheKey(sourceURL: sourceURL, path: path)
+        aspectRatioLock.lock()
+        aspectRatioCache[key] = ratio
+        aspectRatioLock.unlock()
+    }
+
+    /// Get cached aspect ratio (nil if not loaded yet)
+    func getAspectRatio(for sourceURL: URL, path: String) -> CGFloat? {
+        let key = aspectRatioCacheKey(sourceURL: sourceURL, path: path)
+        aspectRatioLock.lock()
+        let result = aspectRatioCache[key]
+        aspectRatioLock.unlock()
+        return result
+    }
+
+    /// Check if image is wide (nil if aspect ratio not cached yet)
+    /// - Parameters:
+    ///   - sourceURL: Source URL
+    ///   - path: Entry path
+    ///   - threshold: Width/height ratio threshold (default 1.3)
+    /// - Returns: true if wide, false if portrait, nil if unknown
+    func isWideImage(for sourceURL: URL, path: String, threshold: CGFloat = 1.3) -> Bool? {
+        guard let ratio = getAspectRatio(for: sourceURL, path: path) else { return nil }
+        return ratio >= threshold
+    }
+
+    /// Clear aspect ratio cache (call on source change if needed)
+    func clearAspectRatioCache() {
+        aspectRatioLock.lock()
+        aspectRatioCache.removeAll()
+        aspectRatioLock.unlock()
+        print("[CacheManager] Aspect ratio cache cleared")
     }
 }
