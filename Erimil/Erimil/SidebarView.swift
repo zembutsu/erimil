@@ -3,6 +3,7 @@
 //  Erimil
 //
 //  Updated: S010 (2025-01-11) - Double-click to open Slide Mode
+//  Updated: S023 (2026-01-27) - Preserve expansion state on reload
 //
 
 import SwiftUI
@@ -17,24 +18,20 @@ struct SidebarView: View {
     let reloadTrigger: UUID
     
     @State private var rootNode: FolderNode?
+    @State private var expandedNodes: Set<URL> = []  // S023: Track expanded folders
     
     var body: some View {
         VStack(spacing: 0) {
             if let root = rootNode {
                 List {
-                    OutlineGroup(root.children ?? [], children: \.children) { node in
-                        NodeRowView(
+                    ForEach(root.children ?? [], id: \.url) { node in
+                        NodeTreeView(
                             node: node,
-                            isSelected: selectedSourceURL == node.url
+                            selectedSourceURL: selectedSourceURL,
+                            expandedNodes: $expandedNodes,
+                            onTap: handleNodeTap,
+                            onDoubleTap: handleNodeDoubleTap
                         )
-                        .contentShape(Rectangle())
-                        .onTapGesture(count: 2) {
-                            // S010: Double-click opens Slide Mode
-                            handleNodeDoubleTap(node)
-                        }
-                        .onTapGesture(count: 1) {
-                            handleNodeTap(node)
-                        }
                     }
                 }
                 .listStyle(.sidebar)
@@ -78,9 +75,14 @@ struct SidebarView: View {
         }
         .onChange(of: selectedFolderURL) { oldValue, newValue in
             print("[SidebarView] onChange: \(oldValue?.path ?? "nil") → \(newValue?.path ?? "nil")")
+            // S023: Clear expansion state only when root folder changes
+            if oldValue != newValue {
+                expandedNodes.removeAll()
+            }
             reloadTree()
         }
         .onChange(of: reloadTrigger) { _, _ in
+            // S023: reloadTree without clearing expandedNodes
             reloadTree()
         }
     }
@@ -155,6 +157,7 @@ struct SidebarView: View {
             if selectedFolderURL == url {
                 print("[SidebarView] Same folder selected, forcing reload")
                 rootNode = nil
+                // S023: Don't clear expandedNodes for same folder reload
             }
             
             selectedFolderURL = url
@@ -171,6 +174,68 @@ struct SidebarView: View {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
+    }
+}
+
+// MARK: - NodeTreeView (S023: Recursive tree with preserved expansion)
+
+struct NodeTreeView: View {
+    let node: FolderNode
+    let selectedSourceURL: URL?
+    @Binding var expandedNodes: Set<URL>
+    let onTap: (FolderNode) -> Void
+    let onDoubleTap: (FolderNode) -> Void
+    
+    private var isExpanded: Binding<Bool> {
+        Binding(
+            get: { expandedNodes.contains(node.url) },
+            set: { newValue in
+                if newValue {
+                    expandedNodes.insert(node.url)
+                } else {
+                    expandedNodes.remove(node.url)
+                }
+            }
+        )
+    }
+    
+    private var hasChildren: Bool {
+        guard let children = node.children else { return false }
+        return !children.isEmpty
+    }
+    
+    var body: some View {
+        if hasChildren {
+            DisclosureGroup(isExpanded: isExpanded) {
+                ForEach(node.children ?? [], id: \.url) { child in
+                    NodeTreeView(
+                        node: child,
+                        selectedSourceURL: selectedSourceURL,
+                        expandedNodes: $expandedNodes,
+                        onTap: onTap,
+                        onDoubleTap: onDoubleTap
+                    )
+                }
+            } label: {
+                nodeLabel
+            }
+        } else {
+            nodeLabel
+        }
+    }
+    
+    private var nodeLabel: some View {
+        NodeRowView(
+            node: node,
+            isSelected: selectedSourceURL == node.url
+        )
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            onDoubleTap(node)
+        }
+        .onTapGesture(count: 1) {
+            onTap(node)
+        }
     }
 }
 
@@ -200,7 +265,7 @@ struct NodeRowView: View {
 #Preview {
     SidebarView(
         selectedFolderURL: .constant(nil),
-        selectedSourceURL: .constant(nil),  // 変更
+        selectedSourceURL: .constant(nil),
         hasUnsavedChanges: false,
         onZipSelectionAttempt: { _ in },
         onFolderSelectionAttempt: { _ in },
