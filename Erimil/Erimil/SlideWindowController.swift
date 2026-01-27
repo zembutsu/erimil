@@ -601,6 +601,28 @@ class SlideWindowController {
         guard !storedEntries.isEmpty else { return }
         print("[SlideWindowController] goToPrevious called, current: \(currentIndex)")
         
+        guard currentIndex > 0 || AppSettings.shared.loopWithinSource else { return }
+        
+        // #67 Phase 3: Try to determine step using cached aspect ratios
+        if currentIndex >= 2, let source = storedImageSource {
+            let prevIndex = currentIndex - 2
+            let wouldBeSingle = SpreadNavigationHelper.shouldShowSinglePage(
+                for: source.url,
+                at: prevIndex,
+                totalCount: storedEntries.count,
+                entries: storedEntries
+            )
+            
+            if !wouldBeSingle {
+                print("[SlideWindowController] goToPrevious: cached spread at \(prevIndex), stepping -2")
+                currentIndex = prevIndex
+                storedOnIndexChange?(currentIndex)
+                notifyViewOfIndexChange()
+                return
+            }
+        }
+        
+        // Fallback: step -1
         if currentIndex > 0 {
             currentIndex -= 1
             print("[SlideWindowController] → new index: \(currentIndex)")
@@ -613,6 +635,7 @@ class SlideWindowController {
             notifyViewOfIndexChange()
         }
     }
+
     
     private func goToNext() {
         guard !storedEntries.isEmpty else { return }

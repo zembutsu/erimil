@@ -1876,8 +1876,33 @@ struct ViewerView: View {
     
     private func goToPrevious() {
         print("[ViewerView] goToPrevious called, current: \(viewerIndex), isShowingSpread: \(isShowingSpread)")
+        
+        guard viewerIndex > 0 || settings.loopWithinSource else { return }
+        
+        // #67 Phase 3: Try to determine step using cached aspect ratios
+        if viewerIndex >= 2 {
+            let prevIndex = viewerIndex - 2
+            // Check if page at prevIndex would form a spread
+            let wouldBeSingle = SpreadNavigationHelper.shouldShowSinglePage(
+                for: imageSource.url,
+                at: prevIndex,
+                totalCount: entries.count,
+                entries: entries
+            )
+            
+            if !wouldBeSingle {
+                // Previous spread starts at prevIndex, skip 2
+                print("[ViewerView] goToPrevious: cached spread at \(prevIndex), stepping -2")
+                preNavIndex = viewerIndex
+                navDirection = 0  // No correction needed
+                navigateTo(prevIndex)
+                return
+            }
+        }
+        
+        // Fallback: step -1 and let correction handle if needed
         preNavIndex = viewerIndex
-        navDirection = -1  // backward
+        navDirection = -1  // backward, may need correction
         
         if viewerIndex > 0 {
             navigateTo(viewerIndex - 1)
