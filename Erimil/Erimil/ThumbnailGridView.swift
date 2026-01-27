@@ -1907,6 +1907,7 @@ struct ViewerView: View {
         if viewerIndex > 0 {
             navigateTo(viewerIndex - 1)
         } else if settings.loopWithinSource {
+            navDirection = 0  // Loop is jump, not backward - no correction needed
             navigateTo(entries.count - 1)
         }
     }

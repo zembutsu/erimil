@@ -641,9 +641,29 @@ class SlideWindowController {
         guard !storedEntries.isEmpty else { return }
         print("[SlideWindowController] goToNext called, current: \(currentIndex)")
         
-        if currentIndex < storedEntries.count - 1 {
-            currentIndex += 1
+        // #67: Calculate step using cached aspect ratios
+        var step = 1
+        if let source = storedImageSource {
+            let isSingle = SpreadNavigationHelper.shouldShowSinglePage(
+                for: source.url,
+                at: currentIndex,
+                totalCount: storedEntries.count,
+                entries: storedEntries
+            )
+            step = isSingle ? 1 : 2
+            print("[SlideWindowController] goToNext: step = \(step) (single: \(isSingle))")
+        }
+        
+        let nextIndex = currentIndex + step
+        if nextIndex < storedEntries.count {
+            currentIndex = nextIndex
             print("[SlideWindowController] → new index: \(currentIndex)")
+            storedOnIndexChange?(currentIndex)
+            notifyViewOfIndexChange()
+        } else if currentIndex < storedEntries.count - 1 {
+            // Step would overshoot but there's still a page - go to last
+            currentIndex = storedEntries.count - 1
+            print("[SlideWindowController] → last page: \(currentIndex)")
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
         } else if AppSettings.shared.loopWithinSource {
