@@ -44,6 +44,9 @@ struct ContentView: View {
                 onFolderSelectionAttempt: { url in
                     handleSourceSelectionAttempt(url: url, type: .folder)
                 },
+                onPdfSelectionAttempt: { url in
+                    handleSourceSelectionAttempt(url: url, type: .pdf)
+                },
                 onOpenSlideMode: { url in
                     openSlideModeForSource(url)
                 },
@@ -157,6 +160,8 @@ struct ContentView: View {
             currentImageSource = ArchiveManager(zipURL: url)
         case .folder:
             currentImageSource = FolderManager(folderURL: url)
+        case .pdf:
+            currentImageSource = PDFManager(pdfURL: url)
         }
     }
     
@@ -256,8 +261,11 @@ struct ContentView: View {
     
     /// Infer ImageSourceType from URL (ZIP file or directory)
     private func inferSourceType(_ url: URL) -> ImageSourceType {
-        if url.pathExtension.lowercased() == "zip" {
+        let ext = url.pathExtension.lowercased()
+        if ext == "zip" {
             return .archive
+        } else if ext == "pdf" {
+            return .pdf
         } else {
             return .folder
         }
