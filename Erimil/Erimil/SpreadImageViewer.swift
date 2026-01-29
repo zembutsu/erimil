@@ -378,6 +378,7 @@ struct SpreadImageViewer: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)  // Center in available space
+            .environment(\.layoutDirection, .leftToRight)  // #73: Prevent double RTL inversion
             .drawingGroup()  // Render offscreen first, then display at once
         }
     }
