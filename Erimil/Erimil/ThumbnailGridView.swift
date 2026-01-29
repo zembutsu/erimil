@@ -589,6 +589,9 @@ struct ThumbnailGridView: View {
                     confirmCreateZip()
                 }
                 .buttonStyle(.borderedProminent)
+            
+            case .pdf:
+                EmptyView()
             }
         }
         .padding()

@@ -65,6 +65,7 @@ protocol ImageSource {
 enum ImageSourceType {
     case archive    // ZIP, tar.gz, etc.
     case folder     // Directory
+    case pdf        // PDF document
 }
 
 // Default implementations

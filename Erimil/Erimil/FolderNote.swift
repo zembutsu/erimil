@@ -13,6 +13,7 @@ struct FolderNode: Identifiable, Hashable {
     let name: String
     let isDirectory: Bool
     let isZip: Bool
+    let isPdf: Bool
     var children: [FolderNode]?
     
     init(url: URL) {
@@ -23,6 +24,7 @@ struct FolderNode: Identifiable, Hashable {
         FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
         self.isDirectory = isDir.boolValue
         self.isZip = url.pathExtension.lowercased() == "zip"
+        self.isPdf = url.pathExtension.lowercased() == "pdf"
         
         if isDirectory {
             self.children = FolderNode.loadChildren(of: url)
@@ -46,7 +48,7 @@ struct FolderNode: Identifiable, Hashable {
                 // ディレクトリまたはZIPファイルのみ
                 var isDir: ObjCBool = false
                 fm.fileExists(atPath: item.path, isDirectory: &isDir)
-                return isDir.boolValue || item.pathExtension.lowercased() == "zip"
+                return isDir.boolValue || item.pathExtension.lowercased() == "zip" || item.pathExtension.lowercased() == "pdf"
             }
             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
             .map { FolderNode(url: $0) }

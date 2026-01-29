@@ -14,6 +14,7 @@ struct SidebarView: View {
     let hasUnsavedChanges: Bool
     let onZipSelectionAttempt: (URL) -> Void
     var onFolderSelectionAttempt: ((URL) -> Void)?
+    var onPdfSelectionAttempt: ((URL) -> Void)?
     var onOpenSlideMode: ((URL) -> Void)?  // S010: Double-click to open Slide Mode
     let reloadTrigger: UUID
     
@@ -90,6 +91,8 @@ struct SidebarView: View {
     private func handleNodeTap(_ node: FolderNode) {
         if node.isZip {
             onZipSelectionAttempt(node.url)
+        } else if node.isPdf {
+            onPdfSelectionAttempt?(node.url)
         } else if node.isDirectory {
             // フォルダの場合、画像があれば右ペインに表示
             onFolderSelectionAttempt?(node.url)
@@ -101,6 +104,8 @@ struct SidebarView: View {
         // First select the node (same as single tap)
         if node.isZip {
             onZipSelectionAttempt(node.url)
+        } else if node.isPdf {
+            onPdfSelectionAttempt?(node.url)
         } else if node.isDirectory {
             onFolderSelectionAttempt?(node.url)
         }
@@ -250,6 +255,9 @@ struct NodeRowView: View {
             if node.isZip {
                 Image(systemName: "doc.zipper")
                     .foregroundStyle(.orange)
+            } else if node.isPdf {
+                Image(systemName: "doc.richtext")
+                    .foregroundStyle(.red)
             } else {
                 Image(systemName: "folder")
                     .foregroundStyle(.blue)
