@@ -1356,6 +1356,23 @@ struct ThumbnailCell: View {
         }
     }
 }
+
+// MARK: - Thumbnail Display Item (#69)
+
+enum ThumbnailDisplayItem: Identifiable {
+    case single(Int)
+    case spread(leftIndex: Int, rightIndex: Int)
+    
+    var id: String {
+        switch self {
+        case .single(let index):
+            return "single-\(index)"
+        case .spread(let left, let right):
+            return "spread-\(left)-\(right)"
+        }
+    }
+}
+
 // MARK: - S014: ThumbnailSidebarView
 //
 // Note: Spread thumbnail display is deferred to a future issue.
@@ -1427,28 +1444,111 @@ struct ThumbnailSidebarView: View {
     
     @ViewBuilder
     private var thumbnailItems: some View {
-        ForEach(Array(entries.enumerated()), id: \.element.path) { index, entry in
-            ThumbnailItemView(
-                imageSource: imageSource,
-                entry: entry,
-                index: index,
-                isCurrent: index == currentIndex,
-                favoriteStatus: getFavoriteStatus(entry),
-                isSelected: selectedPaths.contains(entry.path),
-                selectionMode: selectionMode,
-                size: thumbnailSize,
-                onTap: { onSelect(index) }
-            )
-            .id("\(index)-\(favoritesVersion)-\(selectedPaths.contains(entry.path))")
+        let isSpreadMode = AppSettings.shared.isSpreadModeEnabled
+        let indices = buildDisplayIndices(isSpreadMode: isSpreadMode)
+        
+        ForEach(indices, id: \.id) { item in
+            switch item {
+            case .single(let index):
+                let entry = entries[index]
+                ThumbnailItemView(
+                    imageSource: imageSource,
+                    entry: entry,
+                    index: index,
+                    isCurrent: index == currentIndex,
+                    favoriteStatus: getFavoriteStatus(entry),
+                    isSelected: selectedPaths.contains(entry.path),
+                    selectionMode: selectionMode,
+                    size: thumbnailSize,
+                    onTap: { onSelect(index) }
+                )
+                .id("\(index)-\(favoritesVersion)-\(selectedPaths.contains(entry.path))")
+                
+            case .spread(let leftIndex, let rightIndex):
+                SpreadThumbnailPairView(
+                    imageSource: imageSource,
+                    leftEntry: entries[leftIndex],
+                    rightEntry: entries[rightIndex],
+                    leftIndex: leftIndex,
+                    rightIndex: rightIndex,
+                    currentIndex: currentIndex,
+                    contentHashes: contentHashes,
+                    selectedPaths: selectedPaths,
+                    favoritesVersion: favoritesVersion,
+                    selectionMode: selectionMode,
+                    pairSize: thumbnailSize,
+                    onSelect: { index in onSelect(index) }
+                )
+                .id("spread-\(leftIndex)-\(favoritesVersion)")
+            }
         }
     }
     
-    private func scrollToIndex(_ index: Int, proxy: ScrollViewProxy) {
-        guard index >= 0, index < entries.count else { return }
-        withAnimation(.easeInOut(duration: 0.2)) {
-            proxy.scrollTo("\(index)-\(favoritesVersion)-\(selectedPaths.contains(entries[index].path))", anchor: .center)
+    /// Build display indices considering spread pairs
+    private func buildDisplayIndices(isSpreadMode: Bool) -> [ThumbnailDisplayItem] {
+        var items: [ThumbnailDisplayItem] = []
+        var index = 0
+        
+        while index < entries.count {
+            if !isSpreadMode {
+                // Spread mode OFF: all single
+                items.append(.single(index))
+                index += 1
+            } else {
+                let shouldBeSingle = SpreadNavigationHelper.shouldShowSinglePage(
+                    for: imageSource.url,
+                    at: index,
+                    totalCount: entries.count,
+                    entries: entries
+                )
+                
+                if shouldBeSingle || index >= entries.count - 1 {
+                    items.append(.single(index))
+                    index += 1
+                } else {
+                    // Spread pair: index and index+1
+                    items.append(.spread(leftIndex: index, rightIndex: index + 1))
+                    index += 2
+                }
+            }
         }
+        
+        return items
     }
+    
+    private func scrollToIndex(_ index: Int, proxy: ScrollViewProxy) {
+            guard index >= 0, index < entries.count else { return }
+            
+            // Find the correct ID to scroll to
+            let targetID: String
+            let isSpreadMode = AppSettings.shared.isSpreadModeEnabled
+            
+            if isSpreadMode {
+                // Check if this index is part of a spread pair
+                let items = buildDisplayIndices(isSpreadMode: true)
+                if let item = items.first(where: { item in
+                    switch item {
+                    case .single(let i): return i == index
+                    case .spread(let left, let right): return left == index || right == index
+                    }
+                }) {
+                    switch item {
+                    case .single(let i):
+                        targetID = "\(i)-\(favoritesVersion)-\(selectedPaths.contains(entries[i].path))"
+                    case .spread(let left, _):
+                        targetID = "spread-\(left)-\(favoritesVersion)"
+                    }
+                } else {
+                    targetID = "\(index)-\(favoritesVersion)-\(selectedPaths.contains(entries[index].path))"
+                }
+            } else {
+                targetID = "\(index)-\(favoritesVersion)-\(selectedPaths.contains(entries[index].path))"
+            }
+            
+            withAnimation(.easeInOut(duration: 0.2)) {
+                proxy.scrollTo(targetID, anchor: .center)
+            }
+        }
     
     private func getFavoriteStatus(_ entry: ImageEntry) -> CacheManager.FavoriteStatus {
         let hash = contentHashes[entry.path]
@@ -1548,6 +1648,161 @@ struct ThumbnailItemView: View {
             let image = imageSource.thumbnail(for: entry, maxSize: size * 2)
             DispatchQueue.main.async {
                 thumbnail = image
+            }
+        }
+    }
+}
+
+// MARK: - Spread Thumbnail Pair View (#69)
+
+struct SpreadThumbnailPairView: View {
+    let imageSource: any ImageSource
+    let leftEntry: ImageEntry
+    let rightEntry: ImageEntry
+    let leftIndex: Int
+    let rightIndex: Int
+    let currentIndex: Int
+    let contentHashes: [String: String]
+    let selectedPaths: Set<String>
+    let favoritesVersion: Int
+    let selectionMode: SelectionMode
+    let pairSize: CGFloat  // Total width/height for the pair
+    var onSelect: (Int) -> Void
+    
+    @State private var leftThumbnail: NSImage? = nil
+    @State private var rightThumbnail: NSImage? = nil
+    
+    /// Is this pair currently focused (contains currentIndex)?
+    private var isCurrent: Bool {
+        currentIndex == leftIndex || currentIndex == rightIndex
+    }
+    
+    /// Size for each thumbnail (half of pair size minus spacing)
+    private var itemSize: CGFloat {
+        (pairSize - 2) / 2  // 2px for center gap
+    }
+    
+    private var leftFavoriteStatus: CacheManager.FavoriteStatus {
+        let hash = contentHashes[leftEntry.path]
+        return CacheManager.shared.getFavoriteStatus(
+            sourceURL: imageSource.url,
+            entryPath: leftEntry.path,
+            contentHash: hash
+        )
+    }
+    
+    private var rightFavoriteStatus: CacheManager.FavoriteStatus {
+        let hash = contentHashes[rightEntry.path]
+        return CacheManager.shared.getFavoriteStatus(
+            sourceURL: imageSource.url,
+            entryPath: rightEntry.path,
+            contentHash: hash
+        )
+    }
+    
+    private var isLeftSelected: Bool {
+        selectedPaths.contains(leftEntry.path)
+    }
+    
+    private var isRightSelected: Bool {
+        selectedPaths.contains(rightEntry.path)
+    }
+    
+    private var overlayColor: Color {
+        switch selectionMode {
+        case .exclude: return .red
+        case .keep: return .green
+        }
+    }
+    
+    var body: some View {
+        // HStack with two thumbnails - RTL handled by parent's layoutDirection
+        HStack(spacing: 2) {
+            // Left side (in LTR: lower index page; in RTL: higher index page)
+            thumbnailView(
+                entry: leftEntry,
+                index: leftIndex,
+                thumbnail: leftThumbnail,
+                favoriteStatus: leftFavoriteStatus,
+                isSelected: isLeftSelected
+            )
+            
+            // Right side
+            thumbnailView(
+                entry: rightEntry,
+                index: rightIndex,
+                thumbnail: rightThumbnail,
+                favoriteStatus: rightFavoriteStatus,
+                isSelected: isRightSelected
+            )
+        }
+        .frame(width: pairSize, height: pairSize)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(isCurrent ? Color.accentColor : Color.clear, lineWidth: 2)
+        )
+        .onAppear {
+            loadThumbnails()
+        }
+    }
+    
+    @ViewBuilder
+    private func thumbnailView(
+        entry: ImageEntry,
+        index: Int,
+        thumbnail: NSImage?,
+        favoriteStatus: CacheManager.FavoriteStatus,
+        isSelected: Bool
+    ) -> some View {
+        ZStack {
+            if let image = thumbnail {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                Rectangle()
+                    .fill(Color.gray.opacity(0.3))
+            }
+            
+            // Favorite indicator
+            if favoriteStatus == .direct {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.yellow)
+                            .padding(2)
+                    }
+                    Spacer()
+                }
+            }
+            
+            // Selection indicator
+            if isSelected {
+                RoundedRectangle(cornerRadius: 2)
+                    .stroke(overlayColor, lineWidth: 2)
+            }
+        }
+        .frame(width: itemSize, height: itemSize * 1.4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onSelect(index)
+        }
+    }
+    
+    private func loadThumbnails() {
+        DispatchQueue.global(qos: .utility).async {
+            let leftImage = imageSource.thumbnail(for: leftEntry, maxSize: pairSize)
+            DispatchQueue.main.async {
+                leftThumbnail = leftImage
+            }
+        }
+        
+        DispatchQueue.global(qos: .utility).async {
+            let rightImage = imageSource.thumbnail(for: rightEntry, maxSize: pairSize)
+            DispatchQueue.main.async {
+                rightThumbnail = rightImage
             }
         }
     }
