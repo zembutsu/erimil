@@ -6,6 +6,7 @@
 //  Updated: S017 (2026-01-24) - Added W/S/↑/↓ key bindings (#53)
 //  Updated: S017 (2026-01-24) - Resume last viewed position (#52)
 //  Updated: S020 (2026-01-26) - V key for single page marker (#55)
+//  Updated: S026 (2026-01-30) - RTL navigation key inversion (#76)
 //
 
 import SwiftUI
@@ -1603,6 +1604,11 @@ struct ViewerView: View {
     private var effectiveReadingDirection: ReadingDirection {
         CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
     }
+    
+    /// #76: Check if RTL mode for navigation key inversion
+    private var isRTL: Bool {
+        effectiveReadingDirection == .rtl
+    }
 
     private var currentEntry: ImageEntry? {
         guard viewerIndex >= 0, viewerIndex < entries.count else { return nil }
@@ -1983,7 +1989,8 @@ struct ViewerView: View {
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
-                goToPrevious()
+                // #76: RTL inverts direction
+                isRTL ? goToNext() : goToPrevious()
             }
             return true
             
@@ -1992,11 +1999,13 @@ struct ViewerView: View {
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
-                goToNext()
+                // #76: RTL inverts direction
+                isRTL ? goToPrevious() : goToNext()
             }
             return true
         
         // Up arrow (same as Left) - S017
+        // #76: Up/Down don't invert in ViewerMode (vertical thumbnail consistency)
         case 126:
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
@@ -2006,6 +2015,7 @@ struct ViewerView: View {
             return true
             
         // Down arrow (same as Right) - S017
+        // #76: Up/Down don't invert in ViewerMode (vertical thumbnail consistency)
         case 125:
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
@@ -2046,7 +2056,8 @@ struct ViewerView: View {
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
-                goToPrevious()
+                // #76: RTL inverts direction
+                isRTL ? goToNext() : goToPrevious()
             }
             return true
             
@@ -2055,11 +2066,13 @@ struct ViewerView: View {
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
-                goToNext()
+                // #76: RTL inverts direction
+                isRTL ? goToPrevious() : goToNext()
             }
             return true
         
         // S017: W - previous (Ctrl+W = previous source)
+        // #76: W/S don't invert in ViewerMode (same as Up/Down)
         case "w":
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
@@ -2069,6 +2082,7 @@ struct ViewerView: View {
             return true
             
         // S017: S - next (Ctrl+S = next source)
+        // #76: W/S don't invert in ViewerMode (same as Up/Down)
         case "s":
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()

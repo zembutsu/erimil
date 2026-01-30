@@ -12,6 +12,7 @@
 //  Updated: S017 (2026-01-24) - Resume last viewed position (#52)
 //  Updated: S020 (2026-01-26) - Spread (two-page) view mode (#55)
 //  Updated: S021 (2026-01-26) - Refactoring: SpreadImageViewer extracted to separate file (#67)
+//  Updated: S026 (2026-01-30) - RTL navigation key inversion (#76)
 //
 
 import SwiftUI
@@ -55,6 +56,12 @@ class SlideWindowController {
     
     // S010: Favorites Mode state
     private var isFavoritesMode: Bool = false
+    
+    // #76: RTL navigation support
+    private var isRTL: Bool {
+        guard let source = storedImageSource else { return false }
+        return CacheManager.shared.getEffectiveReadingDirection(for: source.url) == .rtl
+    }
     
     private init() {}
     
@@ -412,11 +419,13 @@ class SlideWindowController {
                 storedOnPreviousSource?()
                 return nil
             } else if isFavoritesMode {
-                print("[SlideWindowController] → Previous favorite (← in Favorites Mode)")
-                goToPreviousFavorite()
+                // #76: RTL inverts direction
+                print("[SlideWindowController] → \(isRTL ? "Next" : "Previous") favorite (← in Favorites Mode)")
+                isRTL ? goToNextFavorite() : goToPreviousFavorite()
                 return nil
             } else {
-                goToPrevious()
+                // #76: RTL inverts direction
+                isRTL ? goToNext() : goToPrevious()
                 return nil
             }
             
@@ -427,11 +436,13 @@ class SlideWindowController {
                 storedOnNextSource?()
                 return nil
             } else if isFavoritesMode {
-                print("[SlideWindowController] → Next favorite (→ in Favorites Mode)")
-                goToNextFavorite()
+                // #76: RTL inverts direction
+                print("[SlideWindowController] → \(isRTL ? "Previous" : "Next") favorite (→ in Favorites Mode)")
+                isRTL ? goToPreviousFavorite() : goToNextFavorite()
                 return nil
             } else {
-                goToNext()
+                // #76: RTL inverts direction
+                isRTL ? goToPrevious() : goToNext()
                 return nil
             }
         
@@ -442,11 +453,13 @@ class SlideWindowController {
                 storedOnPreviousSource?()
                 return nil
             } else if isFavoritesMode {
-                print("[SlideWindowController] → Previous favorite (↑ in Favorites Mode)")
-                goToPreviousFavorite()
+                // #76: RTL inverts direction
+                print("[SlideWindowController] → \(isRTL ? "Next" : "Previous") favorite (↑ in Favorites Mode)")
+                isRTL ? goToNextFavorite() : goToPreviousFavorite()
                 return nil
             } else {
-                goToPrevious()
+                // #76: RTL inverts direction
+                isRTL ? goToNext() : goToPrevious()
                 return nil
             }
             
@@ -457,11 +470,13 @@ class SlideWindowController {
                 storedOnNextSource?()
                 return nil
             } else if isFavoritesMode {
-                print("[SlideWindowController] → Next favorite (↓ in Favorites Mode)")
-                goToNextFavorite()
+                // #76: RTL inverts direction
+                print("[SlideWindowController] → \(isRTL ? "Previous" : "Next") favorite (↓ in Favorites Mode)")
+                isRTL ? goToPreviousFavorite() : goToNextFavorite()
                 return nil
             } else {
-                goToNext()
+                // #76: RTL inverts direction
+                isRTL ? goToPrevious() : goToNext()
                 return nil
             }
         
@@ -493,10 +508,12 @@ class SlideWindowController {
                         print("[SlideWindowController] → Previous source (Ctrl+A)")
                         storedOnPreviousSource?()
                     } else if isFavoritesMode {
-                        print("[SlideWindowController] → Previous favorite (A in Favorites Mode)")
-                        goToPreviousFavorite()
+                        // #76: RTL inverts direction
+                        print("[SlideWindowController] → \(isRTL ? "Next" : "Previous") favorite (A in Favorites Mode)")
+                        isRTL ? goToNextFavorite() : goToPreviousFavorite()
                     } else {
-                        goToPrevious()
+                        // #76: RTL inverts direction
+                        isRTL ? goToNext() : goToPrevious()
                     }
                     return nil
                     
@@ -505,10 +522,12 @@ class SlideWindowController {
                         print("[SlideWindowController] → Next source (Ctrl+D)")
                         storedOnNextSource?()
                     } else if isFavoritesMode {
-                        print("[SlideWindowController] → Next favorite (D in Favorites Mode)")
-                        goToNextFavorite()
+                        // #76: RTL inverts direction
+                        print("[SlideWindowController] → \(isRTL ? "Previous" : "Next") favorite (D in Favorites Mode)")
+                        isRTL ? goToPreviousFavorite() : goToNextFavorite()
                     } else {
-                        goToNext()
+                        // #76: RTL inverts direction
+                        isRTL ? goToPrevious() : goToNext()
                     }
                     return nil
                 
@@ -518,10 +537,12 @@ class SlideWindowController {
                         print("[SlideWindowController] → Previous source (Ctrl+W)")
                         storedOnPreviousSource?()
                     } else if isFavoritesMode {
-                        print("[SlideWindowController] → Previous favorite (W in Favorites Mode)")
-                        goToPreviousFavorite()
+                        // #76: RTL inverts direction
+                        print("[SlideWindowController] → \(isRTL ? "Next" : "Previous") favorite (W in Favorites Mode)")
+                        isRTL ? goToNextFavorite() : goToPreviousFavorite()
                     } else {
-                        goToPrevious()
+                        // #76: RTL inverts direction
+                        isRTL ? goToNext() : goToPrevious()
                     }
                     return nil
                     
@@ -531,10 +552,12 @@ class SlideWindowController {
                         print("[SlideWindowController] → Next source (Ctrl+S)")
                         storedOnNextSource?()
                     } else if isFavoritesMode {
-                        print("[SlideWindowController] → Next favorite (S in Favorites Mode)")
-                        goToNextFavorite()
+                        // #76: RTL inverts direction
+                        print("[SlideWindowController] → \(isRTL ? "Previous" : "Next") favorite (S in Favorites Mode)")
+                        isRTL ? goToPreviousFavorite() : goToNextFavorite()
                     } else {
-                        goToNext()
+                        // #76: RTL inverts direction
+                        isRTL ? goToPrevious() : goToNext()
                     }
                     return nil
                     

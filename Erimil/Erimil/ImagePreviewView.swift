@@ -6,6 +6,7 @@
 //  Updated: S003 (2025-12-17) - Phase 2.2 Quick Look + navigation
 //  Updated: S020 (2026-01-26) - Spread (two-page) view support (#55)
 //  Updated: S021 (2026-01-26) - Refactoring: Use SpreadNavigationHelper (#67)
+//  Updated: S026 (2026-01-30) - RTL navigation key inversion (#76)
 //
 
 import SwiftUI
@@ -35,6 +36,11 @@ struct ImagePreviewView: View {
         AppSettings.shared.isSpreadModeEnabled
     }
     
+    // #76: Check if current source uses RTL direction
+    private var isRTL: Bool {
+        CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url) == .rtl
+    }
+    
     var body: some View {
         ZStack {
             // #55/#67: Spread-aware image viewer (now from separate file)
@@ -53,12 +59,13 @@ struct ImagePreviewView: View {
             }
             
             // Key event handler (transparent to clicks)
+            // #76: RTL mode inverts navigation direction
             QuickLookKeyHandler(
                 onClose: onClose,
-                onPrevious: { goToPrevious() },
-                onNext: { goToNext() },
-                onPreviousFavorite: { goToPreviousFavorite() },
-                onNextFavorite: { goToNextFavorite() },
+                onPrevious: { isRTL ? goToNext() : goToPrevious() },
+                onNext: { isRTL ? goToPrevious() : goToNext() },
+                onPreviousFavorite: { isRTL ? goToNextFavorite() : goToPreviousFavorite() },
+                onNextFavorite: { isRTL ? goToPreviousFavorite() : goToNextFavorite() },
                 onToggleFullScreen: onToggleFullScreen,
                 onToggleSinglePage: { toggleSinglePageMarker() }  // #55
             )
