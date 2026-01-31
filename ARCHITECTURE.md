@@ -4,7 +4,7 @@ This document describes the internal architecture of Erimil.
 
 ## Overview
 
-Erimil is a macOS application built with SwiftUI that provides visual management of images in ZIP archives and folders. Users can browse folders, select ZIP files or image folders, preview contained images, mark items for exclusion/selection, and generate optimized archives or manage files.
+Erimil is a macOS application built with SwiftUI that provides visual management of images in ZIP archives, folders, and PDF documents. Users can browse folders, select ZIP files, image folders, or PDFs, preview contained images, mark items for exclusion/selection, and generate optimized archives or manage files.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -15,9 +15,9 @@ Erimil is a macOS application built with SwiftUI that provides visual management
 │  📁 Photos      │   [img1] [img2] [img3] [img4]            │
 │   ├─ 📁 2024/   │   [img5] [img6] [img7] [img8]            │
 │   │  └─ 📦a.zip │                                           │
-│   └─ 📁 2023/   │   Double-click to preview                │
-│      └─ 📦b.zip │   ┌──────────────────────┐               │
-│                 │   │ [除外モード] 8 画像  │               │
+│   │  └─ 📄b.pdf │   Double-click to preview                │
+│   └─ 📁 2023/   │   ┌──────────────────────┐               │
+│      └─ 📦c.zip │   │ [除外モード] 8 画像  │               │
 ├─────────────────┴───┴──────────────────────┴────────────────┤
 │  出力: 5件 / 除外: 3件                                      │
 │  [選択をクリア]                        [確定 → _opt.zip]    │
@@ -32,7 +32,10 @@ Unified interface for different image sources (→ DESIGN.md Decision 8).
 
 - **ImageSource**: Protocol defining common interface for image browsing
 - **ImageEntry**: Model representing single image from any source
-- **ImageSourceType**: Enum (.archive, .folder) for UI customization
+- **ImageSourceType**: Enum for source type identification
+  - `.archive` - ZIP files
+  - `.folder` - Directories
+  - `.pdf` - PDF documents (S024)
 
 ### 2. Archive Layer
 
@@ -42,6 +45,7 @@ Manages ZIP file reading and writing.
   - Uses ZIPFoundation for ZIP operations
   - Opens Archive per-operation (official pattern)
   - Handles export with exclusions
+- **ZIPEncodingDetector**: Detects and handles various filename encodings in ZIP files
 
 ### 3. Folder Layer
 
@@ -52,7 +56,16 @@ Manages folder image browsing and operations.
   - ZIP creation from selected images
   - Delete to Trash functionality
 
-### 4. Navigation Layer
+### 4. PDF Layer (S024)
+
+Manages PDF document viewing as image sequences.
+
+- **PDFManager**: ImageSource implementation for PDF documents
+  - Each PDF page treated as an ImageEntry
+  - Lazy page rendering for performance
+  - Uses system PDFKit (no external dependencies)
+
+### 5. Navigation Layer
 
 Handles folder browsing and source discovery.
 
@@ -60,26 +73,79 @@ Handles folder browsing and source discovery.
   - ▶ for expand/collapse
   - Single-click for content display
   - Double-click to open Slide Mode directly
-- **FolderNode**: Model representing folder/ZIP in tree
+- **FolderNode**: Model representing folder/ZIP/PDF in tree
+  - `isZip`: ZIP file indicator
+  - `isPdf`: PDF file indicator (S024)
 
-### 5. Selection Layer
+### 6. Selection Layer
 
 Tracks user selections and pending changes.
 
 - **selectedPaths**: Set<String> in ContentView (source of truth)
 - **AppSettings**: Selection mode (exclude/keep), output folder defaults
 
-### 6. View Layer
+### 7. Cache Layer
+
+Manages thumbnails, metadata, and aspect ratio information.
+
+- **CacheManager**: Singleton for all caching operations
+  - **Thumbnail cache**: contentHash → NSImage (memory, with disk persistence)
+  - **Path index**: pathHash → contentHash mapping
+  - **Favorites storage**: Per-source favorites with hybrid format
+  - **Source settings**: Per-source lastPosition, readingDirection, singlePageIndices (#54, #56)
+  - **Aspect ratio cache**: In-memory cache for spread detection (#67 Phase 3)
+    - `cacheAspectRatio(for:path:ratio:)` - Store aspect ratio
+    - `getCachedAspectRatio(for:path:)` - Retrieve cached ratio
+    - `isWideImage(for:path:threshold:)` - Check if image is wide (default threshold: 1.3)
+    - `clearAspectRatioCache()` - Clear on source change
+
+### 8. Prefetch Layer (S016)
+
+Manages image prefetching for smooth navigation.
+
+- **ImagePrefetcher**: LRU cache with direction-aware prefetching
+  - Configurable cache size
+  - Cancellable prefetch tasks
+  - Prioritizes images in travel direction
+  - Thread-safe via serial queue
+
+### 9. Spread Navigation Layer (S020/S021)
+
+Handles spread (two-page) display logic and navigation.
+
+- **SpreadNavigationHelper**: Utility enum for spread-aware calculations
+  - `shouldShowSinglePage(for:at:totalCount:entries:)` - Determines single vs spread display
+  - `navigationStep(for:at:totalCount:)` - Returns step size (1 or 2)
+  - Considers: spread mode setting, single page markers, wide image detection
+- **SpreadImageViewer**: SwiftUI view with double buffering
+  - Instant page transitions (no flicker)
+  - RTL (right-to-left) layout support for manga
+  - Auto-detect wide images as single pages
+  - Manual single page markers via V key
+
+### 10. View Layer
 
 SwiftUI views for user interaction.
 
 - **ContentView**: Main split view, owns selection state
 - **ThumbnailGridView**: Grid display with mode-aware styling
+  - **ThumbnailDisplayItem**: Enum for display item types (#69)
+    - `.single(Int)` - Single thumbnail
+    - `.spread(leftIndex:rightIndex:)` - Spread pair
+  - **ThumbnailSidebarView**: Vertical/horizontal thumbnail strip (S014)
+  - **SpreadThumbnailPairView**: Paired thumbnail display for spreads (#69)
+  - **ViewerView**: In-grid image viewer with thumbnail sidebar
+    - Configurable thumbnail position (left/bottom/hidden via Ctrl+T)
+    - Spread-aware navigation integrated
+    - Uses SpreadImageViewer for image display
 - **ThumbnailCell**: Individual thumbnail with selection overlay
 - **ImagePreviewView**: Quick Look modal preview (Enter → Slide Mode)
+- **ImageViewerCore**: Shared image viewer component (S003/S016)
+  - Used by Quick Look and other viewer modes
+  - Provides: image display, navigation, favorite jump, position indicator
 - **SettingsView**: Settings panel (⌘,)
 
-### 7. Slide Mode Layer
+### 11. Slide Mode Layer
 
 Fullscreen image viewing with Favorites Mode and source navigation.
 
@@ -96,9 +162,11 @@ Fullscreen image viewing with Favorites Mode and source navigation.
   | Tab | Next ★ + enter mode | Next ★ |
   | F | Toggle favorite | Toggle favorite |
   | X | Toggle selection | Toggle selection |
+  | V | Toggle single page marker | Toggle single page marker |
   | Q | Exit fullscreen | Exit Favorites Mode |
   | Esc | Exit fullscreen | Exit fullscreen |
   | Ctrl+←/→, Ctrl+A/D | Previous/Next source | Same |
+  | Ctrl+T | Cycle thumbnail position | Same |
   | Space | Toggle controls | Toggle controls |
 
 - **Favorites Mode State**:
@@ -107,7 +175,7 @@ Fullscreen image viewing with Favorites Mode and source navigation.
   - Badge persists even when controls are hidden
 
 - **SourceNavigator**: Utility for sibling source discovery
-  - Lists ZIPs and image-containing folders in parent directory
+  - Lists ZIPs, PDFs, and image-containing folders in parent directory
   - Supports looping navigation (last→first, first→last)
   - `positionInfo(for:)` returns current position among siblings
 
@@ -124,18 +192,19 @@ Fullscreen image viewing with Favorites Mode and source navigation.
 
 ## Data Flow
 
-### Opening a Source (ZIP or Folder)
+### Opening a Source (ZIP, Folder, or PDF)
 
 ```
 User selects root folder
     ↓
 SidebarView scans directory (FolderNode)
     ↓
-User clicks ZIP or folder row
+User clicks ZIP, folder, or PDF row
     ↓
 ContentView creates ImageSource:
   - ZIP → ArchiveManager
   - Folder → FolderManager
+  - PDF → PDFManager
     ↓
 ThumbnailGridView calls listImageEntries()
     ↓
@@ -244,7 +313,7 @@ ContentView.navigateToNextSource()
     ↓
 SourceNavigator.nextSource(from: currentURL)
   - Scans parent directory
-  - Filters for ZIPs and image folders
+  - Filters for ZIPs, PDFs, and image folders
   - Returns next sibling (with loop)
     ↓
 ContentView sets shouldReopenSlideMode = true
@@ -259,82 +328,57 @@ SlideWindowController.updateSource()
   - Fullscreen state preserved
 ```
 
-### Favorite/Selection Toggle in Slide Mode
+### Spread-Aware Thumbnail Display (#69)
 
 ```
-User presses F in Slide Mode
+ThumbnailSidebarView builds display items
     ↓
-SlideWindowController.toggleFavorite()
-  - Update storedFavoriteIndices
-  - Call storedOnToggleFavorite?(currentIndex)
-  - notifyViewOfStateChange()
+buildDisplayIndices(isSpreadMode:) called
     ↓
-ThumbnailGridView callback:
-  - CacheManager.shared.toggleFavorite()
-  - favoritesVersion += 1
+For each index:
+  - Check SpreadNavigationHelper.shouldShowSinglePage()
+  - If single: append .single(index)
+  - If spread: append .spread(left, right), skip next
     ↓
-View updates:
-  - ImagePositionBar shows/hides ★ marker
-  - Grid thumbnail updates (via favoritesVersion)
+ForEach renders ThumbnailDisplayItem:
+  - .single → ThumbnailItemView
+  - .spread → SpreadThumbnailPairView
+    ↓
+SpreadThumbnailPairView:
+  - RTL layout: [right|left] (lower index on right)
+  - LTR layout: [left|right]
 ```
 
-## Key Design Decisions
+### Aspect Ratio Caching (#67 Phase 3)
 
-### 1. ImageSource Protocol Abstraction
+```
+Image loaded (thumbnail or full)
+    ↓
+Calculate aspect ratio: width / height
+    ↓
+CacheManager.cacheAspectRatio(for:path:ratio:)
+    ↓
+SpreadNavigationHelper.shouldShowSinglePage() checks:
+  - CacheManager.isWideImage(for:path:)
+  - If ratio > 1.3 → wide → show as single
+    ↓
+Source changes
+    ↓
+CacheManager.clearAspectRatioCache()
+```
 
-ZIP files and folders are accessed through a common `ImageSource` protocol. This enables:
-- Unified UI for different source types
-- Easy addition of new formats (tar.gz, 7z in future)
-- Same selection/preview logic for all sources
+## Configuration Values
 
-See DESIGN.md Decision 8 for rationale.
-
-### 2. Lazy Thumbnail Loading
-
-Thumbnails are generated on-demand as grid scrolls, not all at once. Large sources may contain hundreds of images; loading all would cause memory issues and slow startup.
-
-### 3. Parent-Owned Selection State
-
-`selectedPaths` lives in ContentView, not ThumbnailGridView. This enables:
-- Accurate unsaved changes detection
-- Mode-independent state (exclude/keep calculated from same data)
-- Clear ownership of truth
-
-### 4. Per-Operation Archive Opening
-
-ArchiveManager opens Archive fresh for each operation (thumbnail, preview, export). This follows ZIPFoundation's official pattern and avoids encoding issues with Japanese filenames.
-
-### 5. Selection Mode Abstraction
-
-User selections are stored as `selectedPaths`. The meaning (exclude vs keep) is calculated at action time:
-- `pathsToRemove = selectedPaths` (exclude mode)
-- `pathsToRemove = allPaths - selectedPaths` (keep mode)
-
-This allows mode switching without losing selections.
-
-### 6. Centralized Key Handling in Slide Mode
-
-All keyboard events in Slide Mode are handled by SlideWindowController via `NSEvent.addLocalMonitorForEvents`. This solves:
-- Focus issues with SwiftUI/NSWindow integration
-- Consistent key behavior across all states
-- Empty source keyboard navigation support
-
-### 7. Unified Key Semantics
-
-Keys have consistent meanings across screens:
-- `F` always toggles favorite (filer, Quick Look, Slide Mode)
-- `Enter` always opens Slide Mode (filer, Quick Look, sidebar)
-- `Q` always "quits" the current context (Favorites Mode → exit mode, normal → exit fullscreen)
-
-## Constants and Configuration
-
-| Constant | Value | Purpose |
-|----------|-------|---------|
-| `thumbnailSize` | 120px | Default thumbnail dimension |
-| `gridSpacing` | 8px | Gap between thumbnails |
-| `outputSuffix` | `_opt` | Appended to output filename |
+| Setting | Value | Description |
+|---------|-------|-------------|
+| `thumbnailMaxSize` | 120px | Default thumbnail size (medium preset) |
+| `thumbnailSmall` | 80px | Small preset size |
+| `thumbnailLarge` | 180px | Large preset size |
+| `maxThumbnailCacheCount` | 200 | Memory cache limit |
 | `supportedImageTypes` | jpg, jpeg, png, gif, webp, heic | Recognized image extensions |
 | `positionBarWidth` | 144px | Fixed width for position indicators |
+| `wideImageThreshold` | 1.3 | Default aspect ratio threshold for wide image detection |
+| `defaultPrefetchCount` | 3 | Default number of images to prefetch |
 
 ## File Structure
 
@@ -344,21 +388,31 @@ Erimil/
 ├── ContentView.swift            # Main split view, owns selection state
 ├── SidebarView.swift            # Folder tree navigation (Finder-style)
 ├── ThumbnailGridView.swift      # Image grid with mode-aware UI
-├── ThumbnailCell.swift          # Individual thumbnail (in ThumbnailGridView)
+│   ├── ThumbnailDisplayItem     # Enum: .single, .spread (#69)
+│   ├── ThumbnailSidebarView     # Thumbnail strip (S014)
+│   ├── SpreadThumbnailPairView  # Paired thumbnails (#69)
+│   ├── ViewerView               # In-grid viewer with thumbnail sidebar
+│   └── ThumbnailCell            # Individual thumbnail
 ├── ImagePreviewView.swift       # Quick Look preview modal
 ├── SettingsView.swift           # Settings panel
 ├── SlideWindowController.swift  # Fullscreen slide mode controller
 │   ├── SlideWindowView          # SwiftUI view for slide content
 │   ├── ImagePositionBar         # Image position with ★/× markers
 │   └── SlideKeyHandler          # Supplementary key view (Space only)
+├── SpreadImageViewer.swift      # Spread view with double buffering (S020/S021)
+│   └── SpreadNavigationHelper   # Spread-aware navigation utility
+├── ImageViewerCore.swift        # Shared image viewer component (S003/S016)
+├── ImagePrefetcher.swift        # Image prefetch cache (S016)
 ├── SourceNavigator.swift        # Sibling source discovery utility
 ├── SourcePositionIndicator.swift # Source position dot/bar indicator
 ├── ImageSource.swift            # Protocol + ImageEntry model
 ├── ArchiveManager.swift         # ZIP ImageSource implementation
 ├── FolderManager.swift          # Folder ImageSource implementation
-├── FolderNode.swift             # Tree node model
-├── CacheManager.swift           # Thumbnail cache + favorites storage
-└── AppSettings.swift            # UserDefaults wrapper, SelectionMode
+├── PDFManager.swift             # PDF ImageSource implementation (S024)
+├── FolderNote.swift             # FolderNode tree node model
+├── CacheManager.swift           # Thumbnail cache, favorites, aspect ratio cache
+├── ZIPEncodingDetector.swift    # ZIP filename encoding detection
+└── AppSettings.swift            # UserDefaults wrapper, settings enums
 ```
 
 ## External Dependencies
@@ -369,6 +423,8 @@ Erimil/
 | SwiftUI | UI framework | System framework |
 | Combine | Reactive state (AppSettings) | System framework |
 | UniformTypeIdentifiers | File type handling | System framework |
+| PDFKit | PDF rendering | System framework |
+| CryptoKit | Content hashing for cache | System framework |
 
 ## State Management
 
@@ -409,15 +465,70 @@ ErimilApp
                     └── storedOnToggleSelection: ((Int) -> Void)?
 ```
 
+### CacheManager (Singleton)
+
+```
+CacheManager.shared
+    ├── pathIndex: [String: String]           ← pathHash → contentHash
+    ├── thumbnailCache: NSCache               ← contentHash → NSImage
+    ├── sourceSettings: [String: SourceSettings]  ← Per-source settings (#54)
+    │       ├── lastPosition: Int?
+    │       ├── readingDirection: ReadingDirection?
+    │       └── singlePageIndices: Set<Int>?  ← V key markers (#56)
+    ├── aspectRatioCache: [String: CGFloat]   ← In-memory only (#67)
+    │
+    Persisted:
+    ├── index.json                 ← pathIndex
+    ├── favorites.json             ← Favorites data
+    └── source_settings.json       ← sourceSettings
+```
+
 ### AppSettings (Singleton)
 
 ```
 AppSettings.shared
     ├── @Published selectionMode: SelectionMode
     ├── @Published defaultOutputFolder: URL?
-    └── @Published useDefaultOutputFolder: Bool
+    ├── @Published useDefaultOutputFolder: Bool
+    ├── @Published thumbnailSizePreset: ThumbnailSizePreset
+    ├── @Published thumbnailSize: CGFloat              ← Custom size value
+    ├── @Published favoriteScope: FavoriteScope       ← Content vs Source
+    ├── @Published viewerThumbnailPosition: ViewerThumbnailPosition
+    ├── @Published prefetchCount: Int                 ← Prefetch image count
+    ├── @Published loopWithinSource: Bool             ← Loop navigation
+    ├── @Published defaultReadingDirection: ReadingDirection
+    ├── @Published isSpreadModeEnabled: Bool          ← Spread view toggle
+    ├── @Published spreadThreshold: Double            ← Wide image threshold
+    ├── @Published lastOpenedFolderURL: URL?          ← Restore on launch
     
     Persisted via UserDefaults
+```
+
+### Enums (in AppSettings.swift)
+
+```
+SelectionMode
+    ├── .exclude    ← Selected items will be removed
+    └── .keep       ← Selected items will be kept
+
+ThumbnailSizePreset
+    ├── .small      ← 80px
+    ├── .medium     ← 120px
+    ├── .large      ← 180px
+    └── .custom     ← Use thumbnailSize value
+
+FavoriteScope
+    ├── .content    ← Same image anywhere gets ★ (by content hash)
+    └── .source     ← Per ZIP/folder independent ★
+
+ViewerThumbnailPosition
+    ├── .left       ← Vertical strip on left
+    ├── .bottom     ← Horizontal strip at bottom
+    └── .hidden     ← No thumbnail strip (Ctrl+T cycles)
+
+ReadingDirection
+    ├── .ltr        ← Left-to-Right (Western)
+    └── .rtl        ← Right-to-Left (Manga)
 ```
 
 ## Privacy/Security Considerations
@@ -529,12 +640,14 @@ Required keys in `Erimil.entitlements`:
 | Prefix | Component |
 |--------|-----------|
 | `[AppSettings]` | Settings, Bookmarks |
-| `[CacheManager]` | Cache, Favorites |
+| `[CacheManager]` | Cache, Favorites, Aspect Ratio |
 | `[SidebarView]` | Folder tree |
 | `[ContentView]` | Main view |
 | `[ThumbnailGridView]` | Thumbnail grid |
 | `[SlideWindowController]` | Slide Mode |
 | `[SourceNavigator]` | Source navigation |
+| `[PDFManager]` | PDF operations |
+| `[ImagePrefetcher]` | Image prefetching |
 
 ### Application Support Location
 
@@ -542,7 +655,8 @@ Required keys in `Erimil.entitlements`:
 ~/Library/Application Support/Erimil/
 ├── cache/                      # Thumbnail cache
 ├── index.json                  # Path → contentHash mapping
-├── favorites_hybrid.json       # Favorites data
+├── favorites.json              # Favorites data (hybrid format)
+├── source_settings.json        # Per-source settings (#54)
 └── last_folder_bookmark.data   # Folder restoration bookmark
 ```
 
@@ -560,7 +674,7 @@ A: Security-Scoped Bookmarks issue
 ```
 A: Application Support directory issue
    1. Verify ~/Library/Application Support/Erimil/ exists
-   2. Check permissions on favorites_hybrid.json
+   2. Check permissions on favorites.json
 ```
 
 **Q: Build error "Entitlements file not found"**
@@ -577,6 +691,22 @@ A: Event monitor issue
    2. Verify window is key window (isKeyWindow == true)
 ```
 
+**Q: PDF pages not displaying**
+```
+A: PDFManager issue
+   1. Check "[PDFManager]" logs for page count
+   2. Verify PDF is not password-protected
+   3. Check memory usage for large PDFs
+```
+
+**Q: Spread view showing wrong layout**
+```
+A: Aspect ratio or direction issue
+   1. Check reading direction setting (RTL vs LTR)
+   2. Verify aspect ratio cache is populated
+   3. Check single page markers (V key)
+```
+
 ---
 
 ## Performance Considerations
@@ -584,6 +714,8 @@ A: Event monitor issue
 - **Large ZIPs (>1GB)**: Show warning, consider streaming approach
 - **Many Images (>1000)**: Virtualized grid, load visible thumbnails only
 - **Memory**: Thumbnail cache with size limit, LRU eviction
+- **Large PDFs**: Lazy page rendering, avoid loading all pages at once
+- **Image Prefetching**: Direction-aware prefetch reduces perceived latency
 
 ---
 
@@ -591,4 +723,4 @@ A: Event monitor issue
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2025-01-11 (Slide Mode keyboard shortcuts, Favorites Mode)
+> Last updated: 2026-01-31 (S028: PDF support, Spread navigation, Aspect ratio cache, Prefetcher)
