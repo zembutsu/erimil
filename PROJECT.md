@@ -34,12 +34,13 @@ Part of the **DDL (Do Different Lab)** tool family, designed to work alongside [
 
 ## Current Status
 
-- **Version**: 0.3.0 (released)
+- **Version**: 0.3.3 (released)
 - **Phase**: Phase 2.3 Development
 - **Phase 1**: ✅ Completed (2025-12-13)
 - **Phase 2**: ✅ Completed (2025-12-14)
 - **Phase 2.1**: ✅ Completed (2025-12-16)
 - **Phase 2.2**: ✅ Completed (2025-12-17)
+- **Phase 2.3**: 🔄 In Progress
 
 ## Development Principles
 
@@ -99,9 +100,15 @@ This project uses AI-assisted development following the WORKFLOW.md guidelines:
 - ✅ Position indicator (1/N) in both modes
 - ✅ Auto-hide controls in Slide Mode
 
-### Phase 2.3 (Planned) - Performance
-- Thumbnail disk cache
-- Cache settings (hash management, sharing options)
+### Phase 2.3 (Current) - Extended Viewing
+- ✅ PDF support (view PDF as image sequence)
+- ✅ Spread (two-page) view for books
+- ✅ RTL (right-to-left) reading direction
+- ✅ ViewerView with configurable thumbnail sidebar
+- ✅ Image prefetching for smooth navigation
+- ✅ Single page markers (V key)
+- ✅ Per-source settings (position, direction, markers)
+- 🔄 Bug fixes and refinements
 
 ### Phase 2.4 (Planned) - Customization
 - Key shortcut customization

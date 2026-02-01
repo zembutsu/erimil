@@ -119,7 +119,7 @@ Handles spread (two-page) display logic and navigation.
   - Considers: spread mode setting, single page markers, wide image detection
 - **SpreadImageViewer**: SwiftUI view with double buffering
   - Instant page transitions (no flicker)
-  - RTL (right-to-left) layout support for manga
+  - RTL (right-to-left) layout support for Japanese vertical text
   - Auto-detect wide images as single pages
   - Manual single page markers via V key
 
@@ -528,7 +528,7 @@ ViewerThumbnailPosition
 
 ReadingDirection
     ├── .ltr        ← Left-to-Right (Western)
-    └── .rtl        ← Right-to-Left (Manga)
+    └── .rtl        ← Right-to-Left (Japanese vertical text)
 ```
 
 ## Privacy/Security Considerations

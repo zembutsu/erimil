@@ -5,6 +5,36 @@ All notable changes to Erimil will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-01-31
+
+### Added
+- **PDF support**: View PDF documents as image sequences, each page treated as an image (S024)
+- **Spread (two-page) view**: Display two pages side-by-side for books (#55)
+  - Auto-detect wide images as single pages
+  - Manual single page markers via V key (#56)
+  - Configurable aspect ratio threshold
+- **RTL (right-to-left) support**: Reading direction setting for Japanese vertical text (#54, #76)
+  - Per-source reading direction memory
+  - Navigation keys inverted in RTL mode
+- **ViewerView**: In-grid image viewer with thumbnail sidebar (S014)
+  - Thumbnail position: left, bottom, or hidden (Ctrl+T to cycle)
+  - Spread-aware navigation integrated
+- **Image prefetcher**: Direction-aware image prefetching for smooth navigation (S016)
+  - LRU cache with configurable size
+  - Cancellable prefetch tasks
+- **Aspect ratio cache**: In-memory cache for spread detection (#67)
+
+### Changed
+- Source settings now stored per-source (lastPosition, readingDirection, singlePageIndices)
+- Spread navigation calculates step size based on current display mode
+
+### Technical
+- `PDFManager.swift` - ImageSource implementation for PDFs
+- `SpreadImageViewer.swift` - Double-buffered spread view with RTL support
+- `ImagePrefetcher.swift` - LRU cache with direction-aware prefetching
+- `SpreadNavigationHelper` - Utility for spread-aware calculations
+- CacheManager extended with aspect ratio caching
+
 ## [0.3.2] - 2025-12-31
 
 ### Added
@@ -107,12 +137,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Phase | Highlights |
 |---------|------|-------|------------|
+| 0.3.3 | 2026-01-31 | Phase 2.3 | PDF support, Spread view, RTL, ViewerView |
 | 0.3.2 | 2025-12-31 | Phase 2.2 | Fullscreen source navigation, F key shortcut |
 | 0.3.0 | 2025-12-16 | Phase 2.1 | UX improvements, favorites, keyboard nav |
 | 0.2.0 | 2025-12-14 | Phase 2 | Folder viewer, settings, selection modes |
 | 0.1.0 | 2025-12-13 | Phase 1 | MVP - ZIP viewer and export |
 
-[Unreleased]: https://github.com/zembutsu/erimil/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/zembutsu/erimil/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/zembutsu/erimil/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/zembutsu/erimil/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/zembutsu/erimil/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/zembutsu/erimil/compare/v0.2.0...v0.3.0

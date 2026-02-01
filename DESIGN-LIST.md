@@ -1,216 +1,79 @@
-# Erimil Design Document
+# Erimil Design Decisions Index
 
-This document records significant design decisions with their context and rationale.
-
----
-
-## D001: Two-step Export with Safety Focus
-
-**Date**: 2025-12-13  
-**Context**: How to handle file modifications safely
-
-### Decision
-
-Export creates a new `_opt.zip` file instead of modifying the original.
-
-### Rationale
-
-- Original files remain untouched (safety first)
-- Easy to compare before/after
-- No risk of data loss from bugs or user error
-- Matches user mental model of "export" vs "edit"
-
-### Consequences
-
-- Requires disk space for both files
-- User must manually delete original if desired
-- Clear separation of source and output
+Quick reference for all design decisions. See **DESIGN.md** for full details.
 
 ---
 
-## D002: Selection State Scope
+## Decision Index
 
-**Date**: 2025-12-14  
-**Context**: Where to store selectedPaths state for unsaved changes detection
-
-### Problem
-
-After refactoring to use ImageSource abstraction, the "unsaved changes" detection was showing false positives because the state was scoped to the wrong component.
-
-### Decision
-
-Move `selectedPaths` state from `ThumbnailGridView` to `ContentView` (parent).
-
-### Rationale
-
-- `ContentView` is the navigation coordinator
-- It knows when sources change
-- It can properly reset state on source change
-- It can accurately detect "has user made changes?"
-
-### Consequences
-
-- `ThumbnailGridView` receives `@Binding` instead of owning state
-- Cleaner separation: grid displays, parent coordinates
-- Accurate unsaved changes detection
-
----
-
-## D003: Hybrid Favorites System
-
-**Date**: 2025-12-15  
-**Context**: How to track favorites across different sources (ZIP/folder) while handling duplicates
-
-### Problem
-
-Users want to:
-1. Mark favorites that persist when reopening the same source
-2. Recognize the same image even if it appears in different ZIPs
-3. See visual distinction between "I favorited this here" vs "this is a duplicate of something I favorited elsewhere"
-
-### Options Considered
-
-1. **Path-only**: Simple but doesn't recognize duplicates
-2. **Hash-only**: Recognizes duplicates but loses source specificity
-3. **Hybrid**: Both path and hash tracking
-
-### Decision
-
-**Option 3**: Hybrid system with two storage mechanisms:
-
-| Type | Storage Key | Display | Meaning |
-|------|-------------|---------|---------|
-| Direct | sourceURL + entryPath | ★ (black star) | "I favorited this specific file" |
-| Inherited | contentHash | ☆ (white star) | "Same content as something I favorited" |
-
-### Rationale
-
-- Covers all user mental models
-- No false negatives (if you favorited it anywhere, you see indication)
-- Clear visual distinction prevents confusion
-- Content hash enables cross-source recognition
-
-### Consequences
-
-- More complex storage (two lookup paths)
-- Hash calculation required (handled by existing cache)
-- UI must distinguish ★ vs ☆
-
-### Technical Notes
-
-- Direct favorites stored as: `hash(sourceURL + entryPath)`
-- Inherited lookup via: `contentHash`
-- Direct always takes precedence over Inherited
+| ID | Date | Title | Summary |
+|----|------|-------|---------|
+| Decision 1 | 2025-12-13 | ZIP Editing Strategy | Create `_opt.zip` instead of modifying original |
+| Decision 2 | 2025-12-13 | Selection Mode | Select to exclude as default, safer failure mode |
+| Decision 3 | 2025-12-13 | Original File Handling | Leave original untouched after export |
+| Decision 4 | 2025-12-13 | Preview Functionality | Click-to-enlarge with modal preview |
+| Decision 5 | 2025-12-13 | Application Name | "Erimil" (選り見る) - visual selection |
+| Decision 6 | 2025-12-13 | ZIPFoundation Usage | Open Archive per-operation pattern |
+| Decision 7 | 2025-12-13 | Sandbox File Access | NSSavePanel for export location |
+| Decision 8 | 2025-12-14 | ImageSource Abstraction | Protocol for ZIP/Folder/PDF unified handling |
+| Decision 9 | 2025-12-14 | Finder-style Navigation | OutlineGroup with ▶ disclosure, row click for content |
+| Decision 10 | 2025-12-14 | Folder Operations | ZIP creation and delete-to-Trash for folders |
+| Decision 11 | 2025-12-15 | Cache Storage Location | Application Support directory for sandbox compliance |
+| Decision 12 | 2025-12-15 | Hash-Based Privacy | Content hash for favorites, no filename exposure |
+| Decision 13 | 2025-12-15 | Hybrid Favorites | ★ direct + ☆ inherited, path + hash tracking |
+| Decision 14 | 2025-12-16 | Phase-based Versioning | Version bump at phase boundaries only |
+| D004 | 2025-12-15 | Security-Scoped Bookmarks | Persist folder access across app launches |
+| D005 | 2025-12-17 | Mode Definitions | Quick Look (sheet) vs Slide Mode (NSWindow) architecture |
+| D006 | 2026-01-29 | PDF as ImageSource | PDFManager implements ImageSource protocol |
+| D007 | 2026-01-26 | Spread View Double Buffering | Prepare next spread off-screen for instant transitions |
+| D008 | 2026-01-30 | RTL Navigation Key Inversion | ←/→ keys inverted in RTL mode for natural reading |
+| D009 | 2026-01-24 | ViewerView Thumbnail Sidebar | In-grid viewer with left/bottom/hidden positions |
+| D010 | 2026-01-24 | Direction-Aware Prefetching | LRU cache prefetches in travel direction |
 
 ---
 
-## D004: Security-Scoped Bookmarks for Folder Persistence
+## ID Mapping Notes
 
-**Date**: 2025-12-15  
-**Context**: Restoring last opened folder on app launch in sandboxed environment
+Early decisions used "Decision N" format. Newer decisions use "DXXX" format for brevity.
 
-### Problem
+| Old ID | New ID | Notes |
+|--------|--------|-------|
+| - | D001 | Equivalent to Decision 1 |
+| - | D002 | Selection state scope refinement |
+| - | D003 | Equivalent to Decision 13 |
 
-UserDefaults can store the folder path, but sandbox prevents accessing it without user re-granting permission.
-
-### Decision
-
-Use Security-Scoped Bookmarks instead of plain URL storage.
-
-### Rationale
-
-- Only sandbox-compliant way to persist file access
-- Standard Apple-recommended approach
-- Works across app launches
-
-### Consequences
-
-- More complex than simple UserDefaults
-- Bookmark can become stale (file moved/deleted)
-- Must handle bookmark resolution failures gracefully
-
-### Technical Notes
-
-```swift
-// Save
-let bookmark = try url.bookmarkData(options: .withSecurityScope, ...)
-
-// Restore  
-var isStale = false
-let url = try URL(resolvingBookmarkData: bookmark, options: .withSecurityScope, bookmarkDataIsStale: &isStale)
-_ = url.startAccessingSecurityScopedResource()
-```
+D001-D003 were transitional and are now consolidated into the main Decision series.
 
 ---
 
-## D005: Mode Definitions & Component Architecture
+## By Category
 
-**Date**: 2025-12-17  
-**Context**: Phase 2.2 implementation - need to clarify "preview" vs "slide mode" distinction
+### Core Architecture
+- Decision 8: ImageSource Abstraction
+- D005: Mode Definitions
+- D006: PDF as ImageSource
 
-### Problem
+### User Interface
+- Decision 9: Finder-style Navigation
+- D007: Spread View Double Buffering
+- D009: ViewerView Thumbnail Sidebar
 
-The terms "Quick Look" and "Slide Mode" were ambiguous. Risk of:
-- Duplicate implementation for similar features
-- Unclear user mental model
-- Scattered viewer logic across multiple components
+### Data & Storage
+- Decision 11: Cache Storage Location
+- Decision 12: Hash-Based Privacy
+- Decision 13: Hybrid Favorites
+- D004: Security-Scoped Bookmarks
 
-### Options Considered
+### Navigation & Input
+- D008: RTL Navigation Key Inversion
+- D010: Direction-Aware Prefetching
 
-1. **Single fullscreen-capable view** - One component that toggles between windowed/fullscreen
-2. **Separate implementations** - Two completely independent viewers
-3. **Shared core with mode-specific containers** - Common viewer logic, different window types
-
-### Decision
-
-**Option 3**: Two-mode system with shared ImageViewerCore component
-
-| Mode | Purpose | Trigger | Container | Window Type |
-|------|---------|---------|-----------|-------------|
-| Quick Look | Selection/triage work | Space key | ImagePreviewView | Sheet |
-| Slide Mode | Immersive viewing | f key | SlideWindowView | NSWindow (fullscreen) |
-
-**Component Architecture**:
-```
-ImageViewerCore (shared)
-├── Image display & loading
-├── Navigation logic (a/d, z/c)
-├── Position indicator
-└── Favorite indices handling
-
-Containers:
-├── ImagePreviewView (Quick Look)
-│   └── Sheet-based, header with controls
-└── SlideWindowView (Slide Mode)
-    └── NSWindow, auto-hide controls overlay
-```
-
-### Rationale
-
-- **Single source of truth**: Navigation logic lives in one place
-- **Platform constraints**: macOS Sheet cannot use `toggleFullScreen()`, requiring separate NSWindow
-- **User mental model**: Clear distinction - Quick Look for work, Slide Mode for viewing
-- **Extensibility**: Easy to add new modes without duplicating core logic
-
-### Consequences
-
-**Positive**:
-- DRY principle maintained
-- Clear separation of concerns
-- Easy to test core logic independently
-
-**Negative**:
-- favoriteIndices must be passed from parent (computed each render)
-- Slight complexity in state synchronization between modes
-
-### Technical Notes
-
-- `fullScreenCover()` is iOS-only, not available on macOS
-- Sheet windows are attached to parent and cannot toggle fullscreen
-- NSWindow requires explicit cleanup (`orderOut` + `close`) to avoid lingering UI
+### Safety & Operations
+- Decision 1: ZIP Editing Strategy
+- Decision 2: Selection Mode
+- Decision 3: Original File Handling
+- Decision 10: Folder Operations
 
 ---
 
-## Future Decisions
-
-Reserved for future design decisions as they arise.
+> See **DESIGN.md** for full rationale, options considered, and consequences.

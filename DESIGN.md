@@ -526,6 +526,264 @@ ContentHash: sha256:xxx999...
 
 ---
 
+### D004: Security-Scoped Bookmarks for Folder Persistence
+
+**Date**: 2025-12-15 (S002)
+
+**Context**: Restoring last opened folder on app launch in sandboxed environment. UserDefaults can store the folder path, but sandbox prevents accessing it without user re-granting permission.
+
+**Options Considered**:
+
+| Option | Description | Pros | Cons |
+|--------|-------------|------|------|
+| A | UserDefaults path | Simple | Loses access on restart |
+| B | Security-Scoped Bookmarks | Persists access | More complex |
+| C | Always ask user | Guaranteed access | Poor UX |
+
+**Decision**: **Option B** - Use Security-Scoped Bookmarks instead of plain URL storage.
+
+**Rationale**:
+- Only sandbox-compliant way to persist file access
+- Standard Apple-recommended approach
+- Works across app launches
+
+**Technical Notes**:
+```swift
+// Save (after NSOpenPanel selection)
+let bookmark = try url.bookmarkData(options: .withSecurityScope, ...)
+
+// Restore (on app launch)
+var isStale = false
+let url = try URL(resolvingBookmarkData: bookmark, options: .withSecurityScope, bookmarkDataIsStale: &isStale)
+_ = url.startAccessingSecurityScopedResource()
+```
+
+**Consequences**:
+- ✅ Seamless folder restoration on app launch
+- ⚠️ Bookmark can become stale (file moved/deleted)
+- ⚠️ Must handle bookmark resolution failures gracefully
+
+---
+
+### D005: Mode Definitions & Component Architecture
+
+**Date**: 2025-12-17 (S003)
+
+**Context**: Phase 2.2 implementation - need to clarify "preview" vs "slide mode" distinction. Risk of duplicate implementation and unclear user mental model.
+
+**Options Considered**:
+
+| Option | Description | Pros | Cons |
+|--------|-------------|------|------|
+| A | Single fullscreen-capable view | One component | Platform constraints |
+| B | Separate implementations | Simple per-mode | Code duplication |
+| C | Shared core with containers | DRY, flexible | More architecture |
+
+**Decision**: **Option C** - Two-mode system with shared `ImageViewerCore` component.
+
+| Mode | Purpose | Trigger | Container |
+|------|---------|---------|-----------|
+| Quick Look | Selection/triage | Space key | Sheet |
+| Slide Mode | Immersive viewing | F key | NSWindow |
+
+**Component Architecture**:
+```
+ImageViewerCore (shared)
+├── Image display & loading
+├── Navigation logic (a/d, z/c)
+├── Position indicator
+└── Favorite indices handling
+
+Containers:
+├── ImagePreviewView (Quick Look) → Sheet
+└── SlideWindowView (Slide Mode) → NSWindow fullscreen
+```
+
+**Rationale**:
+- Single source of truth for navigation logic
+- Platform constraints: macOS Sheet cannot use `toggleFullScreen()`
+- Clear user mental model: Quick Look for work, Slide Mode for viewing
+
+**Consequences**:
+- ✅ DRY principle maintained
+- ✅ Easy to test core logic independently
+- ⚠️ favoriteIndices must be passed from parent
+- ⚠️ Slight complexity in state synchronization
+
+---
+
+### D006: PDF as ImageSource
+
+**Date**: 2026-01-29 (S024)
+
+**Context**: Adding PDF support to complement ZIP and folder viewing. Users have PDFs containing scanned images (art books, documents) that need the same viewing experience.
+
+**Options Considered**:
+
+| Option | Description | Pros | Cons |
+|--------|-------------|------|------|
+| A | Separate PDF viewer | Dedicated UX | Duplicate code, inconsistent |
+| B | Convert PDF to images first | Simple integration | Requires temp storage, slow |
+| C | PDF as ImageSource | Unified interface | Read-only limitation |
+
+**Decision**: **Option C** - Implement `PDFManager` conforming to `ImageSource` protocol.
+
+**Rationale**:
+- Leverages existing ImageSource abstraction (Decision 8)
+- No code changes needed in views - they already work with any ImageSource
+- Lazy page rendering avoids memory issues with large PDFs
+- Uses system PDFKit (no external dependencies)
+
+**Consequences**:
+- ✅ Unified UX across ZIP, folder, and PDF
+- ✅ All features (favorites, selection, spread view) work automatically
+- ⚠️ PDF pages are read-only (no export/delete operations)
+- ⚠️ Large PDFs may have slower initial page rendering
+
+---
+
+### D007: Spread View with Double Buffering
+
+**Date**: 2026-01-26 (S020/S021)
+
+**Context**: Implementing two-page (spread) display for vertical text/book reading (#55, #67). Simple spread implementation caused visible flicker during page transitions.
+
+**Options Considered**:
+
+| Option | Description | Pros | Cons |
+|--------|-------------|------|------|
+| A | Synchronous loading | No flicker | Blocks UI |
+| B | Accept flicker | Simple async | Poor UX |
+| C | Double buffering | Smooth transitions | Higher memory |
+
+**Decision**: **Option C** - `SpreadImageViewer` with double-buffered image loading.
+
+**Rationale**:
+- Instant visual transitions (no flicker)
+- Non-blocking - UI remains responsive during load
+- Matches user expectation from traditional image viewers
+
+**Technical Notes**:
+```swift
+// Two sets of image state
+@State private var leftImage: NSImage?
+@State private var rightImage: NSImage?
+@State private var preparedLeftImage: NSImage?
+@State private var preparedRightImage: NSImage?
+```
+
+**Consequences**:
+- ✅ Smooth page turns even with large images
+- ⚠️ Slightly higher memory usage (4 images max vs 2)
+- ⚠️ More complex state management
+
+---
+
+### D008: RTL Navigation Key Inversion
+
+**Date**: 2026-01-30 (S026)
+
+**Context**: RTL (right-to-left) reading direction for Japanese vertical text (#54, #76). When layout is reversed, what should ← and → keys do?
+
+**Options Considered**:
+
+| Option | Description | Pros | Cons |
+|--------|-------------|------|------|
+| A | Physical keys | ← = visually left | Confusing page order |
+| B | Logical keys | ← = always "previous" | Fights muscle memory |
+| C | Invert in RTL | ← = "next" in RTL | Matches reading motion |
+
+**Decision**: **Option C** - Invert navigation keys when `readingDirection == .rtl`
+
+| Key | LTR Mode | RTL Mode |
+|-----|----------|----------|
+| ← / A | Previous | Next |
+| → / D | Next | Previous |
+
+**Rationale**:
+- Matches physical reading motion (finger swipe direction)
+- Consistent with Japanese text reader apps (ComicGlass, etc.)
+- "Previous" always moves toward page 1, "Next" toward last page
+
+**Consequences**:
+- ✅ Intuitive for vertical text readers
+- ⚠️ May confuse users expecting physical key mapping
+- ✅ Per-source setting allows mixing LTR and RTL content
+
+---
+
+### D009: ViewerView with Configurable Thumbnail Sidebar
+
+**Date**: 2026-01-24 (S014)
+
+**Context**: Users wanted to view images without leaving the grid, with quick thumbnail access. Existing modes (Quick Look, Slide Mode) required leaving the grid context.
+
+**Options Considered**:
+
+| Option | Description | Pros | Cons |
+|--------|-------------|------|------|
+| A | Enhance Quick Look | Fewer modes | Limited by sheet constraints |
+| B | Grid overlay | In-place viewing | Complex layout |
+| C | New ViewerView mode | Full-featured | Third viewing mode |
+
+**Decision**: **Option C** - Add `ViewerView` as an in-grid viewer with optional thumbnail sidebar.
+
+| Position | Layout | Use Case |
+|----------|--------|----------|
+| `.left` | Vertical strip | Wide monitors |
+| `.bottom` | Horizontal strip | Standard monitors |
+| `.hidden` | No thumbnails | Maximum image area |
+
+Cycle with `Ctrl+T`.
+
+**Rationale**:
+- Maintains grid context while viewing
+- Thumbnail sidebar enables quick jumping
+- Position preference saved per-session
+
+**Consequences**:
+- ✅ Smooth workflow without mode switching
+- ✅ Quick thumbnail access for navigation
+- ⚠️ Adds complexity to ThumbnailGridView
+- ⚠️ Three viewing modes to maintain
+
+---
+
+### D010: Direction-Aware Image Prefetching
+
+**Date**: 2026-01-24 (S016)
+
+**Context**: Reducing perceived latency when navigating images. Loading full-resolution images on demand caused noticeable delay.
+
+**Options Considered**:
+
+| Option | Description | Pros | Cons |
+|--------|-------------|------|------|
+| A | No prefetch | Simple | Visible loading delay |
+| B | Fixed prefetch (both directions) | Predictable | Wasted resources |
+| C | Direction-aware prefetch | Efficient | More complex |
+
+**Decision**: **Option C** - Implement `ImagePrefetcher` with direction-aware LRU cache.
+
+| Feature | Implementation |
+|---------|----------------|
+| Cache size | Configurable (default: 5 images) |
+| Prefetch direction | Based on recent navigation |
+| Cancellation | Abort outdated prefetch tasks |
+| Thread safety | Serial queue for cache operations |
+
+**Rationale**:
+- Users typically navigate sequentially (forward or backward)
+- Prefetching in travel direction maximizes cache hits
+- LRU eviction keeps memory bounded
+
+**Consequences**:
+- ✅ Near-instant image display during sequential navigation
+- ✅ Memory usage proportional to prefetchCount
+- ⚠️ Wasted prefetch if user jumps randomly (acceptable trade-off)
+
+---
+
 ## Deferred Decisions
 
 ### Export Directory Structure
@@ -707,4 +965,4 @@ Future (Phase 2.2):
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2025-12-16 (Phase 2.1 completion, versioning policy)
+> Last updated: 2026-01-31 (S029: D004-D010 added)
