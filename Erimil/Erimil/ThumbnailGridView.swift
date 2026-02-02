@@ -1938,6 +1938,7 @@ struct ViewerView: View {
             }
             .allowsHitTesting(false)
         }
+        .clipped()
         .onAppear {
             if currentSourceURL != imageSource.url {
                 currentSourceURL = imageSource.url
