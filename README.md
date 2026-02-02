@@ -4,12 +4,14 @@ A macOS application for visual preview and selective extraction of images from Z
 
 ## Features
 
-- **Visual Preview**: Browse images inside ZIP files without extracting
+- **Visual Preview**: Browse images inside ZIP files and PDFs without extracting
 - **Selective Extraction**: Mark images to keep or exclude, then generate optimized ZIP
 - **Folder Support**: Also works with regular image folders
 - **Keyboard-Driven**: Navigate and select with keyboard shortcuts
 - **Favorites System**: Mark important images with ★ for protection
 - **Slide Mode**: Fullscreen viewing with Favorites Mode for quick navigation
+- **Spread View**: Two-page display for books with RTL support
+- **PDF Support**: View PDF documents page by page
 
 ## Requirements
 
@@ -66,10 +68,12 @@ Toggle mode via the toolbar button or Settings.
 | Tab | Next ★ + **Enter Favorites Mode** | Next ★ |
 | F | Toggle favorite ★ | Toggle favorite ★ |
 | X | Toggle selection | Toggle selection |
+| V | Toggle single page marker | Toggle single page marker |
 | Q | Exit fullscreen | Exit Favorites Mode |
 | Esc | Exit fullscreen | Exit fullscreen |
-| Ctrl+← / Ctrl+A | Previous source (ZIP/folder) | Previous source |
-| Ctrl+→ / Ctrl+D | Next source (ZIP/folder) | Next source |
+| Ctrl+← / Ctrl+A | Previous source (ZIP/folder/PDF) | Previous source |
+| Ctrl+→ / Ctrl+D | Next source (ZIP/folder/PDF) | Next source |
+| Ctrl+T | Cycle thumbnail position (left/bottom/hidden) | Same |
 | Space | Toggle controls | Toggle controls |
 
 ### Sidebar Navigation
@@ -85,7 +89,7 @@ Slide Mode provides fullscreen image viewing with powerful navigation:
 
 **Position Indicators**
 - Image position bar: Shows current position with ★ (favorites) and × (selections) markers
-- Source position bar: Shows position among sibling ZIPs/folders in the same directory
+- Source position bar: Shows position among sibling ZIPs/folders/PDFs in the same directory
 
 **Favorites Mode**
 - Press `Tab` to enter Favorites Mode and jump to the next favorite
@@ -94,9 +98,16 @@ Slide Mode provides fullscreen image viewing with powerful navigation:
 - Press `Q` to exit Favorites Mode (return to normal navigation)
 
 **Source Navigation**
-- `Ctrl+←/→` or `Ctrl+A/D` to switch between ZIPs/folders
+- `Ctrl+←/→` or `Ctrl+A/D` to switch between ZIPs/folders/PDFs
 - Maintains fullscreen state during navigation
 - Loops from last to first (and vice versa)
+
+**Spread View (Two-Page Display)**
+- Enable in Settings to display two pages side-by-side
+- Ideal for book reading
+- RTL (right-to-left) direction support for Japanese vertical text
+- Wide images automatically displayed as single pages
+- Press `V` to manually mark/unmark pages as single
 
 ## Favorites System
 
