@@ -7,6 +7,7 @@
 //  Updated: S020 (2026-01-26) - Spread (two-page) view support (#55)
 //  Updated: S021 (2026-01-26) - Refactoring: Use SpreadNavigationHelper (#67)
 //  Updated: S026 (2026-01-30) - RTL navigation key inversion (#76)
+//  Updated: S031 (2026-02-03) - Consolidated key handling (#72): Added ↑/↓, W/S, Q
 //
 
 import SwiftUI
@@ -334,6 +335,16 @@ struct QuickLookKeyHandler: NSViewRepresentable {
             case 124:
                 print("[QuickLookKeyView] → Next triggered")
                 onNext?()
+            
+            // #72: Up arrow (126) - same as Left (unified with Slide/Viewer)
+            case 126:
+                print("[QuickLookKeyView] → Previous (↑) triggered")
+                onPrevious?()
+                
+            // #72: Down arrow (125) - same as Right (unified with Slide/Viewer)
+            case 125:
+                print("[QuickLookKeyView] → Next (↓) triggered")
+                onNext?()
                 
             default:
                 // Check character keys
@@ -344,6 +355,14 @@ struct QuickLookKeyHandler: NSViewRepresentable {
                         onPrevious?()
                     case "d":
                         print("[QuickLookKeyView] → Next (d) triggered")
+                        onNext?()
+                    // #72: W - same as A (unified with Slide/Viewer)
+                    case "w":
+                        print("[QuickLookKeyView] → Previous (w) triggered")
+                        onPrevious?()
+                    // #72: S - same as D (unified with Slide/Viewer)
+                    case "s":
+                        print("[QuickLookKeyView] → Next (s) triggered")
                         onNext?()
                     case "z":
                         print("[QuickLookKeyView] → Previous favorite (z) triggered")
@@ -357,6 +376,10 @@ struct QuickLookKeyHandler: NSViewRepresentable {
                     case "v":  // #55
                         print("[QuickLookKeyView] → Toggle single page (v) triggered")
                         onToggleSinglePage?()
+                    // #72: Q - close (unified with Slide/Viewer)
+                    case "q":
+                        print("[QuickLookKeyView] → Close (q) triggered")
+                        onClose?()
                     default:
                         print("[QuickLookKeyView] → Unhandled key, passing to super")
                         super.keyDown(with: event)

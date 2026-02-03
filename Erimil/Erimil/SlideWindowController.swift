@@ -13,6 +13,7 @@
 //  Updated: S020 (2026-01-26) - Spread (two-page) view mode (#55)
 //  Updated: S021 (2026-01-26) - Refactoring: SpreadImageViewer extracted to separate file (#67)
 //  Updated: S026 (2026-01-30) - RTL navigation key inversion (#76)
+//  Updated: S031 (2026-02-03) - Consolidated key handling (#72): Re-enabled Z/C with RTL support
 //
 
 import SwiftUI
@@ -593,14 +594,18 @@ class SlideWindowController {
                         notifyViewOfSpreadChange()
                     }
                     return nil
+                
+                // #72: Z - previous favorite (RTL-aware, unified with Quick Look/Viewer)
+                case "z":
+                    print("[SlideWindowController] → \(isRTL ? "Next" : "Previous") favorite (Z)")
+                    isRTL ? goToNextFavorite() : goToPreviousFavorite()
+                    return nil
                     
-                // S010: Disabled keys (commented out for future reference)
-                // case "z":
-                //     goToPreviousFavorite()
-                //     return nil
-                // case "c":
-                //     goToNextFavorite()
-                //     return nil
+                // #72: C - next favorite (RTL-aware, unified with Quick Look/Viewer)
+                case "c":
+                    print("[SlideWindowController] → \(isRTL ? "Previous" : "Next") favorite (C)")
+                    isRTL ? goToPreviousFavorite() : goToNextFavorite()
+                    return nil
                     
                 default:
                     return event  // Pass through unhandled

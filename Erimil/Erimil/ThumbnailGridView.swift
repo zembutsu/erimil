@@ -7,6 +7,9 @@
 //  Updated: S017 (2026-01-24) - Resume last viewed position (#52)
 //  Updated: S020 (2026-01-26) - V key for single page marker (#55)
 //  Updated: S026 (2026-01-30) - RTL navigation key inversion (#76)
+//  Updated: S031 (2026-02-03) - Consolidated key handling (#72): 
+//      - Grid mode: ←/→/A/D now RTL-aware
+//      - ViewerView: ↑/↓/W/S now RTL-aware, added Z/C favorite navigation
 //
 
 import SwiftUI
@@ -145,6 +148,11 @@ struct ThumbnailGridView: View {
         // Reference readingDirectionVersion to trigger re-render
         _ = readingDirectionVersion
         return CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
+    }
+    
+    /// #72: Check if RTL mode for navigation key inversion (Grid mode)
+    private var isRTL: Bool {
+        effectiveReadingDirection == .rtl
     }
 
     var body: some View {
@@ -852,18 +860,18 @@ struct ThumbnailGridView: View {
         // Check for special keys
         switch event.keyCode {
         // Arrow keys
-        case 123: // Left arrow
+        case 123: // Left arrow - #72: RTL-aware
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
-                moveFocus(by: -1)
+                moveFocus(by: isRTL ? 1 : -1)
             }
             return true
-        case 124: // Right arrow
+        case 124: // Right arrow - #72: RTL-aware
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
-                moveFocus(by: 1)
+                moveFocus(by: isRTL ? -1 : 1)
             }
             return true
         case 126: // Up arrow - S017: added Ctrl+ for source nav
@@ -922,21 +930,21 @@ struct ThumbnailGridView: View {
         
         switch characters {
         // WASD keys
-        // A - previous image, Shift+A - previous source
+        // A - previous image (RTL-aware), Ctrl+A - previous source
         case "a":
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
-                moveFocus(by: -1)
+                moveFocus(by: isRTL ? 1 : -1)  // #72: RTL-aware
             }
             return true
 
-        // D - next image, Shift+D - next source
+        // D - next image (RTL-aware), Ctrl+D - next source
         case "d":
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
-                moveFocus(by: 1)
+                moveFocus(by: isRTL ? -1 : 1)  // #72: RTL-aware
             }
             return true
         // S017: W - row up, Ctrl+W - previous source
@@ -2196,6 +2204,27 @@ struct ViewerView: View {
         }
     }
     
+    // #72: Favorite navigation (unified from Slide Mode)
+    private func goToPreviousFavorite() {
+        guard let targetIndex = NavigationHelper.previousFavoriteIndex(
+            from: viewerIndex,
+            favoriteIndices: favoriteIndices
+        ) else { return }
+        
+        print("[ViewerView] goToPreviousFavorite: \(viewerIndex) → \(targetIndex)")
+        navigateTo(targetIndex)
+    }
+    
+    private func goToNextFavorite() {
+        guard let targetIndex = NavigationHelper.nextFavoriteIndex(
+            from: viewerIndex,
+            favoriteIndices: favoriteIndices
+        ) else { return }
+        
+        print("[ViewerView] goToNextFavorite: \(viewerIndex) → \(targetIndex)")
+        navigateTo(targetIndex)
+    }
+    
     /// #67: Correct backward navigation when landing on spread that includes previous page
     /// or when current page could form spread with previous
     private func correctBackwardSpread() {
@@ -2261,22 +2290,22 @@ struct ViewerView: View {
             return true
         
         // Up arrow (same as Left) - S017
-        // #76: Up/Down don't invert in ViewerMode (vertical thumbnail consistency)
+        // #72: Now RTL-aware (unified with Slide Mode)
         case 126:
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
-                goToPrevious()
+                isRTL ? goToNext() : goToPrevious()
             }
             return true
             
         // Down arrow (same as Right) - S017
-        // #76: Up/Down don't invert in ViewerMode (vertical thumbnail consistency)
+        // #72: Now RTL-aware (unified with Slide Mode)
         case 125:
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
-                goToNext()
+                isRTL ? goToPrevious() : goToNext()
             }
             return true
 
@@ -2328,22 +2357,22 @@ struct ViewerView: View {
             return true
         
         // S017: W - previous (Ctrl+W = previous source)
-        // #76: W/S don't invert in ViewerMode (same as Up/Down)
+        // #72: Now RTL-aware (unified with Slide Mode)
         case "w":
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
-                goToPrevious()
+                isRTL ? goToNext() : goToPrevious()
             }
             return true
             
         // S017: S - next (Ctrl+S = next source)
-        // #76: W/S don't invert in ViewerMode (same as Up/Down)
+        // #72: Now RTL-aware (unified with Slide Mode)
         case "s":
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
-                goToNext()
+                isRTL ? goToPrevious() : goToNext()
             }
             return true
 
@@ -2399,6 +2428,16 @@ struct ViewerView: View {
             let added = CacheManager.shared.toggleSinglePageMarker(for: imageSource.url, at: viewerIndex)
             print("[ViewerView] Single page marker at \(viewerIndex): \(added ? "ON" : "OFF")")
             spreadUpdateTrigger.toggle()  // #67: Trigger SpreadImageViewer refresh
+            return true
+        
+        // #72: Z - previous favorite (RTL-aware, unified from Quick Look)
+        case "z":
+            isRTL ? goToNextFavorite() : goToPreviousFavorite()
+            return true
+            
+        // #72: C - next favorite (RTL-aware, unified from Quick Look)
+        case "c":
+            isRTL ? goToPreviousFavorite() : goToNextFavorite()
             return true
             
         default:
