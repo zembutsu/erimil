@@ -161,13 +161,16 @@ Fullscreen image viewing with Favorites Mode and source navigation.
   | ←/→, A/D | Previous/Next image (RTL-aware) | Previous/Next favorite (RTL-aware) |
   | ↑/↓, W/S | Previous/Next image (RTL-aware) | Previous/Next favorite (RTL-aware) |
   | Z/C | Previous/Next favorite (RTL-aware) | Previous/Next favorite (RTL-aware) |
+  | Ctrl+A/D | Jump to first/last image | Same |
+  | Ctrl+Z/C | Jump to first/last favorite | Same |
+  | Cmd+1/2/3/4/5 | Jump to 0%/25%/50%/75%/100% | Same |
   | Tab | Next ★ + enter mode | Next ★ |
   | F | Toggle favorite | Toggle favorite |
   | X | Toggle selection | Toggle selection |
   | V | Toggle single page marker | Toggle single page marker |
   | Q | Exit fullscreen | Exit Favorites Mode |
   | Esc | Exit fullscreen | Exit fullscreen |
-  | Ctrl+←/→, Ctrl+A/D | Previous/Next source | Same |
+  | Ctrl+W/S, Ctrl+↑/↓ | Previous/Next source | Same |
   | Ctrl+T | Cycle thumbnail position | Same |
   | Ctrl+R | Toggle reading direction | Same |
   | Space | Toggle controls | Toggle controls |
@@ -203,6 +206,8 @@ Consolidated key handling logic shared across viewer modes.
   - `NavigationHelper`: RTL and spread-aware navigation calculations
     - `navigate(direction:from:entries:sourceURL:isRTL:)` - Main navigation
     - `navigateFavorite(direction:from:favoriteIndices:isRTL:)` - Favorite navigation
+    - `indexForPercent(_:totalCount:)` - Percentage-based position jump
+    - `lastIndex(totalCount:)` - Get last valid index
     - `nextIndex/previousIndex` - Spread-aware index calculation
   - `KeyCode`: macOS key code constants
   - `CommonKeyParser`: Shared key event parsing
@@ -210,14 +215,20 @@ Consolidated key handling logic shared across viewer modes.
 - **Mode-Specific Handlers**:
   | Mode | Handler Location | Notes |
   |------|-----------------|-------|
-  | Grid (Filer) | ThumbnailGridView.handleKeyEvent | RTL-aware ←/→/A/D, Z/C favorite nav |
-  | Viewer | ViewerView.handleKeyEvent | Full navigation + Z/C |
+  | Grid (Filer) | ThumbnailGridView.handleKeyEvent | RTL-aware ←/→/A/D, Z/C favorite nav, Ctrl+A/D/1-5 jump |
+  | Viewer | ViewerView.handleKeyEvent | Full navigation + Z/C + jump |
   | Slide | SlideWindowController.handleKeyEvent | Event monitor based |
   | Quick Look | QuickLookKeyView.keyDown | NSView based |
 
 - **RTL Navigation**:
   All navigation keys (←/→, ↑/↓, A/D, W/S, Z/C) are RTL-aware.
   When reading direction is RTL, logical direction is inverted.
+
+- **Position Jump** (Ctrl+A/D, Cmd+1-5):
+  One-handed navigation for quick position access.
+  - Ctrl+A = first, Ctrl+D = last
+  - Ctrl+Z = first favorite, Ctrl+C = last favorite
+  - Cmd+1/2/3/4/5 = 0%/25%/50%/75%/100%
 
 ## Data Flow
 

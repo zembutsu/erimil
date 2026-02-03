@@ -68,7 +68,12 @@ struct ImagePreviewView: View {
                 onPreviousFavorite: { isRTL ? goToNextFavorite() : goToPreviousFavorite() },
                 onNextFavorite: { isRTL ? goToPreviousFavorite() : goToNextFavorite() },
                 onToggleFullScreen: onToggleFullScreen,
-                onToggleSinglePage: { toggleSinglePageMarker() }  // #55
+                onToggleSinglePage: { toggleSinglePageMarker() },  // #55
+                onJumpToIndex: { index in jumpToIndex(index) },  // #72
+                onJumpToFirstFavorite: { jumpToFirstFavorite() },  // #72: Ctrl+Z
+                onJumpToLastFavorite: { jumpToLastFavorite() },  // #72: Ctrl+C
+                totalCount: entries.count,  // #72
+                isRTL: isRTL  // #72: RTL support
             )
             .allowsHitTesting(false)
         }
@@ -260,6 +265,32 @@ struct ImagePreviewView: View {
         print("[ImagePreviewView] Single page marker at \(currentIndex): \(added ? "ON" : "OFF")")
         spreadUpdateTrigger.toggle()
     }
+    
+    // #72: Jump to specific index (for Ctrl+A/D, Ctrl+1-5)
+    private func jumpToIndex(_ index: Int) {
+        guard !entries.isEmpty else { return }
+        let targetIndex = min(max(0, index), entries.count - 1)
+        guard targetIndex != currentIndex else { return }
+        
+        currentIndex = targetIndex
+        print("[ImagePreviewView] → jumped to: \(currentIndex)")
+    }
+    
+    // #72: Jump to first favorite (Ctrl+Z)
+    private func jumpToFirstFavorite() {
+        if let firstFav = favoriteIndices.min() {
+            currentIndex = firstFav
+            print("[ImagePreviewView] → jumped to first favorite: \(firstFav)")
+        }
+    }
+    
+    // #72: Jump to last favorite (Ctrl+C)
+    private func jumpToLastFavorite() {
+        if let lastFav = favoriteIndices.max() {
+            currentIndex = lastFav
+            print("[ImagePreviewView] → jumped to last favorite: \(lastFav)")
+        }
+    }
 }
 
 // MARK: - Key Event Handler for Quick Look
@@ -272,6 +303,11 @@ struct QuickLookKeyHandler: NSViewRepresentable {
     let onNextFavorite: () -> Void
     let onToggleFullScreen: () -> Void
     let onToggleSinglePage: () -> Void  // #55
+    let onJumpToIndex: (Int) -> Void  // #72
+    let onJumpToFirstFavorite: () -> Void  // #72: Ctrl+Z
+    let onJumpToLastFavorite: () -> Void  // #72: Ctrl+C
+    let totalCount: Int  // #72
+    let isRTL: Bool  // #72: RTL support
     
     func makeNSView(context: Context) -> QuickLookKeyView {
         let view = QuickLookKeyView()
@@ -282,6 +318,11 @@ struct QuickLookKeyHandler: NSViewRepresentable {
         view.onNextFavorite = onNextFavorite
         view.onToggleFullScreen = onToggleFullScreen
         view.onToggleSinglePage = onToggleSinglePage  // #55
+        view.onJumpToIndex = onJumpToIndex  // #72
+        view.onJumpToFirstFavorite = onJumpToFirstFavorite  // #72
+        view.onJumpToLastFavorite = onJumpToLastFavorite  // #72
+        view.totalCount = totalCount  // #72
+        view.isRTL = isRTL  // #72
         print("[QuickLookKeyHandler] makeNSView called")
         DispatchQueue.main.async {
             view.window?.makeFirstResponder(view)
@@ -298,6 +339,11 @@ struct QuickLookKeyHandler: NSViewRepresentable {
         nsView.onNextFavorite = onNextFavorite
         nsView.onToggleFullScreen = onToggleFullScreen
         nsView.onToggleSinglePage = onToggleSinglePage  // #55
+        nsView.onJumpToIndex = onJumpToIndex  // #72
+        nsView.onJumpToFirstFavorite = onJumpToFirstFavorite  // #72
+        nsView.onJumpToLastFavorite = onJumpToLastFavorite  // #72
+        nsView.totalCount = totalCount  // #72
+        nsView.isRTL = isRTL  // #72
     }
     
     class QuickLookKeyView: NSView {
@@ -308,11 +354,18 @@ struct QuickLookKeyHandler: NSViewRepresentable {
         var onNextFavorite: (() -> Void)?
         var onToggleFullScreen: (() -> Void)?
         var onToggleSinglePage: (() -> Void)?  // #55
+        var onJumpToIndex: ((Int) -> Void)?  // #72: For Ctrl+A/D, Cmd+1-5
+        var onJumpToFirstFavorite: (() -> Void)?  // #72: Ctrl+Z (LTR) / Ctrl+C (RTL)
+        var onJumpToLastFavorite: (() -> Void)?  // #72: Ctrl+C (LTR) / Ctrl+Z (RTL)
+        var totalCount: Int = 0  // #72: For percentage calculation
+        var isRTL: Bool = false  // #72: RTL support
         
         override var acceptsFirstResponder: Bool { true }
         
         override func keyDown(with event: NSEvent) {
-            print("[QuickLookKeyView] keyDown: keyCode=\(event.keyCode), chars='\(event.charactersIgnoringModifiers ?? "nil")'")
+            let hasControl = event.modifierFlags.contains(.control)
+            let hasCommand = event.modifierFlags.contains(.command)
+            print("[QuickLookKeyView] keyDown: keyCode=\(event.keyCode), chars='\(event.charactersIgnoringModifiers ?? "nil")', ctrl=\(hasControl), cmd=\(hasCommand)")
             
             switch event.keyCode {
             // Space (49), Escape (53), Enter (36) - close
@@ -345,11 +398,25 @@ struct QuickLookKeyHandler: NSViewRepresentable {
                 if let chars = event.charactersIgnoringModifiers?.lowercased() {
                     switch chars {
                     case "a":
-                        print("[QuickLookKeyView] → Previous (a) triggered")
-                        onPrevious?()
+                        if hasControl {
+                            // #72: Ctrl+A = jump to visual left (start in LTR, end in RTL)
+                            let target = isRTL ? NavigationHelper.lastIndex(totalCount: totalCount) : 0
+                            print("[QuickLookKeyView] → Jump to \(isRTL ? "end" : "start") (Ctrl+A)")
+                            onJumpToIndex?(target)
+                        } else {
+                            print("[QuickLookKeyView] → Previous (a) triggered")
+                            onPrevious?()
+                        }
                     case "d":
-                        print("[QuickLookKeyView] → Next (d) triggered")
-                        onNext?()
+                        if hasControl {
+                            // #72: Ctrl+D = jump to visual right (end in LTR, start in RTL)
+                            let target = isRTL ? 0 : NavigationHelper.lastIndex(totalCount: totalCount)
+                            print("[QuickLookKeyView] → Jump to \(isRTL ? "start" : "end") (Ctrl+D)")
+                            onJumpToIndex?(target)
+                        } else {
+                            print("[QuickLookKeyView] → Next (d) triggered")
+                            onNext?()
+                        }
                     // #72: W - same as A (unified with Slide/Viewer)
                     case "w":
                         print("[QuickLookKeyView] → Previous (w) triggered")
@@ -358,12 +425,56 @@ struct QuickLookKeyHandler: NSViewRepresentable {
                     case "s":
                         print("[QuickLookKeyView] → Next (s) triggered")
                         onNext?()
+                    // #72: Cmd+1-5 = jump to percentage position (RTL-aware, Cmd to avoid system shortcut conflict)
+                    case "1":
+                        if hasCommand {
+                            let percent = isRTL ? 100 : 0
+                            print("[QuickLookKeyView] → Jump to \(percent)% (Cmd+1)")
+                            onJumpToIndex?(NavigationHelper.indexForPercent(percent, totalCount: totalCount))
+                        }
+                    case "2":
+                        if hasCommand {
+                            let percent = isRTL ? 75 : 25
+                            print("[QuickLookKeyView] → Jump to \(percent)% (Cmd+2)")
+                            onJumpToIndex?(NavigationHelper.indexForPercent(percent, totalCount: totalCount))
+                        }
+                    case "3":
+                        if hasCommand {
+                            print("[QuickLookKeyView] → Jump to 50% (Cmd+3)")
+                            onJumpToIndex?(NavigationHelper.indexForPercent(50, totalCount: totalCount))
+                        }
+                    case "4":
+                        if hasCommand {
+                            let percent = isRTL ? 25 : 75
+                            print("[QuickLookKeyView] → Jump to \(percent)% (Cmd+4)")
+                            onJumpToIndex?(NavigationHelper.indexForPercent(percent, totalCount: totalCount))
+                        }
+                    case "5":
+                        if hasCommand {
+                            let percent = isRTL ? 0 : 100
+                            print("[QuickLookKeyView] → Jump to \(percent)% (Cmd+5)")
+                            onJumpToIndex?(NavigationHelper.indexForPercent(percent, totalCount: totalCount))
+                        }
+                    // #72: Z - previous favorite, Ctrl+Z - first/last favorite (RTL-aware)
                     case "z":
-                        print("[QuickLookKeyView] → Previous favorite (z) triggered")
-                        onPreviousFavorite?()
+                        if hasControl {
+                            // Ctrl+Z = visual left favorite (first in LTR, last in RTL)
+                            print("[QuickLookKeyView] → \(isRTL ? "Last" : "First") favorite (Ctrl+Z)")
+                            isRTL ? onJumpToLastFavorite?() : onJumpToFirstFavorite?()
+                        } else {
+                            print("[QuickLookKeyView] → Previous favorite (z) triggered")
+                            onPreviousFavorite?()
+                        }
+                    // #72: C - next favorite, Ctrl+C - last/first favorite (RTL-aware)
                     case "c":
-                        print("[QuickLookKeyView] → Next favorite (c) triggered")
-                        onNextFavorite?()
+                        if hasControl {
+                            // Ctrl+C = visual right favorite (last in LTR, first in RTL)
+                            print("[QuickLookKeyView] → \(isRTL ? "First" : "Last") favorite (Ctrl+C)")
+                            isRTL ? onJumpToFirstFavorite?() : onJumpToLastFavorite?()
+                        } else {
+                            print("[QuickLookKeyView] → Next favorite (c) triggered")
+                            onNextFavorite?()
+                        }
                     case "f":
                         print("[QuickLookKeyView] → FullScreen (f) triggered, calling onToggleFullScreen")
                         onToggleFullScreen?()

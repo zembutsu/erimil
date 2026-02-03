@@ -930,19 +930,25 @@ struct ThumbnailGridView: View {
         
         switch characters {
         // WASD keys
-        // A - previous image (RTL-aware), Ctrl+A - previous source
+        // A - previous image (RTL-aware), Ctrl+A - jump to start/end (RTL-aware)
         case "a":
             if event.modifierFlags.contains(.control) {
-                onRequestPreviousSource?()
+                // #72: Ctrl+A = jump to start (RTL: end)
+                let target = isRTL ? entries.count - 1 : 0
+                focusedIndex = target
+                print("[Filer] Ctrl+A → \(isRTL ? "end" : "start")")
             } else {
                 moveFocus(by: isRTL ? 1 : -1)  // #72: RTL-aware
             }
             return true
 
-        // D - next image (RTL-aware), Ctrl+D - next source
+        // D - next image (RTL-aware), Ctrl+D - jump to end/start (RTL-aware)
         case "d":
             if event.modifierFlags.contains(.control) {
-                onRequestNextSource?()
+                // #72: Ctrl+D = jump to end (RTL: start)
+                let target = isRTL ? 0 : entries.count - 1
+                focusedIndex = target
+                print("[Filer] Ctrl+D → \(isRTL ? "start" : "end")")
             } else {
                 moveFocus(by: isRTL ? -1 : 1)  // #72: RTL-aware
             }
@@ -963,6 +969,47 @@ struct ThumbnailGridView: View {
                 moveFocus(by: columnCount)
             }
             return true
+        
+        // #72: Cmd+1-5 = jump to percentage position (RTL-aware, Cmd to avoid system shortcut conflict)
+        case "1":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 100 : 0
+                focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
+                print("[Filer] Cmd+1 → \(percent)%")
+                return true
+            }
+            return false
+        case "2":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 75 : 25
+                focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
+                print("[Filer] Cmd+2 → \(percent)%")
+                return true
+            }
+            return false
+        case "3":
+            if event.modifierFlags.contains(.command) {
+                focusedIndex = NavigationHelper.indexForPercent(50, totalCount: entries.count)
+                print("[Filer] Cmd+3 → 50%")
+                return true
+            }
+            return false
+        case "4":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 25 : 75
+                focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
+                print("[Filer] Cmd+4 → \(percent)%")
+                return true
+            }
+            return false
+        case "5":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 0 : 100
+                focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
+                print("[Filer] Cmd+5 → \(percent)%")
+                return true
+            }
+            return false
             
         // X key - toggle selection
         case "x":
@@ -1021,25 +1068,43 @@ struct ThumbnailGridView: View {
             }
             return true
         
-        // #72: Z - previous favorite (RTL-aware)
+        // #72: Z - previous favorite (RTL-aware), Ctrl+Z - first/last favorite (RTL-aware)
         case "z":
-            let targetIndex = isRTL
-                ? NavigationHelper.nextFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
-                : NavigationHelper.previousFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
-            if let target = targetIndex {
-                focusedIndex = target
-                print("[Filer] Z → favorite at \(target)")
+            if event.modifierFlags.contains(.control) {
+                // Ctrl+Z = jump to first favorite (RTL: last favorite)
+                let targetFav = isRTL ? favoriteIndices.max() : favoriteIndices.min()
+                if let fav = targetFav {
+                    focusedIndex = fav
+                    print("[Filer] Ctrl+Z → \(isRTL ? "last" : "first") favorite at \(fav)")
+                }
+            } else {
+                let targetIndex = isRTL
+                    ? NavigationHelper.nextFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
+                    : NavigationHelper.previousFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
+                if let target = targetIndex {
+                    focusedIndex = target
+                    print("[Filer] Z → favorite at \(target)")
+                }
             }
             return true
             
-        // #72: C - next favorite (RTL-aware)
+        // #72: C - next favorite (RTL-aware), Ctrl+C - last/first favorite (RTL-aware)
         case "c":
-            let targetIndex = isRTL
-                ? NavigationHelper.previousFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
-                : NavigationHelper.nextFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
-            if let target = targetIndex {
-                focusedIndex = target
-                print("[Filer] C → favorite at \(target)")
+            if event.modifierFlags.contains(.control) {
+                // Ctrl+C = jump to last favorite (RTL: first favorite)
+                let targetFav = isRTL ? favoriteIndices.min() : favoriteIndices.max()
+                if let fav = targetFav {
+                    focusedIndex = fav
+                    print("[Filer] Ctrl+C → \(isRTL ? "first" : "last") favorite at \(fav)")
+                }
+            } else {
+                let targetIndex = isRTL
+                    ? NavigationHelper.previousFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
+                    : NavigationHelper.nextFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
+                if let target = targetIndex {
+                    focusedIndex = target
+                    print("[Filer] C → favorite at \(target)")
+                }
             }
             return true
         
@@ -2358,20 +2423,26 @@ struct ViewerView: View {
             onClose()
             return true
             
-        // A - previous (Ctrl+A = previous source)
+        // A - previous (Ctrl+A = jump to start/end, RTL-aware)
         case "a":
             if event.modifierFlags.contains(.control) {
-                onRequestPreviousSource?()
+                // #72: Ctrl+A = jump to start (RTL: end)
+                let target = isRTL ? entries.count - 1 : 0
+                navigateTo(target)
+                print("[ViewerView] Ctrl+A → \(isRTL ? "end" : "start")")
             } else {
                 // #76: RTL inverts direction
                 isRTL ? goToNext() : goToPrevious()
             }
             return true
             
-        // D - next (Ctrl+D = next source)
+        // D - next (Ctrl+D = jump to end/start, RTL-aware)
         case "d":
             if event.modifierFlags.contains(.control) {
-                onRequestNextSource?()
+                // #72: Ctrl+D = jump to end (RTL: start)
+                let target = isRTL ? 0 : entries.count - 1
+                navigateTo(target)
+                print("[ViewerView] Ctrl+D → \(isRTL ? "start" : "end")")
             } else {
                 // #76: RTL inverts direction
                 isRTL ? goToPrevious() : goToNext()
@@ -2397,6 +2468,47 @@ struct ViewerView: View {
                 isRTL ? goToPrevious() : goToNext()
             }
             return true
+        
+        // #72: Cmd+1-5 = jump to percentage position (RTL-aware, Cmd to avoid system shortcut conflict)
+        case "1":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 100 : 0
+                navigateTo(NavigationHelper.indexForPercent(percent, totalCount: entries.count))
+                print("[ViewerView] Cmd+1 → \(percent)%")
+                return true
+            }
+            return false
+        case "2":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 75 : 25
+                navigateTo(NavigationHelper.indexForPercent(percent, totalCount: entries.count))
+                print("[ViewerView] Cmd+2 → \(percent)%")
+                return true
+            }
+            return false
+        case "3":
+            if event.modifierFlags.contains(.command) {
+                navigateTo(NavigationHelper.indexForPercent(50, totalCount: entries.count))
+                print("[ViewerView] Cmd+3 → 50%")
+                return true
+            }
+            return false
+        case "4":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 25 : 75
+                navigateTo(NavigationHelper.indexForPercent(percent, totalCount: entries.count))
+                print("[ViewerView] Cmd+4 → \(percent)%")
+                return true
+            }
+            return false
+        case "5":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 0 : 100
+                navigateTo(NavigationHelper.indexForPercent(percent, totalCount: entries.count))
+                print("[ViewerView] Cmd+5 → \(percent)%")
+                return true
+            }
+            return false
 
         // F - toggle favorite
         case "f":
@@ -2452,14 +2564,32 @@ struct ViewerView: View {
             spreadUpdateTrigger.toggle()  // #67: Trigger SpreadImageViewer refresh
             return true
         
-        // #72: Z - previous favorite (RTL-aware, unified from Quick Look)
+        // #72: Z - previous favorite (RTL-aware), Ctrl+Z - first/last favorite (RTL-aware)
         case "z":
-            isRTL ? goToNextFavorite() : goToPreviousFavorite()
+            if event.modifierFlags.contains(.control) {
+                // Ctrl+Z = jump to visual left favorite (first in LTR, last in RTL)
+                let targetFav = isRTL ? favoriteIndices.max() : favoriteIndices.min()
+                if let fav = targetFav {
+                    navigateTo(fav)
+                    print("[ViewerView] Ctrl+Z → \(isRTL ? "last" : "first") favorite at \(fav)")
+                }
+            } else {
+                isRTL ? goToNextFavorite() : goToPreviousFavorite()
+            }
             return true
             
-        // #72: C - next favorite (RTL-aware, unified from Quick Look)
+        // #72: C - next favorite (RTL-aware), Ctrl+C - last/first favorite (RTL-aware)
         case "c":
-            isRTL ? goToPreviousFavorite() : goToNextFavorite()
+            if event.modifierFlags.contains(.control) {
+                // Ctrl+C = jump to visual right favorite (last in LTR, first in RTL)
+                let targetFav = isRTL ? favoriteIndices.min() : favoriteIndices.max()
+                if let fav = targetFav {
+                    navigateTo(fav)
+                    print("[ViewerView] Ctrl+C → \(isRTL ? "first" : "last") favorite at \(fav)")
+                }
+            } else {
+                isRTL ? goToPreviousFavorite() : goToNextFavorite()
+            }
             return true
             
         default:

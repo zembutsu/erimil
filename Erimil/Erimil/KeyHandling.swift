@@ -40,6 +40,11 @@ enum KeyAction {
     case navigateSource(NavigationDirection)
     case navigateFavorite(NavigationDirection)
     
+    // Position jumps (#72: Ctrl+A/D, Ctrl+1-5)
+    case jumpToStart
+    case jumpToEnd
+    case jumpToPercent(Int)  // 25, 50, 75
+    
     // Toggles
     case toggleFavorite
     case toggleSelection
@@ -252,6 +257,34 @@ struct NavigationHelper {
             return previousFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: wrap)
         }
     }
+    
+    // MARK: - Position Jump (#72: Ctrl+A/D, Ctrl+1-5)
+    
+    /// Calculate index for percentage position
+    /// - Parameters:
+    ///   - percent: Target percentage (0, 25, 50, 75, 100)
+    ///   - totalCount: Total number of entries
+    /// - Returns: Target index
+    static func indexForPercent(_ percent: Int, totalCount: Int) -> Int {
+        guard totalCount > 0 else { return 0 }
+        
+        switch percent {
+        case 0:
+            return 0
+        case 100:
+            return totalCount - 1
+        default:
+            let index = (totalCount - 1) * percent / 100
+            return min(max(0, index), totalCount - 1)
+        }
+    }
+    
+    /// Get index for last item
+    /// - Parameter totalCount: Total number of entries
+    /// - Returns: Last valid index
+    static func lastIndex(totalCount: Int) -> Int {
+        return max(0, totalCount - 1)
+    }
 }
 
 // MARK: - Key Code Constants
@@ -281,6 +314,13 @@ enum KeyCode {
     static let x: UInt16 = 7
     static let z: UInt16 = 6
     static let c: UInt16 = 8
+    
+    // Number keys (main keyboard, not numpad)
+    static let num1: UInt16 = 18
+    static let num2: UInt16 = 19
+    static let num3: UInt16 = 20
+    static let num4: UInt16 = 21
+    static let num5: UInt16 = 23
 }
 
 // MARK: - Common Key Event Parsing
