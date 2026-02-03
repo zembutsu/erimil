@@ -703,39 +703,29 @@ class SlideWindowController {
     }
     
     private func goToPreviousFavorite() {
-        guard !storedFavoriteIndices.isEmpty else { return }
+        // #72: Use NavigationHelper for unified favorite navigation
+        guard let targetIndex = NavigationHelper.previousFavoriteIndex(
+            from: currentIndex,
+            favoriteIndices: storedFavoriteIndices,
+            wrap: AppSettings.shared.loopWithinSource
+        ) else { return }
         
-        let previousFavorites = storedFavoriteIndices.filter { $0 < currentIndex }
-        if let targetIndex = previousFavorites.max() {
-            currentIndex = targetIndex
-            storedOnIndexChange?(currentIndex)
-            notifyViewOfIndexChange()
-        } else if AppSettings.shared.loopWithinSource,
-                  let lastFavorite = storedFavoriteIndices.max(),
-                  lastFavorite != currentIndex {
-            // Wrap around to last favorite (if loop enabled)
-            currentIndex = lastFavorite
-            storedOnIndexChange?(currentIndex)
-            notifyViewOfIndexChange()
-        }
+        currentIndex = targetIndex
+        storedOnIndexChange?(currentIndex)
+        notifyViewOfIndexChange()
     }
     
     private func goToNextFavorite() {
-        guard !storedFavoriteIndices.isEmpty else { return }
+        // #72: Use NavigationHelper for unified favorite navigation
+        guard let targetIndex = NavigationHelper.nextFavoriteIndex(
+            from: currentIndex,
+            favoriteIndices: storedFavoriteIndices,
+            wrap: AppSettings.shared.loopWithinSource
+        ) else { return }
         
-        let nextFavorites = storedFavoriteIndices.filter { $0 > currentIndex }
-        if let targetIndex = nextFavorites.min() {
-            currentIndex = targetIndex
-            storedOnIndexChange?(currentIndex)
-            notifyViewOfIndexChange()
-        } else if AppSettings.shared.loopWithinSource,
-                  let firstFavorite = storedFavoriteIndices.min(),
-                  firstFavorite != currentIndex {
-            // Wrap around to first favorite (if loop enabled)
-            currentIndex = firstFavorite
-            storedOnIndexChange?(currentIndex)
-            notifyViewOfIndexChange()
-        }
+        currentIndex = targetIndex
+        storedOnIndexChange?(currentIndex)
+        notifyViewOfIndexChange()
     }
     
     // MARK: - S010: Favorite and Selection Toggles

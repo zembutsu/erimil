@@ -235,29 +235,23 @@ struct ImagePreviewView: View {
     }
     
     private func goToPreviousFavorite() {
-        guard !favoriteIndices.isEmpty else { return }
+        // #72: Use NavigationHelper for unified favorite navigation
+        guard let targetIndex = NavigationHelper.previousFavoriteIndex(
+            from: currentIndex,
+            favoriteIndices: favoriteIndices
+        ) else { return }
         
-        // Find the largest favorite index that is less than currentIndex
-        let previousFavorites = favoriteIndices.filter { $0 < currentIndex }
-        if let targetIndex = previousFavorites.max() {
-            currentIndex = targetIndex
-        } else if let lastFavorite = favoriteIndices.max(), lastFavorite != currentIndex {
-            // Wrap to last favorite
-            currentIndex = lastFavorite
-        }
+        currentIndex = targetIndex
     }
     
     private func goToNextFavorite() {
-        guard !favoriteIndices.isEmpty else { return }
+        // #72: Use NavigationHelper for unified favorite navigation
+        guard let targetIndex = NavigationHelper.nextFavoriteIndex(
+            from: currentIndex,
+            favoriteIndices: favoriteIndices
+        ) else { return }
         
-        // Find the smallest favorite index that is greater than currentIndex
-        let nextFavorites = favoriteIndices.filter { $0 > currentIndex }
-        if let targetIndex = nextFavorites.min() {
-            currentIndex = targetIndex
-        } else if let firstFavorite = favoriteIndices.min(), firstFavorite != currentIndex {
-            // Wrap to first favorite
-            currentIndex = firstFavorite
-        }
+        currentIndex = targetIndex
     }
     
     // #55: Toggle single page marker

@@ -158,7 +158,9 @@ Fullscreen image viewing with Favorites Mode and source navigation.
 - **Keyboard Handling**:
   | Key | Normal Mode | Favorites Mode |
   |-----|-------------|----------------|
-  | ←/→, A/D | Previous/Next image | Previous/Next favorite |
+  | ←/→, A/D | Previous/Next image (RTL-aware) | Previous/Next favorite (RTL-aware) |
+  | ↑/↓, W/S | Previous/Next image (RTL-aware) | Previous/Next favorite (RTL-aware) |
+  | Z/C | Previous/Next favorite (RTL-aware) | Previous/Next favorite (RTL-aware) |
   | Tab | Next ★ + enter mode | Next ★ |
   | F | Toggle favorite | Toggle favorite |
   | X | Toggle selection | Toggle selection |
@@ -167,6 +169,7 @@ Fullscreen image viewing with Favorites Mode and source navigation.
   | Esc | Exit fullscreen | Exit fullscreen |
   | Ctrl+←/→, Ctrl+A/D | Previous/Next source | Same |
   | Ctrl+T | Cycle thumbnail position | Same |
+  | Ctrl+R | Toggle reading direction | Same |
   | Space | Toggle controls | Toggle controls |
 
 - **Favorites Mode State**:
@@ -189,6 +192,32 @@ Fullscreen image viewing with Favorites Mode and source navigation.
   - ★ markers for favorites (yellow)
   - × markers for selections (red)
   - Always shown for consistent layout (even with 1 image)
+
+### 12. Key Handling Layer (S031)
+
+Consolidated key handling logic shared across viewer modes.
+
+- **KeyHandling.swift**: Centralized key handling utilities
+  - `NavigationDirection`: Forward/backward enum with RTL inversion
+  - `KeyAction`: All possible key actions enum
+  - `NavigationHelper`: RTL and spread-aware navigation calculations
+    - `navigate(direction:from:entries:sourceURL:isRTL:)` - Main navigation
+    - `navigateFavorite(direction:from:favoriteIndices:isRTL:)` - Favorite navigation
+    - `nextIndex/previousIndex` - Spread-aware index calculation
+  - `KeyCode`: macOS key code constants
+  - `CommonKeyParser`: Shared key event parsing
+
+- **Mode-Specific Handlers**:
+  | Mode | Handler Location | Notes |
+  |------|-----------------|-------|
+  | Grid (Filer) | ThumbnailGridView.handleKeyEvent | RTL-aware ←/→/A/D, Z/C favorite nav |
+  | Viewer | ViewerView.handleKeyEvent | Full navigation + Z/C |
+  | Slide | SlideWindowController.handleKeyEvent | Event monitor based |
+  | Quick Look | QuickLookKeyView.keyDown | NSView based |
+
+- **RTL Navigation**:
+  All navigation keys (←/→, ↑/↓, A/D, W/S, Z/C) are RTL-aware.
+  When reading direction is RTL, logical direction is inverted.
 
 ## Data Flow
 
@@ -723,4 +752,4 @@ A: Aspect ratio or direction issue
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2026-01-31 (S028: PDF support, Spread navigation, Aspect ratio cache, Prefetcher)
+> Last updated: 2026-02-03 (S031: Key Handling Layer, consolidated keyboard shortcuts)

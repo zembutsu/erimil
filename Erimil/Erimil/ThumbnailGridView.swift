@@ -8,7 +8,7 @@
 //  Updated: S020 (2026-01-26) - V key for single page marker (#55)
 //  Updated: S026 (2026-01-30) - RTL navigation key inversion (#76)
 //  Updated: S031 (2026-02-03) - Consolidated key handling (#72): 
-//      - Grid mode: ←/→/A/D now RTL-aware
+//      - Grid mode: ←/→/A/D now RTL-aware, added Z/C favorite navigation
 //      - ViewerView: ↑/↓/W/S now RTL-aware, added Z/C favorite navigation
 //
 
@@ -1018,6 +1018,28 @@ struct ThumbnailGridView: View {
                 // R: Open from bookmark (last viewed), fallback to current
                 let startIndex = lastViewedIndex ?? currentIndex
                 previewMode = .viewer(index: startIndex)
+            }
+            return true
+        
+        // #72: Z - previous favorite (RTL-aware)
+        case "z":
+            let targetIndex = isRTL
+                ? NavigationHelper.nextFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
+                : NavigationHelper.previousFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
+            if let target = targetIndex {
+                focusedIndex = target
+                print("[Filer] Z → favorite at \(target)")
+            }
+            return true
+            
+        // #72: C - next favorite (RTL-aware)
+        case "c":
+            let targetIndex = isRTL
+                ? NavigationHelper.previousFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
+                : NavigationHelper.nextFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
+            if let target = targetIndex {
+                focusedIndex = target
+                print("[Filer] C → favorite at \(target)")
             }
             return true
         
