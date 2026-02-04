@@ -41,39 +41,65 @@ Toggle mode via the toolbar button or Settings.
 
 ### Keyboard Shortcuts
 
+#### Common Navigation (All Viewer Modes)
+
+All navigation keys are **RTL-aware** - they follow "physical key position = visual screen position" principle.
+
+| Key | Action |
+|-----|--------|
+| ← → ↑ ↓ / WASD | Navigate images |
+| Z / C | Previous / Next favorite ★ |
+| Ctrl+A / Ctrl+D | Jump to first / last image |
+| Ctrl+Z / Ctrl+C | Jump to first / last favorite |
+| Cmd+1/2/3/4/5 | Jump to 0% / 25% / 50% / 75% / 100% |
+| Ctrl+R | Toggle reading direction (LTR ↔ RTL) |
+
 #### Filer View (Thumbnail Grid)
 
 | Key | Action |
 |-----|--------|
-| ← → ↑ ↓ / WASD | Navigate thumbnails |
 | X | Toggle selection |
 | F | Toggle favorite ★ |
+| V | Toggle single page marker |
 | Space | Open Quick Look preview |
-| Enter | Open Slide Mode (fullscreen) |
-| Ctrl+F | Open Slide Mode (alternative) |
+| Enter / R | Open Viewer Mode |
+| Ctrl+F | Open Slide Mode |
+| Ctrl+W/S or Ctrl+↑/↓ | Previous / Next source |
 
 #### Quick Look Preview
 
 | Key | Action |
 |-----|--------|
-| ← → / A D | Navigate images |
-| Enter | Switch to Slide Mode |
-| Space / Esc | Close preview |
+| F | Switch to Slide Mode |
+| V | Toggle single page marker |
+| Q / Space / Esc / Enter | Close preview |
+
+#### Viewer Mode
+
+| Key | Action |
+|-----|--------|
+| X | Toggle selection |
+| F | Toggle favorite ★ |
+| V | Toggle single page marker |
+| T | Cycle thumbnail position |
+| Enter | Open Slide Mode |
+| Q / R / Esc | Close (return to Filer) |
+| Ctrl+W/S or Ctrl+↑/↓ | Previous / Next source |
 
 #### Slide Mode (Fullscreen)
 
 | Key | Normal Mode | Favorites Mode |
 |-----|-------------|----------------|
-| ← → / A D | Previous/Next image | Previous/Next ★ |
+| ← → ↑ ↓ / WASD | Previous/Next image | Previous/Next ★ |
+| Z / C | Previous/Next ★ | Previous/Next ★ |
 | Tab | Next ★ + **Enter Favorites Mode** | Next ★ |
 | F | Toggle favorite ★ | Toggle favorite ★ |
 | X | Toggle selection | Toggle selection |
 | V | Toggle single page marker | Toggle single page marker |
 | Q | Exit fullscreen | Exit Favorites Mode |
 | Esc | Exit fullscreen | Exit fullscreen |
-| Ctrl+← / Ctrl+A | Previous source (ZIP/folder/PDF) | Previous source |
-| Ctrl+→ / Ctrl+D | Next source (ZIP/folder/PDF) | Next source |
-| Ctrl+T | Cycle thumbnail position (left/bottom/hidden) | Same |
+| Ctrl+W/S or Ctrl+↑/↓ | Previous/Next source | Same |
+| Ctrl+T | Cycle thumbnail position | Same |
 | Space | Toggle controls | Toggle controls |
 
 ### Sidebar Navigation
@@ -98,9 +124,15 @@ Slide Mode provides fullscreen image viewing with powerful navigation:
 - Press `Q` to exit Favorites Mode (return to normal navigation)
 
 **Source Navigation**
-- `Ctrl+←/→` or `Ctrl+A/D` to switch between ZIPs/folders/PDFs
+- `Ctrl+W/S` or `Ctrl+↑/↓` to switch between ZIPs/folders/PDFs
 - Maintains fullscreen state during navigation
 - Loops from last to first (and vice versa)
+
+**Position Jump**
+- `Ctrl+A/D` to jump to first/last image
+- `Ctrl+Z/C` to jump to first/last favorite
+- `Cmd+1-5` to jump to percentage positions (0%/25%/50%/75%/100%)
+- All jumps are RTL-aware (physical key = visual position)
 
 **Spread View (Two-Page Display)**
 - Enable in Settings to display two pages side-by-side

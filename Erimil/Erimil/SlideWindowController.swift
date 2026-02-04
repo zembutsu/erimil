@@ -13,6 +13,7 @@
 //  Updated: S020 (2026-01-26) - Spread (two-page) view mode (#55)
 //  Updated: S021 (2026-01-26) - Refactoring: SpreadImageViewer extracted to separate file (#67)
 //  Updated: S026 (2026-01-30) - RTL navigation key inversion (#76)
+//  Updated: S031 (2026-02-03) - Consolidated key handling (#72): Re-enabled Z/C with RTL support
 //
 
 import SwiftUI
@@ -388,8 +389,9 @@ class SlideWindowController {
     /// Handle key events centrally - returns nil to consume, event to pass through
     private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
         let hasControl = event.modifierFlags.contains(.control)
+        let hasCommand = event.modifierFlags.contains(.command)
         
-        print("[SlideWindowController] handleKeyEvent: keyCode=\(event.keyCode), ctrl=\(hasControl), favMode=\(isFavoritesMode)")
+        print("[SlideWindowController] handleKeyEvent: keyCode=\(event.keyCode), ctrl=\(hasControl), cmd=\(hasCommand), favMode=\(isFavoritesMode)")
         
         switch event.keyCode {
         // Escape - close fullscreen
@@ -505,8 +507,10 @@ class SlideWindowController {
                 switch chars {
                 case "a":
                     if hasControl {
-                        print("[SlideWindowController] → Previous source (Ctrl+A)")
-                        storedOnPreviousSource?()
+                        // #72: Ctrl+A = jump to visual left (start in LTR, end in RTL)
+                        let target = isRTL ? storedEntries.count - 1 : 0
+                        print("[SlideWindowController] → Jump to \(isRTL ? "end" : "start") (Ctrl+A)")
+                        jumpToIndex(target)
                     } else if isFavoritesMode {
                         // #76: RTL inverts direction
                         print("[SlideWindowController] → \(isRTL ? "Next" : "Previous") favorite (A in Favorites Mode)")
@@ -519,8 +523,10 @@ class SlideWindowController {
                     
                 case "d":
                     if hasControl {
-                        print("[SlideWindowController] → Next source (Ctrl+D)")
-                        storedOnNextSource?()
+                        // #72: Ctrl+D = jump to visual right (end in LTR, start in RTL)
+                        let target = isRTL ? 0 : storedEntries.count - 1
+                        print("[SlideWindowController] → Jump to \(isRTL ? "start" : "end") (Ctrl+D)")
+                        jumpToIndex(target)
                     } else if isFavoritesMode {
                         // #76: RTL inverts direction
                         print("[SlideWindowController] → \(isRTL ? "Previous" : "Next") favorite (D in Favorites Mode)")
@@ -531,7 +537,7 @@ class SlideWindowController {
                     }
                     return nil
                 
-                // S017: W key (same as A)
+                // S017: W key (same as A for nav, Ctrl+W = previous source)
                 case "w":
                     if hasControl {
                         print("[SlideWindowController] → Previous source (Ctrl+W)")
@@ -546,7 +552,7 @@ class SlideWindowController {
                     }
                     return nil
                     
-                // S017: S key (same as D)
+                // S017: S key (same as D for nav, Ctrl+S = next source)
                 case "s":
                     if hasControl {
                         print("[SlideWindowController] → Next source (Ctrl+S)")
@@ -560,6 +566,42 @@ class SlideWindowController {
                         isRTL ? goToPrevious() : goToNext()
                     }
                     return nil
+                
+                // #72: Cmd+1-5 = jump to percentage position (RTL-aware, Cmd to avoid system shortcut conflict)
+                case "1":
+                    if hasCommand {
+                        let percent = isRTL ? 100 : 0
+                        print("[SlideWindowController] → Jump to \(percent)% (Cmd+1)")
+                        jumpToIndex(NavigationHelper.indexForPercent(percent, totalCount: storedEntries.count))
+                        return nil
+                    }
+                case "2":
+                    if hasCommand {
+                        let percent = isRTL ? 75 : 25
+                        print("[SlideWindowController] → Jump to \(percent)% (Cmd+2)")
+                        jumpToIndex(NavigationHelper.indexForPercent(percent, totalCount: storedEntries.count))
+                        return nil
+                    }
+                case "3":
+                    if hasCommand {
+                        print("[SlideWindowController] → Jump to 50% (Cmd+3)")
+                        jumpToIndex(NavigationHelper.indexForPercent(50, totalCount: storedEntries.count))
+                        return nil
+                    }
+                case "4":
+                    if hasCommand {
+                        let percent = isRTL ? 25 : 75
+                        print("[SlideWindowController] → Jump to \(percent)% (Cmd+4)")
+                        jumpToIndex(NavigationHelper.indexForPercent(percent, totalCount: storedEntries.count))
+                        return nil
+                    }
+                case "5":
+                    if hasCommand {
+                        let percent = isRTL ? 0 : 100
+                        print("[SlideWindowController] → Jump to \(percent)% (Cmd+5)")
+                        jumpToIndex(NavigationHelper.indexForPercent(percent, totalCount: storedEntries.count))
+                        return nil
+                    }
                     
                 case "f":
                     // S010: Toggle favorite (not exit fullscreen anymore)
@@ -593,14 +635,36 @@ class SlideWindowController {
                         notifyViewOfSpreadChange()
                     }
                     return nil
+                
+                // #72: Z - previous favorite (RTL-aware), Ctrl+Z - first/last favorite (RTL-aware)
+                case "z":
+                    if hasControl {
+                        // Ctrl+Z = jump to visual left favorite (first in LTR, last in RTL)
+                        let targetFav = isRTL ? storedFavoriteIndices.max() : storedFavoriteIndices.min()
+                        if let fav = targetFav {
+                            print("[SlideWindowController] → \(isRTL ? "Last" : "First") favorite (Ctrl+Z) at \(fav)")
+                            jumpToIndex(fav)
+                        }
+                    } else {
+                        print("[SlideWindowController] → \(isRTL ? "Next" : "Previous") favorite (Z)")
+                        isRTL ? goToNextFavorite() : goToPreviousFavorite()
+                    }
+                    return nil
                     
-                // S010: Disabled keys (commented out for future reference)
-                // case "z":
-                //     goToPreviousFavorite()
-                //     return nil
-                // case "c":
-                //     goToNextFavorite()
-                //     return nil
+                // #72: C - next favorite (RTL-aware), Ctrl+C - last/first favorite (RTL-aware)
+                case "c":
+                    if hasControl {
+                        // Ctrl+C = jump to visual right favorite (last in LTR, first in RTL)
+                        let targetFav = isRTL ? storedFavoriteIndices.min() : storedFavoriteIndices.max()
+                        if let fav = targetFav {
+                            print("[SlideWindowController] → \(isRTL ? "First" : "Last") favorite (Ctrl+C) at \(fav)")
+                            jumpToIndex(fav)
+                        }
+                    } else {
+                        print("[SlideWindowController] → \(isRTL ? "Previous" : "Next") favorite (C)")
+                        isRTL ? goToPreviousFavorite() : goToNextFavorite()
+                    }
+                    return nil
                     
                 default:
                     return event  // Pass through unhandled
@@ -698,39 +762,41 @@ class SlideWindowController {
     }
     
     private func goToPreviousFavorite() {
-        guard !storedFavoriteIndices.isEmpty else { return }
+        // #72: Use NavigationHelper for unified favorite navigation
+        guard let targetIndex = NavigationHelper.previousFavoriteIndex(
+            from: currentIndex,
+            favoriteIndices: storedFavoriteIndices,
+            wrap: AppSettings.shared.loopWithinSource
+        ) else { return }
         
-        let previousFavorites = storedFavoriteIndices.filter { $0 < currentIndex }
-        if let targetIndex = previousFavorites.max() {
-            currentIndex = targetIndex
-            storedOnIndexChange?(currentIndex)
-            notifyViewOfIndexChange()
-        } else if AppSettings.shared.loopWithinSource,
-                  let lastFavorite = storedFavoriteIndices.max(),
-                  lastFavorite != currentIndex {
-            // Wrap around to last favorite (if loop enabled)
-            currentIndex = lastFavorite
-            storedOnIndexChange?(currentIndex)
-            notifyViewOfIndexChange()
-        }
+        currentIndex = targetIndex
+        storedOnIndexChange?(currentIndex)
+        notifyViewOfIndexChange()
     }
     
     private func goToNextFavorite() {
-        guard !storedFavoriteIndices.isEmpty else { return }
+        // #72: Use NavigationHelper for unified favorite navigation
+        guard let targetIndex = NavigationHelper.nextFavoriteIndex(
+            from: currentIndex,
+            favoriteIndices: storedFavoriteIndices,
+            wrap: AppSettings.shared.loopWithinSource
+        ) else { return }
         
-        let nextFavorites = storedFavoriteIndices.filter { $0 > currentIndex }
-        if let targetIndex = nextFavorites.min() {
-            currentIndex = targetIndex
-            storedOnIndexChange?(currentIndex)
-            notifyViewOfIndexChange()
-        } else if AppSettings.shared.loopWithinSource,
-                  let firstFavorite = storedFavoriteIndices.min(),
-                  firstFavorite != currentIndex {
-            // Wrap around to first favorite (if loop enabled)
-            currentIndex = firstFavorite
-            storedOnIndexChange?(currentIndex)
-            notifyViewOfIndexChange()
-        }
+        currentIndex = targetIndex
+        storedOnIndexChange?(currentIndex)
+        notifyViewOfIndexChange()
+    }
+    
+    // #72: Jump to specific index (for Ctrl+A/D, Ctrl+1-5)
+    private func jumpToIndex(_ index: Int) {
+        guard !storedEntries.isEmpty else { return }
+        let targetIndex = min(max(0, index), storedEntries.count - 1)
+        guard targetIndex != currentIndex else { return }
+        
+        currentIndex = targetIndex
+        print("[SlideWindowController] → jumped to: \(currentIndex)")
+        storedOnIndexChange?(currentIndex)
+        notifyViewOfIndexChange()
     }
     
     // MARK: - S010: Favorite and Selection Toggles
@@ -1032,6 +1098,14 @@ struct SlideWindowView: View {
                     }
                     
                     Spacer()
+                    
+                    // #72: Favorite indicator (right side, fixed position)
+                    if favoriteIndices.contains(currentIndex) {
+                        Image(systemName: "star.fill")
+                            .font(.title3)
+                            .foregroundStyle(.yellow)
+                            .padding(.trailing, 8)
+                    }
                     
                     // S010: Favorites Mode indicator
                     if isFavoritesMode {

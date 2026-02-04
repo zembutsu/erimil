@@ -7,6 +7,9 @@
 //  Updated: S017 (2026-01-24) - Resume last viewed position (#52)
 //  Updated: S020 (2026-01-26) - V key for single page marker (#55)
 //  Updated: S026 (2026-01-30) - RTL navigation key inversion (#76)
+//  Updated: S031 (2026-02-03) - Consolidated key handling (#72): 
+//      - Grid mode: ←/→/A/D now RTL-aware, added Z/C favorite navigation
+//      - ViewerView: ↑/↓/W/S now RTL-aware, added Z/C favorite navigation
 //
 
 import SwiftUI
@@ -145,6 +148,11 @@ struct ThumbnailGridView: View {
         // Reference readingDirectionVersion to trigger re-render
         _ = readingDirectionVersion
         return CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
+    }
+    
+    /// #72: Check if RTL mode for navigation key inversion (Grid mode)
+    private var isRTL: Bool {
+        effectiveReadingDirection == .rtl
     }
 
     var body: some View {
@@ -852,18 +860,18 @@ struct ThumbnailGridView: View {
         // Check for special keys
         switch event.keyCode {
         // Arrow keys
-        case 123: // Left arrow
+        case 123: // Left arrow - #72: RTL-aware
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
-                moveFocus(by: -1)
+                moveFocus(by: isRTL ? 1 : -1)
             }
             return true
-        case 124: // Right arrow
+        case 124: // Right arrow - #72: RTL-aware
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
-                moveFocus(by: 1)
+                moveFocus(by: isRTL ? -1 : 1)
             }
             return true
         case 126: // Up arrow - S017: added Ctrl+ for source nav
@@ -922,21 +930,27 @@ struct ThumbnailGridView: View {
         
         switch characters {
         // WASD keys
-        // A - previous image, Shift+A - previous source
+        // A - previous image (RTL-aware), Ctrl+A - jump to start/end (RTL-aware)
         case "a":
             if event.modifierFlags.contains(.control) {
-                onRequestPreviousSource?()
+                // #72: Ctrl+A = jump to start (RTL: end)
+                let target = isRTL ? entries.count - 1 : 0
+                focusedIndex = target
+                print("[Filer] Ctrl+A → \(isRTL ? "end" : "start")")
             } else {
-                moveFocus(by: -1)
+                moveFocus(by: isRTL ? 1 : -1)  // #72: RTL-aware
             }
             return true
 
-        // D - next image, Shift+D - next source
+        // D - next image (RTL-aware), Ctrl+D - jump to end/start (RTL-aware)
         case "d":
             if event.modifierFlags.contains(.control) {
-                onRequestNextSource?()
+                // #72: Ctrl+D = jump to end (RTL: start)
+                let target = isRTL ? 0 : entries.count - 1
+                focusedIndex = target
+                print("[Filer] Ctrl+D → \(isRTL ? "start" : "end")")
             } else {
-                moveFocus(by: 1)
+                moveFocus(by: isRTL ? -1 : 1)  // #72: RTL-aware
             }
             return true
         // S017: W - row up, Ctrl+W - previous source
@@ -955,6 +969,47 @@ struct ThumbnailGridView: View {
                 moveFocus(by: columnCount)
             }
             return true
+        
+        // #72: Cmd+1-5 = jump to percentage position (RTL-aware, Cmd to avoid system shortcut conflict)
+        case "1":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 100 : 0
+                focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
+                print("[Filer] Cmd+1 → \(percent)%")
+                return true
+            }
+            return false
+        case "2":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 75 : 25
+                focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
+                print("[Filer] Cmd+2 → \(percent)%")
+                return true
+            }
+            return false
+        case "3":
+            if event.modifierFlags.contains(.command) {
+                focusedIndex = NavigationHelper.indexForPercent(50, totalCount: entries.count)
+                print("[Filer] Cmd+3 → 50%")
+                return true
+            }
+            return false
+        case "4":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 25 : 75
+                focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
+                print("[Filer] Cmd+4 → \(percent)%")
+                return true
+            }
+            return false
+        case "5":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 0 : 100
+                focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
+                print("[Filer] Cmd+5 → \(percent)%")
+                return true
+            }
+            return false
             
         // X key - toggle selection
         case "x":
@@ -1010,6 +1065,46 @@ struct ThumbnailGridView: View {
                 // R: Open from bookmark (last viewed), fallback to current
                 let startIndex = lastViewedIndex ?? currentIndex
                 previewMode = .viewer(index: startIndex)
+            }
+            return true
+        
+        // #72: Z - previous favorite (RTL-aware), Ctrl+Z - first/last favorite (RTL-aware)
+        case "z":
+            if event.modifierFlags.contains(.control) {
+                // Ctrl+Z = jump to first favorite (RTL: last favorite)
+                let targetFav = isRTL ? favoriteIndices.max() : favoriteIndices.min()
+                if let fav = targetFav {
+                    focusedIndex = fav
+                    print("[Filer] Ctrl+Z → \(isRTL ? "last" : "first") favorite at \(fav)")
+                }
+            } else {
+                let targetIndex = isRTL
+                    ? NavigationHelper.nextFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
+                    : NavigationHelper.previousFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
+                if let target = targetIndex {
+                    focusedIndex = target
+                    print("[Filer] Z → favorite at \(target)")
+                }
+            }
+            return true
+            
+        // #72: C - next favorite (RTL-aware), Ctrl+C - last/first favorite (RTL-aware)
+        case "c":
+            if event.modifierFlags.contains(.control) {
+                // Ctrl+C = jump to last favorite (RTL: first favorite)
+                let targetFav = isRTL ? favoriteIndices.min() : favoriteIndices.max()
+                if let fav = targetFav {
+                    focusedIndex = fav
+                    print("[Filer] Ctrl+C → \(isRTL ? "first" : "last") favorite at \(fav)")
+                }
+            } else {
+                let targetIndex = isRTL
+                    ? NavigationHelper.previousFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
+                    : NavigationHelper.nextFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
+                if let target = targetIndex {
+                    focusedIndex = target
+                    print("[Filer] C → favorite at \(target)")
+                }
             }
             return true
         
@@ -2196,6 +2291,27 @@ struct ViewerView: View {
         }
     }
     
+    // #72: Favorite navigation (unified from Slide Mode)
+    private func goToPreviousFavorite() {
+        guard let targetIndex = NavigationHelper.previousFavoriteIndex(
+            from: viewerIndex,
+            favoriteIndices: favoriteIndices
+        ) else { return }
+        
+        print("[ViewerView] goToPreviousFavorite: \(viewerIndex) → \(targetIndex)")
+        navigateTo(targetIndex)
+    }
+    
+    private func goToNextFavorite() {
+        guard let targetIndex = NavigationHelper.nextFavoriteIndex(
+            from: viewerIndex,
+            favoriteIndices: favoriteIndices
+        ) else { return }
+        
+        print("[ViewerView] goToNextFavorite: \(viewerIndex) → \(targetIndex)")
+        navigateTo(targetIndex)
+    }
+    
     /// #67: Correct backward navigation when landing on spread that includes previous page
     /// or when current page could form spread with previous
     private func correctBackwardSpread() {
@@ -2261,22 +2377,22 @@ struct ViewerView: View {
             return true
         
         // Up arrow (same as Left) - S017
-        // #76: Up/Down don't invert in ViewerMode (vertical thumbnail consistency)
+        // #72: Now RTL-aware (unified with Slide Mode)
         case 126:
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
-                goToPrevious()
+                isRTL ? goToNext() : goToPrevious()
             }
             return true
             
         // Down arrow (same as Right) - S017
-        // #76: Up/Down don't invert in ViewerMode (vertical thumbnail consistency)
+        // #72: Now RTL-aware (unified with Slide Mode)
         case 125:
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
-                goToNext()
+                isRTL ? goToPrevious() : goToNext()
             }
             return true
 
@@ -2307,20 +2423,26 @@ struct ViewerView: View {
             onClose()
             return true
             
-        // A - previous (Ctrl+A = previous source)
+        // A - previous (Ctrl+A = jump to start/end, RTL-aware)
         case "a":
             if event.modifierFlags.contains(.control) {
-                onRequestPreviousSource?()
+                // #72: Ctrl+A = jump to start (RTL: end)
+                let target = isRTL ? entries.count - 1 : 0
+                navigateTo(target)
+                print("[ViewerView] Ctrl+A → \(isRTL ? "end" : "start")")
             } else {
                 // #76: RTL inverts direction
                 isRTL ? goToNext() : goToPrevious()
             }
             return true
             
-        // D - next (Ctrl+D = next source)
+        // D - next (Ctrl+D = jump to end/start, RTL-aware)
         case "d":
             if event.modifierFlags.contains(.control) {
-                onRequestNextSource?()
+                // #72: Ctrl+D = jump to end (RTL: start)
+                let target = isRTL ? 0 : entries.count - 1
+                navigateTo(target)
+                print("[ViewerView] Ctrl+D → \(isRTL ? "start" : "end")")
             } else {
                 // #76: RTL inverts direction
                 isRTL ? goToPrevious() : goToNext()
@@ -2328,24 +2450,65 @@ struct ViewerView: View {
             return true
         
         // S017: W - previous (Ctrl+W = previous source)
-        // #76: W/S don't invert in ViewerMode (same as Up/Down)
+        // #72: Now RTL-aware (unified with Slide Mode)
         case "w":
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
-                goToPrevious()
+                isRTL ? goToNext() : goToPrevious()
             }
             return true
             
         // S017: S - next (Ctrl+S = next source)
-        // #76: W/S don't invert in ViewerMode (same as Up/Down)
+        // #72: Now RTL-aware (unified with Slide Mode)
         case "s":
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
-                goToNext()
+                isRTL ? goToPrevious() : goToNext()
             }
             return true
+        
+        // #72: Cmd+1-5 = jump to percentage position (RTL-aware, Cmd to avoid system shortcut conflict)
+        case "1":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 100 : 0
+                navigateTo(NavigationHelper.indexForPercent(percent, totalCount: entries.count))
+                print("[ViewerView] Cmd+1 → \(percent)%")
+                return true
+            }
+            return false
+        case "2":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 75 : 25
+                navigateTo(NavigationHelper.indexForPercent(percent, totalCount: entries.count))
+                print("[ViewerView] Cmd+2 → \(percent)%")
+                return true
+            }
+            return false
+        case "3":
+            if event.modifierFlags.contains(.command) {
+                navigateTo(NavigationHelper.indexForPercent(50, totalCount: entries.count))
+                print("[ViewerView] Cmd+3 → 50%")
+                return true
+            }
+            return false
+        case "4":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 25 : 75
+                navigateTo(NavigationHelper.indexForPercent(percent, totalCount: entries.count))
+                print("[ViewerView] Cmd+4 → \(percent)%")
+                return true
+            }
+            return false
+        case "5":
+            if event.modifierFlags.contains(.command) {
+                let percent = isRTL ? 0 : 100
+                navigateTo(NavigationHelper.indexForPercent(percent, totalCount: entries.count))
+                print("[ViewerView] Cmd+5 → \(percent)%")
+                return true
+            }
+            return false
 
         // F - toggle favorite
         case "f":
@@ -2399,6 +2562,34 @@ struct ViewerView: View {
             let added = CacheManager.shared.toggleSinglePageMarker(for: imageSource.url, at: viewerIndex)
             print("[ViewerView] Single page marker at \(viewerIndex): \(added ? "ON" : "OFF")")
             spreadUpdateTrigger.toggle()  // #67: Trigger SpreadImageViewer refresh
+            return true
+        
+        // #72: Z - previous favorite (RTL-aware), Ctrl+Z - first/last favorite (RTL-aware)
+        case "z":
+            if event.modifierFlags.contains(.control) {
+                // Ctrl+Z = jump to visual left favorite (first in LTR, last in RTL)
+                let targetFav = isRTL ? favoriteIndices.max() : favoriteIndices.min()
+                if let fav = targetFav {
+                    navigateTo(fav)
+                    print("[ViewerView] Ctrl+Z → \(isRTL ? "last" : "first") favorite at \(fav)")
+                }
+            } else {
+                isRTL ? goToNextFavorite() : goToPreviousFavorite()
+            }
+            return true
+            
+        // #72: C - next favorite (RTL-aware), Ctrl+C - last/first favorite (RTL-aware)
+        case "c":
+            if event.modifierFlags.contains(.control) {
+                // Ctrl+C = jump to visual right favorite (last in LTR, first in RTL)
+                let targetFav = isRTL ? favoriteIndices.min() : favoriteIndices.max()
+                if let fav = targetFav {
+                    navigateTo(fav)
+                    print("[ViewerView] Ctrl+C → \(isRTL ? "first" : "last") favorite at \(fav)")
+                }
+            } else {
+                isRTL ? goToPreviousFavorite() : goToNextFavorite()
+            }
             return true
             
         default:
