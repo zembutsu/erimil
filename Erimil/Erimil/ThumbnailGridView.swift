@@ -264,31 +264,37 @@ struct ThumbnailGridView: View {
                     ZStack {
                         ScrollViewReader { scrollProxy in
                             ScrollView {
-                                LazyVGrid(columns: columns, spacing: 8) {
-                                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                                        ThumbnailCell(
-                                            entry: entry,
-                                            thumbnail: thumbnails[entry.path],
-                                            isSelected: selectedPaths.contains(entry.path),
-                                            isFocused: focusedIndex == index,
-                                            favoriteStatus: getFavoriteStatus(entry),
-                                            selectionMode: settings.selectionMode,
-                                            size: settings.effectiveThumbnailSize,
-                                            showProtectedFeedback: protectedFeedbackPath == entry.path,
-                                            isLastViewed: index == lastViewedIndex  // #52
-                                        )
-                                        .id(index)
-                                        .onTapGesture(count: 2) {
-                                            //openPreview(at: index)
-                                            // S010: Double-click opens Slide Mode directly
-                                            previewMode = .slideMode(index: index)
-                                        }
-                                        .onTapGesture(count: 1) {
-                                            focusedIndex = index
-                                            toggleSelection(entry)
-                                        }
-                                        .onAppear {
-                                            loadThumbnailIfNeeded(for: entry)
+                                LazyVGrid(columns: columns, spacing: 8, pinnedViews: [.sectionHeaders]) {
+                                    ForEach(gridSections) { section in
+                                        Section {
+                                            ForEach(section.items) { item in
+                                                ThumbnailCell(
+                                                    entry: item.entry,
+                                                    thumbnail: thumbnails[item.entry.path],
+                                                    isSelected: selectedPaths.contains(item.entry.path),
+                                                    isFocused: focusedIndex == item.index,
+                                                    favoriteStatus: getFavoriteStatus(item.entry),
+                                                    selectionMode: settings.selectionMode,
+                                                    size: settings.effectiveThumbnailSize,
+                                                    showProtectedFeedback: protectedFeedbackPath == item.entry.path,
+                                                    isLastViewed: item.index == lastViewedIndex  // #52
+                                                )
+                                                .id(item.index)
+                                                .onTapGesture(count: 2) {
+                                                    previewMode = .slideMode(index: item.index)
+                                                }
+                                                .onTapGesture(count: 1) {
+                                                    focusedIndex = item.index
+                                                    toggleSelection(item.entry)
+                                                }
+                                                .onAppear {
+                                                    loadThumbnailIfNeeded(for: item.entry)
+                                                }
+                                            }
+                                        } header: {
+                                            if let bookmark = section.bookmark {
+                                                BookmarkDividerView(name: bookmark.name, isRTL: isRTL)
+                                            }
                                         }
                                     }
                                 }
@@ -1227,6 +1233,59 @@ struct ThumbnailGridView: View {
         return indices
     }
     
+    /// #62: Build grid sections divided by bookmarks
+    private var gridSections: [GridSection] {
+        // Reference bookmarksVersion to trigger re-render
+        _ = bookmarksVersion
+        
+        let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
+        guard !entries.isEmpty else { return [] }
+        
+        // No bookmarks: single section with all entries
+        if bookmarks.isEmpty {
+            return [GridSection(
+                id: "section-all",
+                bookmark: nil,
+                items: entries.enumerated().map { GridSection.GridEntry(index: $0, entry: $1) }
+            )]
+        }
+        
+        // Get valid breakpoints sorted by imageIndex
+        let sortedBookmarks = bookmarks.filter { $0.imageIndex >= 0 && $0.imageIndex < entries.count }
+            .sorted { $0.imageIndex < $1.imageIndex }
+        let breakpoints = sortedBookmarks.map { $0.imageIndex }
+        
+        // If no valid breakpoints, single section
+        if breakpoints.isEmpty {
+            return [GridSection(
+                id: "section-all",
+                bookmark: nil,
+                items: entries.enumerated().map { GridSection.GridEntry(index: $0, entry: $1) }
+            )]
+        }
+        
+        // Build section ranges
+        var sections: [GridSection] = []
+        
+        // Entries before first bookmark (no header)
+        if let firstBreak = breakpoints.first, firstBreak > 0 {
+            let items = (0..<firstBreak).map { GridSection.GridEntry(index: $0, entry: entries[$0]) }
+            sections.append(GridSection(id: "section-pre", bookmark: nil, items: items))
+        }
+        
+        // Each bookmark starts a section
+        for (i, bookmark) in sortedBookmarks.enumerated() {
+            let start = bookmark.imageIndex
+            let end = i + 1 < sortedBookmarks.count ? sortedBookmarks[i + 1].imageIndex : entries.count
+            if start < end {
+                let items = (start..<end).map { GridSection.GridEntry(index: $0, entry: entries[$0]) }
+                sections.append(GridSection(id: "section-\(bookmark.id)", bookmark: bookmark, items: items))
+            }
+        }
+        
+        return sections
+    }
+    
     /// Check if entry is directly favorited (for delete protection)
     private func isDirectFavorite(_ entry: ImageEntry) -> Bool {
         // Reference favoritesVersion to create SwiftUI dependency
@@ -1334,6 +1393,60 @@ struct ThumbnailGridView: View {
             exportMessage = error.localizedDescription
             showExportError = true
         }
+    }
+}
+
+// MARK: - Grid Section for Bookmarks (#62)
+
+/// A section of the grid, divided by bookmarks
+struct GridSection: Identifiable {
+    let id: String  // Stable ID for SwiftUI
+    let bookmark: Bookmark?  // nil = first section (before any bookmark)
+    let items: [GridEntry]
+    
+    struct GridEntry: Identifiable {
+        let index: Int
+        let entry: ImageEntry
+        var id: UUID { entry.id }
+    }
+}
+
+/// Horizontal divider with bookmark name (#62)
+struct BookmarkDividerView: View {
+    let name: String
+    let isRTL: Bool
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            if isRTL {
+                line
+                label
+            } else {
+                label
+                line
+            }
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 2)
+    }
+    
+    private var label: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "bookmark.fill")
+                .font(.caption2)
+                .foregroundStyle(.orange)
+            Text(name)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+    
+    private var line: some View {
+        Rectangle()
+            .fill(Color.orange.opacity(0.4))
+            .frame(height: 1)
     }
 }
 
