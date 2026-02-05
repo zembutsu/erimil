@@ -53,6 +53,11 @@ enum KeyAction {
     case toggleThumbnailPosition
     case toggleControls
     
+    // Bookmarks (#62)
+    case addOrDeleteBookmark       // Shift+S
+    case navigateBookmark(NavigationDirection)  // Shift+A/D
+    case showBookmarkList          // Shift+B
+    
     // Mode transitions
     case close
     case enterSlideMode
@@ -285,6 +290,26 @@ struct NavigationHelper {
     static func lastIndex(totalCount: Int) -> Int {
         return max(0, totalCount - 1)
     }
+    
+    // MARK: - Bookmark Navigation (#62)
+    
+    /// Navigate to bookmark in a direction with RTL support
+    static func navigateBookmark(
+        direction: NavigationDirection,
+        from currentIndex: Int,
+        sourceURL: URL,
+        isRTL: Bool,
+        wrap: Bool = true
+    ) -> Int? {
+        let adjustedDirection = adjustForRTL(direction, isRTL: isRTL)
+        
+        switch adjustedDirection {
+        case .forward:
+            return CacheManager.shared.nextBookmarkIndex(for: sourceURL, from: currentIndex, wrap: wrap)
+        case .backward:
+            return CacheManager.shared.previousBookmarkIndex(for: sourceURL, from: currentIndex, wrap: wrap)
+        }
+    }
 }
 
 // MARK: - Key Code Constants
@@ -303,6 +328,7 @@ enum KeyCode {
     
     // Letter keys
     static let a: UInt16 = 0
+    static let b: UInt16 = 11   // #62: Bookmark list
     static let d: UInt16 = 2
     static let f: UInt16 = 3
     static let r: UInt16 = 15
@@ -415,6 +441,128 @@ struct CommonKeyParser {
             
         default:
             return nil
+        }
+    }
+}
+
+// MARK: - Bookmark Dialog Helper (#62)
+
+/// Utility for bookmark add/delete dialogs
+/// Uses NSAlert for consistency across all viewer modes
+struct BookmarkDialogHelper {
+    
+    /// Show add bookmark dialog
+    /// - Parameters:
+    ///   - defaultName: Default name (typically filename)
+    ///   - window: Parent window (nil for app-modal)
+    ///   - completion: Called with the name if confirmed, nil if cancelled
+    static func showAddDialog(
+        defaultName: String,
+        window: NSWindow? = nil,
+        completion: @escaping (String?) -> Void
+    ) {
+        let alert = NSAlert()
+        alert.messageText = "Add Bookmark (栞)"
+        alert.informativeText = "Enter a name for this bookmark:"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Add")
+        alert.addButton(withTitle: "Cancel")
+        
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        textField.stringValue = defaultName
+        textField.isEditable = true
+        textField.isSelectable = true
+        textField.selectText(nil)
+        alert.accessoryView = textField
+        
+        // Make text field first responder
+        alert.window.initialFirstResponder = textField
+        
+        let response: NSApplication.ModalResponse
+        if let window = window {
+            alert.beginSheetModal(for: window) { modalResponse in
+                if modalResponse == .alertFirstButtonReturn {
+                    let name = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    completion(name.isEmpty ? defaultName : name)
+                } else {
+                    completion(nil)
+                }
+            }
+            return
+        } else {
+            response = alert.runModal()
+        }
+        
+        if response == .alertFirstButtonReturn {
+            let name = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            completion(name.isEmpty ? defaultName : name)
+        } else {
+            completion(nil)
+        }
+    }
+    
+    /// Show delete bookmark confirmation dialog
+    /// - Parameters:
+    ///   - bookmarkName: Name of the bookmark to delete
+    ///   - window: Parent window (nil for app-modal)
+    ///   - completion: Called with true if confirmed
+    static func showDeleteDialog(
+        bookmarkName: String,
+        window: NSWindow? = nil,
+        completion: @escaping (Bool) -> Void
+    ) {
+        let alert = NSAlert()
+        alert.messageText = "Delete Bookmark"
+        alert.informativeText = "Delete bookmark \"\(bookmarkName)\"?"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        
+        let response: NSApplication.ModalResponse
+        if let window = window {
+            alert.beginSheetModal(for: window) { modalResponse in
+                completion(modalResponse == .alertFirstButtonReturn)
+            }
+            return
+        } else {
+            response = alert.runModal()
+        }
+        
+        completion(response == .alertFirstButtonReturn)
+    }
+    
+    /// Handle Shift+S action: add or delete bookmark at current index
+    /// - Parameters:
+    ///   - sourceURL: Source URL
+    ///   - imageIndex: Current image index
+    ///   - defaultName: Default bookmark name (filename)
+    ///   - window: Parent window for sheet dialog
+    ///   - onChanged: Called after bookmark is added or deleted
+    static func handleShiftS(
+        sourceURL: URL,
+        imageIndex: Int,
+        defaultName: String,
+        window: NSWindow? = nil,
+        onChanged: (() -> Void)? = nil
+    ) {
+        if let existing = CacheManager.shared.getBookmark(for: sourceURL, at: imageIndex) {
+            // Delete existing bookmark
+            showDeleteDialog(bookmarkName: existing.name, window: window) { confirmed in
+                if confirmed {
+                    CacheManager.shared.removeBookmark(for: sourceURL, id: existing.id)
+                    print("[Bookmark] Deleted '\(existing.name)' at index \(imageIndex)")
+                    onChanged?()
+                }
+            }
+        } else {
+            // Add new bookmark
+            showAddDialog(defaultName: defaultName, window: window) { name in
+                if let name = name {
+                    CacheManager.shared.addBookmark(for: sourceURL, at: imageIndex, name: name)
+                    print("[Bookmark] Added '\(name)' at index \(imageIndex)")
+                    onChanged?()
+                }
+            }
         }
     }
 }

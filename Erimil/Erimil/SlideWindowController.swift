@@ -390,8 +390,9 @@ class SlideWindowController {
     private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
         let hasControl = event.modifierFlags.contains(.control)
         let hasCommand = event.modifierFlags.contains(.command)
+        let hasShift = event.modifierFlags.contains(.shift)  // #62: Bookmark keys
         
-        print("[SlideWindowController] handleKeyEvent: keyCode=\(event.keyCode), ctrl=\(hasControl), cmd=\(hasCommand), favMode=\(isFavoritesMode)")
+        print("[SlideWindowController] handleKeyEvent: keyCode=\(event.keyCode), ctrl=\(hasControl), cmd=\(hasCommand), shift=\(hasShift), favMode=\(isFavoritesMode)")
         
         switch event.keyCode {
         // Escape - close fullscreen
@@ -506,7 +507,17 @@ class SlideWindowController {
             if let chars = event.charactersIgnoringModifiers?.lowercased() {
                 switch chars {
                 case "a":
-                    if hasControl {
+                    if hasShift {
+                        // #62: Shift+A = previous bookmark (RTL-aware)
+                        if let source = storedImageSource,
+                           let target = NavigationHelper.navigateBookmark(
+                            direction: .backward, from: currentIndex,
+                            sourceURL: source.url, isRTL: isRTL
+                           ) {
+                            print("[SlideWindowController] → Shift+A → bookmark at \(target)")
+                            jumpToIndex(target)
+                        }
+                    } else if hasControl {
                         // #72: Ctrl+A = jump to visual left (start in LTR, end in RTL)
                         let target = isRTL ? storedEntries.count - 1 : 0
                         print("[SlideWindowController] → Jump to \(isRTL ? "end" : "start") (Ctrl+A)")
@@ -522,7 +533,17 @@ class SlideWindowController {
                     return nil
                     
                 case "d":
-                    if hasControl {
+                    if hasShift {
+                        // #62: Shift+D = next bookmark (RTL-aware)
+                        if let source = storedImageSource,
+                           let target = NavigationHelper.navigateBookmark(
+                            direction: .forward, from: currentIndex,
+                            sourceURL: source.url, isRTL: isRTL
+                           ) {
+                            print("[SlideWindowController] → Shift+D → bookmark at \(target)")
+                            jumpToIndex(target)
+                        }
+                    } else if hasControl {
                         // #72: Ctrl+D = jump to visual right (end in LTR, start in RTL)
                         let target = isRTL ? 0 : storedEntries.count - 1
                         print("[SlideWindowController] → Jump to \(isRTL ? "start" : "end") (Ctrl+D)")
@@ -552,9 +573,21 @@ class SlideWindowController {
                     }
                     return nil
                     
-                // S017: S key (same as D for nav, Ctrl+S = next source)
+                // S017: S key (same as D for nav, Ctrl+S = next source, #62: Shift+S = bookmark)
                 case "s":
-                    if hasControl {
+                    if hasShift {
+                        // #62: Shift+S = add/delete bookmark at current position
+                        if let source = storedImageSource, currentIndex < storedEntries.count {
+                            let entry = storedEntries[currentIndex]
+                            let defaultName = URL(fileURLWithPath: entry.path).deletingPathExtension().lastPathComponent
+                            BookmarkDialogHelper.handleShiftS(
+                                sourceURL: source.url,
+                                imageIndex: currentIndex,
+                                defaultName: defaultName,
+                                window: slideWindow
+                            )
+                        }
+                    } else if hasControl {
                         print("[SlideWindowController] → Next source (Ctrl+S)")
                         storedOnNextSource?()
                     } else if isFavoritesMode {

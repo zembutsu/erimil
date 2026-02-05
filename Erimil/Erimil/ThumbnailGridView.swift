@@ -123,6 +123,8 @@ struct ThumbnailGridView: View {
     @State private var contentHashes: [String: String] = [:]
     // Trigger for favorite state changes (increment to force re-render)
     @State private var favoritesVersion: Int = 0
+    // #62: Trigger for bookmark state changes
+    @State private var bookmarksVersion: Int = 0
     // Temporary feedback when trying to select protected item
     @State private var protectedFeedbackPath: String? = nil
 
@@ -930,9 +932,19 @@ struct ThumbnailGridView: View {
         
         switch characters {
         // WASD keys
-        // A - previous image (RTL-aware), Ctrl+A - jump to start/end (RTL-aware)
+        // A - previous image (RTL-aware), Ctrl+A - jump to start/end, #62: Shift+A - prev bookmark
         case "a":
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.shift) {
+                // #62: Shift+A = previous bookmark (RTL-aware)
+                if let target = NavigationHelper.navigateBookmark(
+                    direction: .backward, from: currentIndex,
+                    sourceURL: imageSource.url, isRTL: isRTL,
+                    wrap: settings.loopWithinSource
+                ) {
+                    focusedIndex = target
+                    print("[Filer] Shift+A → bookmark at \(target)")
+                }
+            } else if event.modifierFlags.contains(.control) {
                 // #72: Ctrl+A = jump to start (RTL: end)
                 let target = isRTL ? entries.count - 1 : 0
                 focusedIndex = target
@@ -942,9 +954,19 @@ struct ThumbnailGridView: View {
             }
             return true
 
-        // D - next image (RTL-aware), Ctrl+D - jump to end/start (RTL-aware)
+        // D - next image (RTL-aware), Ctrl+D - jump to end/start, #62: Shift+D - next bookmark
         case "d":
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.shift) {
+                // #62: Shift+D = next bookmark (RTL-aware)
+                if let target = NavigationHelper.navigateBookmark(
+                    direction: .forward, from: currentIndex,
+                    sourceURL: imageSource.url, isRTL: isRTL,
+                    wrap: settings.loopWithinSource
+                ) {
+                    focusedIndex = target
+                    print("[Filer] Shift+D → bookmark at \(target)")
+                }
+            } else if event.modifierFlags.contains(.control) {
                 // #72: Ctrl+D = jump to end (RTL: start)
                 let target = isRTL ? 0 : entries.count - 1
                 focusedIndex = target
@@ -961,9 +983,20 @@ struct ThumbnailGridView: View {
                 moveFocus(by: -columnCount)
             }
             return true
-        // S017: S - row down, Ctrl+S - next source
+        // S017: S - row down, Ctrl+S - next source, #62: Shift+S - bookmark
         case "s":
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.shift) {
+                // #62: Shift+S = add/delete bookmark at current position
+                let entry = entries[currentIndex]
+                let defaultName = URL(fileURLWithPath: entry.path).deletingPathExtension().lastPathComponent
+                BookmarkDialogHelper.handleShiftS(
+                    sourceURL: imageSource.url,
+                    imageIndex: currentIndex,
+                    defaultName: defaultName,
+                    window: NSApp.keyWindow,
+                    onChanged: { bookmarksVersion += 1 }
+                )
+            } else if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
                 moveFocus(by: columnCount)
@@ -2423,9 +2456,18 @@ struct ViewerView: View {
             onClose()
             return true
             
-        // A - previous (Ctrl+A = jump to start/end, RTL-aware)
+        // A - previous (Ctrl+A = jump to start/end, #62: Shift+A = prev bookmark)
         case "a":
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.shift) {
+                // #62: Shift+A = previous bookmark (RTL-aware)
+                if let target = NavigationHelper.navigateBookmark(
+                    direction: .backward, from: viewerIndex,
+                    sourceURL: imageSource.url, isRTL: isRTL
+                ) {
+                    navigateTo(target)
+                    print("[ViewerView] Shift+A → bookmark at \(target)")
+                }
+            } else if event.modifierFlags.contains(.control) {
                 // #72: Ctrl+A = jump to start (RTL: end)
                 let target = isRTL ? entries.count - 1 : 0
                 navigateTo(target)
@@ -2436,9 +2478,18 @@ struct ViewerView: View {
             }
             return true
             
-        // D - next (Ctrl+D = jump to end/start, RTL-aware)
+        // D - next (Ctrl+D = jump to end/start, #62: Shift+D = next bookmark)
         case "d":
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.shift) {
+                // #62: Shift+D = next bookmark (RTL-aware)
+                if let target = NavigationHelper.navigateBookmark(
+                    direction: .forward, from: viewerIndex,
+                    sourceURL: imageSource.url, isRTL: isRTL
+                ) {
+                    navigateTo(target)
+                    print("[ViewerView] Shift+D → bookmark at \(target)")
+                }
+            } else if event.modifierFlags.contains(.control) {
                 // #72: Ctrl+D = jump to end (RTL: start)
                 let target = isRTL ? 0 : entries.count - 1
                 navigateTo(target)
@@ -2461,8 +2512,20 @@ struct ViewerView: View {
             
         // S017: S - next (Ctrl+S = next source)
         // #72: Now RTL-aware (unified with Slide Mode)
+        // #62: Shift+S = bookmark
         case "s":
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.shift) {
+                // #62: Shift+S = add/delete bookmark at current position
+                if let entry = currentEntry {
+                    let defaultName = URL(fileURLWithPath: entry.path).deletingPathExtension().lastPathComponent
+                    BookmarkDialogHelper.handleShiftS(
+                        sourceURL: imageSource.url,
+                        imageIndex: viewerIndex,
+                        defaultName: defaultName,
+                        window: NSApp.keyWindow
+                    )
+                }
+            } else if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
                 isRTL ? goToPrevious() : goToNext()
