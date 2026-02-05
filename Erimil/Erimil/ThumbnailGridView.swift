@@ -293,7 +293,12 @@ struct ThumbnailGridView: View {
                                             }
                                         } header: {
                                             if let bookmark = section.bookmark {
-                                                BookmarkDividerView(name: bookmark.name, isRTL: isRTL)
+                                                BookmarkDividerView(
+                                                    bookmark: bookmark,
+                                                    sourceURL: imageSource.url,
+                                                    isRTL: isRTL,
+                                                    onNameChanged: { bookmarksVersion += 1 }
+                                                )
                                             }
                                         }
                                     }
@@ -1412,9 +1417,16 @@ struct GridSection: Identifiable {
 }
 
 /// Horizontal divider with bookmark name (#62)
+/// Click section name to edit inline (Phase 4)
 struct BookmarkDividerView: View {
-    let name: String
+    let bookmark: Bookmark
+    let sourceURL: URL
     let isRTL: Bool
+    var onNameChanged: (() -> Void)?
+    
+    @State private var isEditing: Bool = false
+    @State private var editingName: String = ""
+    @FocusState private var textFieldFocused: Bool
     
     var body: some View {
         HStack(spacing: 6) {
@@ -1430,16 +1442,40 @@ struct BookmarkDividerView: View {
         .padding(.horizontal, 2)
     }
     
+    @ViewBuilder
     private var label: some View {
         HStack(spacing: 4) {
             Image(systemName: "bookmark.fill")
                 .font(.caption2)
                 .foregroundStyle(.orange)
-            Text(name)
+            
+            if isEditing {
+                TextField("Section name", text: $editingName)
                 .font(.caption)
                 .fontWeight(.medium)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .textFieldStyle(.plain)
+                .frame(maxWidth: 200)
+                .focused($textFieldFocused)
+                .onSubmit {
+                    commitEdit()
+                }
+                .onExitCommand {
+                    cancelEdit()
+                }
+                .onAppear {
+                    textFieldFocused = true
+                }
+            } else {
+                Text(bookmark.name)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .onTapGesture {
+                        startEdit()
+                    }
+                    .help("Click to edit section name")
+            }
         }
     }
     
@@ -1447,6 +1483,25 @@ struct BookmarkDividerView: View {
         Rectangle()
             .fill(Color.orange.opacity(0.4))
             .frame(height: 1)
+    }
+    
+    private func startEdit() {
+        editingName = bookmark.name
+        isEditing = true
+    }
+    
+    private func commitEdit() {
+        let trimmed = editingName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty && trimmed != bookmark.name {
+            CacheManager.shared.updateBookmarkName(for: sourceURL, id: bookmark.id, name: trimmed)
+            print("[BookmarkDivider] Renamed '\(bookmark.name)' → '\(trimmed)'")
+            onNameChanged?()
+        }
+        isEditing = false
+    }
+    
+    private func cancelEdit() {
+        isEditing = false
     }
 }
 
