@@ -9,6 +9,7 @@ A macOS application for visual preview and selective extraction of images from Z
 - **Folder Support**: Also works with regular image folders
 - **Keyboard-Driven**: Navigate and select with keyboard shortcuts
 - **Favorites System**: Mark important images with ★ for protection
+- **Bookmarks (栞)**: Named position markers for quick navigation within sources
 - **Slide Mode**: Fullscreen viewing with Favorites Mode for quick navigation
 - **Spread View**: Two-page display for books with RTL support
 - **PDF Support**: View PDF documents page by page
@@ -53,6 +54,9 @@ All navigation keys are **RTL-aware** - they follow "physical key position = vis
 | Ctrl+Z / Ctrl+C | Jump to first / last favorite |
 | Cmd+1/2/3/4/5 | Jump to 0% / 25% / 50% / 75% / 100% |
 | Ctrl+R | Toggle reading direction (LTR ↔ RTL) |
+| Shift+S | Add / delete bookmark (栞) |
+| Shift+A / Shift+D | Previous / Next bookmark |
+| Shift+B | Bookmark list overlay |
 
 #### Filer View (Thumbnail Grid)
 
@@ -100,6 +104,9 @@ All navigation keys are **RTL-aware** - they follow "physical key position = vis
 | Esc | Exit fullscreen | Exit fullscreen |
 | Ctrl+W/S or Ctrl+↑/↓ | Previous/Next source | Same |
 | Ctrl+T | Cycle thumbnail position | Same |
+| Shift+S | Add/delete bookmark (栞) | Same |
+| Shift+A / Shift+D | Previous/Next bookmark | Same |
+| Shift+B | Bookmark list overlay | Same |
 | Space | Toggle controls | Toggle controls |
 
 ### Sidebar Navigation
@@ -181,6 +188,17 @@ photos_opt_opt.zip (20 images) = Best Selection
 
 Each pass refines your selection, with ☆ showing what you liked before.
 
+## Bookmarks (栞) System
+
+Bookmarks are named position markers within a source, allowing quick navigation to important pages.
+
+- **Shift+S**: Add a bookmark at current position (with custom name) or delete existing bookmark
+- **Shift+A/D**: Navigate between bookmarks (wraps around, RTL-aware)
+- **Shift+B**: Open bookmark list overlay for browsing and jumping
+- **Grid View**: Bookmark dividers appear as section headers between thumbnails
+
+Bookmarks are stored per-source and persist across sessions. Mnemonic: Shift = Shiori (栞).
+
 ## Data Storage
 
 Erimil stores cache and favorites in the sandboxed container:
@@ -190,6 +208,7 @@ Erimil stores cache and favorites in the sandboxed container:
 ├── cache/                      # Thumbnail cache (disk)
 ├── index.json                  # Path hash → content hash mapping
 ├── favorites_hybrid.json       # Favorites data (hybrid system)
+├── bookmarks.json              # Per-source bookmarks (栞)
 └── last_folder_bookmark.data   # Security-scoped bookmark for folder restoration
 ```
 
