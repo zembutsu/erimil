@@ -123,6 +123,11 @@ struct ThumbnailGridView: View {
     @State private var contentHashes: [String: String] = [:]
     // Trigger for favorite state changes (increment to force re-render)
     @State private var favoritesVersion: Int = 0
+    // #62: Trigger for bookmark state changes
+    @State private var bookmarksVersion: Int = 0
+    // #62 Phase 5: Bookmark list overlay state
+    @State private var showBookmarkList: Bool = false
+    @State private var bookmarkListCursor: Int = 0
     // Temporary feedback when trying to select protected item
     @State private var protectedFeedbackPath: String? = nil
 
@@ -262,31 +267,42 @@ struct ThumbnailGridView: View {
                     ZStack {
                         ScrollViewReader { scrollProxy in
                             ScrollView {
-                                LazyVGrid(columns: columns, spacing: 8) {
-                                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                                        ThumbnailCell(
-                                            entry: entry,
-                                            thumbnail: thumbnails[entry.path],
-                                            isSelected: selectedPaths.contains(entry.path),
-                                            isFocused: focusedIndex == index,
-                                            favoriteStatus: getFavoriteStatus(entry),
-                                            selectionMode: settings.selectionMode,
-                                            size: settings.effectiveThumbnailSize,
-                                            showProtectedFeedback: protectedFeedbackPath == entry.path,
-                                            isLastViewed: index == lastViewedIndex  // #52
-                                        )
-                                        .id(index)
-                                        .onTapGesture(count: 2) {
-                                            //openPreview(at: index)
-                                            // S010: Double-click opens Slide Mode directly
-                                            previewMode = .slideMode(index: index)
-                                        }
-                                        .onTapGesture(count: 1) {
-                                            focusedIndex = index
-                                            toggleSelection(entry)
-                                        }
-                                        .onAppear {
-                                            loadThumbnailIfNeeded(for: entry)
+                                LazyVGrid(columns: columns, spacing: 8, pinnedViews: [.sectionHeaders]) {
+                                    ForEach(gridSections) { section in
+                                        Section {
+                                            ForEach(section.items) { item in
+                                                ThumbnailCell(
+                                                    entry: item.entry,
+                                                    thumbnail: thumbnails[item.entry.path],
+                                                    isSelected: selectedPaths.contains(item.entry.path),
+                                                    isFocused: focusedIndex == item.index,
+                                                    favoriteStatus: getFavoriteStatus(item.entry),
+                                                    selectionMode: settings.selectionMode,
+                                                    size: settings.effectiveThumbnailSize,
+                                                    showProtectedFeedback: protectedFeedbackPath == item.entry.path,
+                                                    isLastViewed: item.index == lastViewedIndex  // #52
+                                                )
+                                                .id(item.index)
+                                                .onTapGesture(count: 2) {
+                                                    previewMode = .slideMode(index: item.index)
+                                                }
+                                                .onTapGesture(count: 1) {
+                                                    focusedIndex = item.index
+                                                    toggleSelection(item.entry)
+                                                }
+                                                .onAppear {
+                                                    loadThumbnailIfNeeded(for: item.entry)
+                                                }
+                                            }
+                                        } header: {
+                                            if let bookmark = section.bookmark {
+                                                BookmarkDividerView(
+                                                    bookmark: bookmark,
+                                                    sourceURL: imageSource.url,
+                                                    isRTL: isRTL,
+                                                    onNameChanged: { bookmarksVersion += 1 }
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -328,6 +344,21 @@ struct ThumbnailGridView: View {
             if !selectedPaths.isEmpty {
                 Divider()
                 footerView
+            }
+        }
+        // #62 Phase 5: Bookmark list overlay
+        .overlay {
+            if showBookmarkList {
+                BookmarkListOverlayView(
+                    bookmarks: CacheManager.shared.getBookmarks(for: imageSource.url),
+                    selectedCursor: bookmarkListCursor,
+                    onSelect: { imageIndex in
+                        showBookmarkList = false
+                        focusedIndex = min(imageIndex, entries.count - 1)
+                        print("[Filer] Bookmark list click → jump to \(imageIndex)")
+                    },
+                    onClose: { showBookmarkList = false }
+                )
             }
         }
         .onChange(of: imageSource.url) { oldURL, newURL in
@@ -847,6 +878,25 @@ struct ThumbnailGridView: View {
     }
     
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
+        // #62 Phase 5: Delegate keys to bookmark list overlay when showing
+        if showBookmarkList {
+            let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
+            let action = BookmarkListKeyHandler.handle(event: event, bookmarks: bookmarks, cursor: bookmarkListCursor)
+            switch action {
+            case .moveCursor(let newCursor):
+                bookmarkListCursor = newCursor
+            case .selectAndClose(let imageIndex):
+                showBookmarkList = false
+                focusedIndex = min(imageIndex, entries.count - 1)
+                print("[Filer] Bookmark list → jump to \(imageIndex)")
+            case .close:
+                showBookmarkList = false
+            case .consumed:
+                break
+            }
+            return true
+        }
+        
         guard !entries.isEmpty else { return false }
         
         // Initialize focus if not set
@@ -930,9 +980,19 @@ struct ThumbnailGridView: View {
         
         switch characters {
         // WASD keys
-        // A - previous image (RTL-aware), Ctrl+A - jump to start/end (RTL-aware)
+        // A - previous image (RTL-aware), Ctrl+A - jump to start/end, #62: Shift+A - prev bookmark
         case "a":
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.shift) {
+                // #62: Shift+A = previous bookmark (RTL-aware)
+                if let target = NavigationHelper.navigateBookmark(
+                    direction: .backward, from: currentIndex,
+                    sourceURL: imageSource.url, isRTL: isRTL,
+                    wrap: settings.loopWithinSource
+                ) {
+                    focusedIndex = target
+                    print("[Filer] Shift+A → bookmark at \(target)")
+                }
+            } else if event.modifierFlags.contains(.control) {
                 // #72: Ctrl+A = jump to start (RTL: end)
                 let target = isRTL ? entries.count - 1 : 0
                 focusedIndex = target
@@ -942,9 +1002,19 @@ struct ThumbnailGridView: View {
             }
             return true
 
-        // D - next image (RTL-aware), Ctrl+D - jump to end/start (RTL-aware)
+        // D - next image (RTL-aware), Ctrl+D - jump to end/start, #62: Shift+D - next bookmark
         case "d":
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.shift) {
+                // #62: Shift+D = next bookmark (RTL-aware)
+                if let target = NavigationHelper.navigateBookmark(
+                    direction: .forward, from: currentIndex,
+                    sourceURL: imageSource.url, isRTL: isRTL,
+                    wrap: settings.loopWithinSource
+                ) {
+                    focusedIndex = target
+                    print("[Filer] Shift+D → bookmark at \(target)")
+                }
+            } else if event.modifierFlags.contains(.control) {
                 // #72: Ctrl+D = jump to end (RTL: start)
                 let target = isRTL ? 0 : entries.count - 1
                 focusedIndex = target
@@ -961,12 +1031,40 @@ struct ThumbnailGridView: View {
                 moveFocus(by: -columnCount)
             }
             return true
-        // S017: S - row down, Ctrl+S - next source
+        // S017: S - row down, Ctrl+S - next source, #62: Shift+S - bookmark
         case "s":
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.shift) {
+                // #62: Shift+S = add/delete bookmark at current position
+                let entry = entries[currentIndex]
+                let defaultName = URL(fileURLWithPath: entry.path).deletingPathExtension().lastPathComponent
+                BookmarkDialogHelper.handleShiftS(
+                    sourceURL: imageSource.url,
+                    imageIndex: currentIndex,
+                    defaultName: defaultName,
+                    window: NSApp.keyWindow,
+                    onChanged: { bookmarksVersion += 1 }
+                )
+            } else if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
                 moveFocus(by: columnCount)
+            }
+            return true
+        
+        // #62 Phase 5: Shift+B = toggle bookmark list overlay
+        case "b":
+            if event.modifierFlags.contains(.shift) {
+                let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
+                showBookmarkList = true
+                // Set cursor to nearest bookmark to current position
+                if let nearest = bookmarks.enumerated().min(by: {
+                    abs($0.element.imageIndex - currentIndex) < abs($1.element.imageIndex - currentIndex)
+                }) {
+                    bookmarkListCursor = nearest.offset
+                } else {
+                    bookmarkListCursor = 0
+                }
+                print("[Filer] Shift+B → bookmark list (\(bookmarks.count) bookmarks)")
             }
             return true
         
@@ -1194,6 +1292,59 @@ struct ThumbnailGridView: View {
         return indices
     }
     
+    /// #62: Build grid sections divided by bookmarks
+    private var gridSections: [GridSection] {
+        // Reference bookmarksVersion to trigger re-render
+        _ = bookmarksVersion
+        
+        let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
+        guard !entries.isEmpty else { return [] }
+        
+        // No bookmarks: single section with all entries
+        if bookmarks.isEmpty {
+            return [GridSection(
+                id: "section-all",
+                bookmark: nil,
+                items: entries.enumerated().map { GridSection.GridEntry(index: $0, entry: $1) }
+            )]
+        }
+        
+        // Get valid breakpoints sorted by imageIndex
+        let sortedBookmarks = bookmarks.filter { $0.imageIndex >= 0 && $0.imageIndex < entries.count }
+            .sorted { $0.imageIndex < $1.imageIndex }
+        let breakpoints = sortedBookmarks.map { $0.imageIndex }
+        
+        // If no valid breakpoints, single section
+        if breakpoints.isEmpty {
+            return [GridSection(
+                id: "section-all",
+                bookmark: nil,
+                items: entries.enumerated().map { GridSection.GridEntry(index: $0, entry: $1) }
+            )]
+        }
+        
+        // Build section ranges
+        var sections: [GridSection] = []
+        
+        // Entries before first bookmark (no header)
+        if let firstBreak = breakpoints.first, firstBreak > 0 {
+            let items = (0..<firstBreak).map { GridSection.GridEntry(index: $0, entry: entries[$0]) }
+            sections.append(GridSection(id: "section-pre", bookmark: nil, items: items))
+        }
+        
+        // Each bookmark starts a section
+        for (i, bookmark) in sortedBookmarks.enumerated() {
+            let start = bookmark.imageIndex
+            let end = i + 1 < sortedBookmarks.count ? sortedBookmarks[i + 1].imageIndex : entries.count
+            if start < end {
+                let items = (start..<end).map { GridSection.GridEntry(index: $0, entry: entries[$0]) }
+                sections.append(GridSection(id: "section-\(bookmark.id)", bookmark: bookmark, items: items))
+            }
+        }
+        
+        return sections
+    }
+    
     /// Check if entry is directly favorited (for delete protection)
     private func isDirectFavorite(_ entry: ImageEntry) -> Bool {
         // Reference favoritesVersion to create SwiftUI dependency
@@ -1301,6 +1452,110 @@ struct ThumbnailGridView: View {
             exportMessage = error.localizedDescription
             showExportError = true
         }
+    }
+}
+
+// MARK: - Grid Section for Bookmarks (#62)
+
+/// A section of the grid, divided by bookmarks
+struct GridSection: Identifiable {
+    let id: String  // Stable ID for SwiftUI
+    let bookmark: Bookmark?  // nil = first section (before any bookmark)
+    let items: [GridEntry]
+    
+    struct GridEntry: Identifiable {
+        let index: Int
+        let entry: ImageEntry
+        var id: UUID { entry.id }
+    }
+}
+
+/// Horizontal divider with bookmark name (#62)
+/// Click section name to edit inline (Phase 4)
+struct BookmarkDividerView: View {
+    let bookmark: Bookmark
+    let sourceURL: URL
+    let isRTL: Bool
+    var onNameChanged: (() -> Void)?
+    
+    @State private var isEditing: Bool = false
+    @State private var editingName: String = ""
+    @FocusState private var textFieldFocused: Bool
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            if isRTL {
+                line
+                label
+            } else {
+                label
+                line
+            }
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 2)
+    }
+    
+    @ViewBuilder
+    private var label: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "bookmark.fill")
+                .font(.caption2)
+                .foregroundStyle(.orange)
+            
+            if isEditing {
+                TextField("Section name", text: $editingName)
+                .font(.caption)
+                .fontWeight(.medium)
+                .textFieldStyle(.plain)
+                .frame(maxWidth: 200)
+                .focused($textFieldFocused)
+                .onSubmit {
+                    commitEdit()
+                }
+                .onExitCommand {
+                    cancelEdit()
+                }
+                .onAppear {
+                    textFieldFocused = true
+                }
+            } else {
+                Text(bookmark.name)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .onTapGesture {
+                        startEdit()
+                    }
+                    .help("Click to edit section name")
+            }
+        }
+    }
+    
+    private var line: some View {
+        Rectangle()
+            .fill(Color.orange.opacity(0.4))
+            .frame(height: 1)
+    }
+    
+    private func startEdit() {
+        editingName = bookmark.name
+        isEditing = true
+    }
+    
+    private func commitEdit() {
+        let trimmed = editingName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty && trimmed != bookmark.name {
+            CacheManager.shared.updateBookmarkName(for: sourceURL, id: bookmark.id, name: trimmed)
+            print("[BookmarkDivider] Renamed '\(bookmark.name)' → '\(trimmed)'")
+            onNameChanged?()
+        }
+        isEditing = false
+    }
+    
+    private func cancelEdit() {
+        isEditing = false
     }
 }
 
@@ -1950,6 +2205,10 @@ struct ViewerView: View {
     @State private var previousViewerIndex: Int = 0
     @State private var currentSourceURL: URL?
     
+    // #62 Phase 5: Bookmark list overlay state
+    @State private var showBookmarkList: Bool = false
+    @State private var bookmarkListCursor: Int = 0
+    
     /// #54: Effective reading direction for this source
     private var effectiveReadingDirection: ReadingDirection {
         CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
@@ -2032,6 +2291,20 @@ struct ViewerView: View {
                 handleKeyEvent(event)
             }
             .allowsHitTesting(false)
+            
+            // #62 Phase 5: Bookmark list overlay
+            if showBookmarkList {
+                BookmarkListOverlayView(
+                    bookmarks: CacheManager.shared.getBookmarks(for: imageSource.url),
+                    selectedCursor: bookmarkListCursor,
+                    onSelect: { imageIndex in
+                        showBookmarkList = false
+                        navigateTo(min(imageIndex, entries.count - 1))
+                        print("[ViewerView] Bookmark list click → jump to \(imageIndex)")
+                    },
+                    onClose: { showBookmarkList = false }
+                )
+            }
         }
         .clipped()
         .onAppear {
@@ -2344,6 +2617,25 @@ struct ViewerView: View {
     // MARK: - Key Event Handling (#67: Spread-aware navigation)
     
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
+        // #62 Phase 5: Delegate keys to bookmark list overlay when showing
+        if showBookmarkList {
+            let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
+            let action = BookmarkListKeyHandler.handle(event: event, bookmarks: bookmarks, cursor: bookmarkListCursor)
+            switch action {
+            case .moveCursor(let newCursor):
+                bookmarkListCursor = newCursor
+            case .selectAndClose(let imageIndex):
+                showBookmarkList = false
+                navigateTo(min(imageIndex, entries.count - 1))
+                print("[ViewerView] Bookmark list → jump to \(imageIndex)")
+            case .close:
+                showBookmarkList = false
+            case .consumed:
+                break
+            }
+            return true
+        }
+        
         switch event.keyCode {
         // Escape
         case 53:
@@ -2423,9 +2715,18 @@ struct ViewerView: View {
             onClose()
             return true
             
-        // A - previous (Ctrl+A = jump to start/end, RTL-aware)
+        // A - previous (Ctrl+A = jump to start/end, #62: Shift+A = prev bookmark)
         case "a":
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.shift) {
+                // #62: Shift+A = previous bookmark (RTL-aware)
+                if let target = NavigationHelper.navigateBookmark(
+                    direction: .backward, from: viewerIndex,
+                    sourceURL: imageSource.url, isRTL: isRTL
+                ) {
+                    navigateTo(target)
+                    print("[ViewerView] Shift+A → bookmark at \(target)")
+                }
+            } else if event.modifierFlags.contains(.control) {
                 // #72: Ctrl+A = jump to start (RTL: end)
                 let target = isRTL ? entries.count - 1 : 0
                 navigateTo(target)
@@ -2436,9 +2737,18 @@ struct ViewerView: View {
             }
             return true
             
-        // D - next (Ctrl+D = jump to end/start, RTL-aware)
+        // D - next (Ctrl+D = jump to end/start, #62: Shift+D = next bookmark)
         case "d":
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.shift) {
+                // #62: Shift+D = next bookmark (RTL-aware)
+                if let target = NavigationHelper.navigateBookmark(
+                    direction: .forward, from: viewerIndex,
+                    sourceURL: imageSource.url, isRTL: isRTL
+                ) {
+                    navigateTo(target)
+                    print("[ViewerView] Shift+D → bookmark at \(target)")
+                }
+            } else if event.modifierFlags.contains(.control) {
                 // #72: Ctrl+D = jump to end (RTL: start)
                 let target = isRTL ? 0 : entries.count - 1
                 navigateTo(target)
@@ -2461,11 +2771,39 @@ struct ViewerView: View {
             
         // S017: S - next (Ctrl+S = next source)
         // #72: Now RTL-aware (unified with Slide Mode)
+        // #62: Shift+S = bookmark
         case "s":
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.shift) {
+                // #62: Shift+S = add/delete bookmark at current position
+                if let entry = currentEntry {
+                    let defaultName = URL(fileURLWithPath: entry.path).deletingPathExtension().lastPathComponent
+                    BookmarkDialogHelper.handleShiftS(
+                        sourceURL: imageSource.url,
+                        imageIndex: viewerIndex,
+                        defaultName: defaultName,
+                        window: NSApp.keyWindow
+                    )
+                }
+            } else if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
                 isRTL ? goToPrevious() : goToNext()
+            }
+            return true
+        
+        // #62 Phase 5: Shift+B = toggle bookmark list overlay
+        case "b":
+            if event.modifierFlags.contains(.shift) {
+                let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
+                showBookmarkList = true
+                if let nearest = bookmarks.enumerated().min(by: {
+                    abs($0.element.imageIndex - viewerIndex) < abs($1.element.imageIndex - viewerIndex)
+                }) {
+                    bookmarkListCursor = nearest.offset
+                } else {
+                    bookmarkListCursor = 0
+                }
+                print("[ViewerView] Shift+B → bookmark list (\(bookmarks.count) bookmarks)")
             }
             return true
         

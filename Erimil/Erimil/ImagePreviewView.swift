@@ -32,6 +32,10 @@ struct ImagePreviewView: View {
     @State private var currentIndex: Int = 0
     @State private var spreadUpdateTrigger: Bool = false  // #55: For triggering view update
     
+    // #62 Phase 5: Bookmark list overlay state
+    @State private var showBookmarkList: Bool = false
+    @State private var bookmarkListCursor: Int = 0
+    
     // #55: Check if spread mode is enabled
     private var isSpreadEnabled: Bool {
         AppSettings.shared.isSpreadModeEnabled
@@ -73,9 +77,56 @@ struct ImagePreviewView: View {
                 onJumpToFirstFavorite: { jumpToFirstFavorite() },  // #72: Ctrl+Z
                 onJumpToLastFavorite: { jumpToLastFavorite() },  // #72: Ctrl+C
                 totalCount: entries.count,  // #72
-                isRTL: isRTL  // #72: RTL support
+                isRTL: isRTL,  // #72: RTL support
+                onAddOrDeleteBookmark: { handleBookmarkAction() },  // #62
+                onPreviousBookmark: { navigateBookmark(.backward) },  // #62
+                onNextBookmark: { navigateBookmark(.forward) },  // #62
+                // #62 Phase 5: Bookmark list
+                showBookmarkList: showBookmarkList,
+                onToggleBookmarkList: {
+                    let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
+                    showBookmarkList = true
+                    if let nearest = bookmarks.enumerated().min(by: {
+                        abs($0.element.imageIndex - currentIndex) < abs($1.element.imageIndex - currentIndex)
+                    }) {
+                        bookmarkListCursor = nearest.offset
+                    } else {
+                        bookmarkListCursor = 0
+                    }
+                    print("[ImagePreviewView] Shift+B → bookmark list (\(bookmarks.count) bookmarks)")
+                },
+                onBookmarkListKeyEvent: { event in
+                    let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
+                    let action = BookmarkListKeyHandler.handle(event: event, bookmarks: bookmarks, cursor: bookmarkListCursor)
+                    switch action {
+                    case .moveCursor(let newCursor):
+                        bookmarkListCursor = newCursor
+                    case .selectAndClose(let imageIndex):
+                        showBookmarkList = false
+                        currentIndex = min(imageIndex, entries.count - 1)
+                        print("[ImagePreviewView] Bookmark list → jump to \(imageIndex)")
+                    case .close:
+                        showBookmarkList = false
+                    case .consumed:
+                        break
+                    }
+                }
             )
             .allowsHitTesting(false)
+            
+            // #62 Phase 5: Bookmark list overlay
+            if showBookmarkList {
+                BookmarkListOverlayView(
+                    bookmarks: CacheManager.shared.getBookmarks(for: imageSource.url),
+                    selectedCursor: bookmarkListCursor,
+                    onSelect: { imageIndex in
+                        showBookmarkList = false
+                        currentIndex = min(imageIndex, entries.count - 1)
+                        print("[ImagePreviewView] Bookmark list click → jump to \(imageIndex)")
+                    },
+                    onClose: { showBookmarkList = false }
+                )
+            }
         }
         .frame(minWidth: 600, minHeight: 500)
         .onAppear {
@@ -291,6 +342,30 @@ struct ImagePreviewView: View {
             print("[ImagePreviewView] → jumped to last favorite: \(lastFav)")
         }
     }
+    
+    // #62: Handle Shift+S bookmark add/delete
+    private func handleBookmarkAction() {
+        guard currentIndex >= 0 && currentIndex < entries.count else { return }
+        let entry = entries[currentIndex]
+        let defaultName = URL(fileURLWithPath: entry.path).deletingPathExtension().lastPathComponent
+        BookmarkDialogHelper.handleShiftS(
+            sourceURL: imageSource.url,
+            imageIndex: currentIndex,
+            defaultName: defaultName,
+            window: NSApp.keyWindow
+        )
+    }
+    
+    // #62: Navigate to bookmark (Shift+A/D)
+    private func navigateBookmark(_ direction: NavigationDirection) {
+        if let target = NavigationHelper.navigateBookmark(
+            direction: direction, from: currentIndex,
+            sourceURL: imageSource.url, isRTL: isRTL
+        ) {
+            currentIndex = target
+            print("[ImagePreviewView] → bookmark at \(target)")
+        }
+    }
 }
 
 // MARK: - Key Event Handler for Quick Look
@@ -308,6 +383,13 @@ struct QuickLookKeyHandler: NSViewRepresentable {
     let onJumpToLastFavorite: () -> Void  // #72: Ctrl+C
     let totalCount: Int  // #72
     let isRTL: Bool  // #72: RTL support
+    let onAddOrDeleteBookmark: () -> Void  // #62: Shift+S bookmark
+    let onPreviousBookmark: () -> Void  // #62: Shift+A
+    let onNextBookmark: () -> Void  // #62: Shift+D
+    // #62 Phase 5: Bookmark list
+    let showBookmarkList: Bool
+    let onToggleBookmarkList: () -> Void
+    let onBookmarkListKeyEvent: (NSEvent) -> Void
     
     func makeNSView(context: Context) -> QuickLookKeyView {
         let view = QuickLookKeyView()
@@ -323,6 +405,12 @@ struct QuickLookKeyHandler: NSViewRepresentable {
         view.onJumpToLastFavorite = onJumpToLastFavorite  // #72
         view.totalCount = totalCount  // #72
         view.isRTL = isRTL  // #72
+        view.onAddOrDeleteBookmark = onAddOrDeleteBookmark  // #62
+        view.onPreviousBookmark = onPreviousBookmark  // #62
+        view.onNextBookmark = onNextBookmark  // #62
+        view.showBookmarkList = showBookmarkList  // #62 Phase 5
+        view.onToggleBookmarkList = onToggleBookmarkList  // #62 Phase 5
+        view.onBookmarkListKeyEvent = onBookmarkListKeyEvent  // #62 Phase 5
         print("[QuickLookKeyHandler] makeNSView called")
         DispatchQueue.main.async {
             view.window?.makeFirstResponder(view)
@@ -344,6 +432,12 @@ struct QuickLookKeyHandler: NSViewRepresentable {
         nsView.onJumpToLastFavorite = onJumpToLastFavorite  // #72
         nsView.totalCount = totalCount  // #72
         nsView.isRTL = isRTL  // #72
+        nsView.onAddOrDeleteBookmark = onAddOrDeleteBookmark  // #62
+        nsView.onPreviousBookmark = onPreviousBookmark  // #62
+        nsView.onNextBookmark = onNextBookmark  // #62
+        nsView.showBookmarkList = showBookmarkList  // #62 Phase 5
+        nsView.onToggleBookmarkList = onToggleBookmarkList  // #62 Phase 5
+        nsView.onBookmarkListKeyEvent = onBookmarkListKeyEvent  // #62 Phase 5
     }
     
     class QuickLookKeyView: NSView {
@@ -359,13 +453,27 @@ struct QuickLookKeyHandler: NSViewRepresentable {
         var onJumpToLastFavorite: (() -> Void)?  // #72: Ctrl+C (LTR) / Ctrl+Z (RTL)
         var totalCount: Int = 0  // #72: For percentage calculation
         var isRTL: Bool = false  // #72: RTL support
+        var onAddOrDeleteBookmark: (() -> Void)?  // #62: Shift+S bookmark
+        var onPreviousBookmark: (() -> Void)?  // #62: Shift+A
+        var onNextBookmark: (() -> Void)?  // #62: Shift+D
+        // #62 Phase 5: Bookmark list
+        var showBookmarkList: Bool = false
+        var onToggleBookmarkList: (() -> Void)?
+        var onBookmarkListKeyEvent: ((NSEvent) -> Void)?
         
         override var acceptsFirstResponder: Bool { true }
         
         override func keyDown(with event: NSEvent) {
             let hasControl = event.modifierFlags.contains(.control)
             let hasCommand = event.modifierFlags.contains(.command)
-            print("[QuickLookKeyView] keyDown: keyCode=\(event.keyCode), chars='\(event.charactersIgnoringModifiers ?? "nil")', ctrl=\(hasControl), cmd=\(hasCommand)")
+            let hasShift = event.modifierFlags.contains(.shift)  // #62
+            print("[QuickLookKeyView] keyDown: keyCode=\(event.keyCode), chars='\(event.charactersIgnoringModifiers ?? "nil")', ctrl=\(hasControl), cmd=\(hasCommand), shift=\(hasShift)")
+            
+            // #62 Phase 5: Delegate keys to bookmark list when showing
+            if showBookmarkList {
+                onBookmarkListKeyEvent?(event)
+                return
+            }
             
             switch event.keyCode {
             // Space (49), Escape (53), Enter (36) - close
@@ -398,7 +506,11 @@ struct QuickLookKeyHandler: NSViewRepresentable {
                 if let chars = event.charactersIgnoringModifiers?.lowercased() {
                     switch chars {
                     case "a":
-                        if hasControl {
+                        if hasShift {
+                            // #62: Shift+A = previous bookmark
+                            print("[QuickLookKeyView] → Previous bookmark (Shift+A)")
+                            onPreviousBookmark?()
+                        } else if hasControl {
                             // #72: Ctrl+A = jump to visual left (start in LTR, end in RTL)
                             let target = isRTL ? NavigationHelper.lastIndex(totalCount: totalCount) : 0
                             print("[QuickLookKeyView] → Jump to \(isRTL ? "end" : "start") (Ctrl+A)")
@@ -408,7 +520,11 @@ struct QuickLookKeyHandler: NSViewRepresentable {
                             onPrevious?()
                         }
                     case "d":
-                        if hasControl {
+                        if hasShift {
+                            // #62: Shift+D = next bookmark
+                            print("[QuickLookKeyView] → Next bookmark (Shift+D)")
+                            onNextBookmark?()
+                        } else if hasControl {
                             // #72: Ctrl+D = jump to visual right (end in LTR, start in RTL)
                             let target = isRTL ? 0 : NavigationHelper.lastIndex(totalCount: totalCount)
                             print("[QuickLookKeyView] → Jump to \(isRTL ? "start" : "end") (Ctrl+D)")
@@ -422,9 +538,15 @@ struct QuickLookKeyHandler: NSViewRepresentable {
                         print("[QuickLookKeyView] → Previous (w) triggered")
                         onPrevious?()
                     // #72: S - same as D (unified with Slide/Viewer)
+                    // #62: Shift+S = bookmark
                     case "s":
-                        print("[QuickLookKeyView] → Next (s) triggered")
-                        onNext?()
+                        if hasShift {
+                            print("[QuickLookKeyView] → Bookmark (Shift+S) triggered")
+                            onAddOrDeleteBookmark?()
+                        } else {
+                            print("[QuickLookKeyView] → Next (s) triggered")
+                            onNext?()
+                        }
                     // #72: Cmd+1-5 = jump to percentage position (RTL-aware, Cmd to avoid system shortcut conflict)
                     case "1":
                         if hasCommand {
@@ -485,6 +607,12 @@ struct QuickLookKeyHandler: NSViewRepresentable {
                     case "q":
                         print("[QuickLookKeyView] → Close (q) triggered")
                         onClose?()
+                    // #62 Phase 5: Shift+B = toggle bookmark list
+                    case "b":
+                        if hasShift {
+                            print("[QuickLookKeyView] → Bookmark list (Shift+B) triggered")
+                            onToggleBookmarkList?()
+                        }
                     default:
                         print("[QuickLookKeyView] → Unhandled key, passing to super")
                         super.keyDown(with: event)

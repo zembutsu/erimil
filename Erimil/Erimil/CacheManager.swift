@@ -24,6 +24,14 @@ struct SourceSettings: Codable {
     }
 }
 
+/// Bookmark (栞) - Section marker within a source (#62)
+struct Bookmark: Codable, Identifiable {
+    let id: UUID
+    var imageIndex: Int      // Section starts at this image
+    var name: String         // Section name (default: filename)
+    var createdAt: Date
+}
+
 /// Manages thumbnail cache and metadata with privacy-first hash-based storage
 class CacheManager {
     static let shared = CacheManager()
@@ -48,6 +56,9 @@ class CacheManager {
     /// ~/Library/Application Support/Erimil/source_settings.json (#54)
     private let sourceSettingsFileURL: URL
     
+    /// ~/Library/Application Support/Erimil/bookmarks.json (#62)
+    private let bookmarksFileURL: URL
+    
     // MARK: - In-Memory Cache
     
     /// pathHash → contentHash mapping (loaded from index.json)
@@ -70,6 +81,11 @@ class CacheManager {
     private var aspectRatioCache: [String: CGFloat] = [:]
     private let aspectRatioLock = NSLock()
     
+    /// Bookmarks per source (#62)
+    /// Key: sourceHash, Value: sorted array of Bookmark
+    private var bookmarksBySource: [String: [Bookmark]] = [:]
+    private let bookmarksLock = NSLock()
+    
     // MARK: - Initialization
     
     private init() {
@@ -81,6 +97,7 @@ class CacheManager {
         favoritesFileURL = baseDirectory.appendingPathComponent("favorites.json")
         lastPositionFileURL = baseDirectory.appendingPathComponent("last_position.json")
         sourceSettingsFileURL = baseDirectory.appendingPathComponent("source_settings.json")
+        bookmarksFileURL = baseDirectory.appendingPathComponent("bookmarks.json")
         
         // Configure cache
         thumbnailCache.countLimit = 200
@@ -94,6 +111,9 @@ class CacheManager {
         
         // Load source settings (with migration from legacy format)
         loadSourceSettings()
+        
+        // Load bookmarks (#62)
+        loadBookmarks()
     }
     
     private func createDirectoriesIfNeeded() {
@@ -794,5 +814,174 @@ class CacheManager {
         aspectRatioCache.removeAll()
         aspectRatioLock.unlock()
         print("[CacheManager] Aspect ratio cache cleared")
+    }
+    
+    // MARK: - Bookmarks (#62)
+    
+    /// Load bookmarks from disk
+    private func loadBookmarks() {
+        guard FileManager.default.fileExists(atPath: bookmarksFileURL.path) else {
+            bookmarksBySource = [:]
+            return
+        }
+        
+        do {
+            let data = try Data(contentsOf: bookmarksFileURL)
+            bookmarksLock.lock()
+            bookmarksBySource = try JSONDecoder().decode([String: [Bookmark]].self, from: data)
+            bookmarksLock.unlock()
+            let total = bookmarksBySource.values.reduce(0) { $0 + $1.count }
+            print("[CacheManager] Loaded bookmarks: \(total) across \(bookmarksBySource.count) sources")
+        } catch {
+            print("[CacheManager] Failed to load bookmarks: \(error)")
+            bookmarksBySource = [:]
+        }
+    }
+    
+    /// Save bookmarks to disk
+    private func saveBookmarks() {
+        bookmarksLock.lock()
+        let current = bookmarksBySource
+        bookmarksLock.unlock()
+        
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            let data = try encoder.encode(current)
+            try data.write(to: bookmarksFileURL)
+        } catch {
+            print("[CacheManager] Failed to save bookmarks: \(error)")
+        }
+    }
+    
+    /// Get all bookmarks for a source (sorted by imageIndex)
+    func getBookmarks(for sourceURL: URL) -> [Bookmark] {
+        let key = hashString(sourceURL.path)
+        bookmarksLock.lock()
+        let result = bookmarksBySource[key] ?? []
+        bookmarksLock.unlock()
+        return result
+    }
+    
+    /// Get bookmark at a specific image index (nil if none)
+    func getBookmark(for sourceURL: URL, at imageIndex: Int) -> Bookmark? {
+        return getBookmarks(for: sourceURL).first { $0.imageIndex == imageIndex }
+    }
+    
+    /// Check if a bookmark exists at a specific image index
+    func hasBookmark(for sourceURL: URL, at imageIndex: Int) -> Bool {
+        return getBookmark(for: sourceURL, at: imageIndex) != nil
+    }
+    
+    /// Add a bookmark at the given image index
+    /// - Returns: The created Bookmark, or nil if duplicate imageIndex
+    @discardableResult
+    func addBookmark(for sourceURL: URL, at imageIndex: Int, name: String) -> Bookmark? {
+        let key = hashString(sourceURL.path)
+        
+        bookmarksLock.lock()
+        var bookmarks = bookmarksBySource[key] ?? []
+        
+        // Duplicate check
+        if bookmarks.contains(where: { $0.imageIndex == imageIndex }) {
+            bookmarksLock.unlock()
+            print("[CacheManager] Bookmark already exists at index \(imageIndex)")
+            return nil
+        }
+        
+        let bookmark = Bookmark(
+            id: UUID(),
+            imageIndex: imageIndex,
+            name: name,
+            createdAt: Date()
+        )
+        bookmarks.append(bookmark)
+        bookmarks.sort { $0.imageIndex < $1.imageIndex }
+        bookmarksBySource[key] = bookmarks
+        bookmarksLock.unlock()
+        
+        saveBookmarks()
+        print("[CacheManager] Added bookmark '\(name)' at index \(imageIndex)")
+        return bookmark
+    }
+    
+    /// Remove a bookmark by ID
+    /// - Returns: true if removed
+    @discardableResult
+    func removeBookmark(for sourceURL: URL, id: UUID) -> Bool {
+        let key = hashString(sourceURL.path)
+        
+        bookmarksLock.lock()
+        guard var bookmarks = bookmarksBySource[key] else {
+            bookmarksLock.unlock()
+            return false
+        }
+        
+        let beforeCount = bookmarks.count
+        bookmarks.removeAll { $0.id == id }
+        
+        if bookmarks.isEmpty {
+            bookmarksBySource.removeValue(forKey: key)
+        } else {
+            bookmarksBySource[key] = bookmarks
+        }
+        bookmarksLock.unlock()
+        
+        let removed = bookmarks.count < beforeCount
+        if removed {
+            saveBookmarks()
+            print("[CacheManager] Removed bookmark id=\(id)")
+        }
+        return removed
+    }
+    
+    /// Update bookmark name
+    func updateBookmarkName(for sourceURL: URL, id: UUID, name: String) {
+        let key = hashString(sourceURL.path)
+        
+        bookmarksLock.lock()
+        guard var bookmarks = bookmarksBySource[key],
+              let idx = bookmarks.firstIndex(where: { $0.id == id }) else {
+            bookmarksLock.unlock()
+            return
+        }
+        
+        bookmarks[idx].name = name
+        bookmarksBySource[key] = bookmarks
+        bookmarksLock.unlock()
+        
+        saveBookmarks()
+        print("[CacheManager] Updated bookmark name to '\(name)'")
+    }
+    
+    /// Get sorted bookmark indices for a source (for navigation)
+    func getBookmarkIndices(for sourceURL: URL) -> [Int] {
+        return getBookmarks(for: sourceURL).map { $0.imageIndex }
+    }
+    
+    /// Navigate to next bookmark from current index
+    func nextBookmarkIndex(for sourceURL: URL, from currentIndex: Int, wrap: Bool = true) -> Int? {
+        let indices = getBookmarkIndices(for: sourceURL)
+        guard !indices.isEmpty else { return nil }
+        
+        if let next = indices.first(where: { $0 > currentIndex }) {
+            return next
+        } else if wrap, let first = indices.first, first != currentIndex {
+            return first
+        }
+        return nil
+    }
+    
+    /// Navigate to previous bookmark from current index
+    func previousBookmarkIndex(for sourceURL: URL, from currentIndex: Int, wrap: Bool = true) -> Int? {
+        let indices = getBookmarkIndices(for: sourceURL)
+        guard !indices.isEmpty else { return nil }
+        
+        if let prev = indices.last(where: { $0 < currentIndex }) {
+            return prev
+        } else if wrap, let last = indices.last, last != currentIndex {
+            return last
+        }
+        return nil
     }
 }
