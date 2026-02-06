@@ -125,6 +125,9 @@ struct ThumbnailGridView: View {
     @State private var favoritesVersion: Int = 0
     // #62: Trigger for bookmark state changes
     @State private var bookmarksVersion: Int = 0
+    // #62 Phase 5: Bookmark list overlay state
+    @State private var showBookmarkList: Bool = false
+    @State private var bookmarkListCursor: Int = 0
     // Temporary feedback when trying to select protected item
     @State private var protectedFeedbackPath: String? = nil
 
@@ -341,6 +344,21 @@ struct ThumbnailGridView: View {
             if !selectedPaths.isEmpty {
                 Divider()
                 footerView
+            }
+        }
+        // #62 Phase 5: Bookmark list overlay
+        .overlay {
+            if showBookmarkList {
+                BookmarkListOverlayView(
+                    bookmarks: CacheManager.shared.getBookmarks(for: imageSource.url),
+                    selectedCursor: bookmarkListCursor,
+                    onSelect: { imageIndex in
+                        showBookmarkList = false
+                        focusedIndex = min(imageIndex, entries.count - 1)
+                        print("[Filer] Bookmark list click → jump to \(imageIndex)")
+                    },
+                    onClose: { showBookmarkList = false }
+                )
             }
         }
         .onChange(of: imageSource.url) { oldURL, newURL in
@@ -860,6 +878,25 @@ struct ThumbnailGridView: View {
     }
     
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
+        // #62 Phase 5: Delegate keys to bookmark list overlay when showing
+        if showBookmarkList {
+            let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
+            let action = BookmarkListKeyHandler.handle(event: event, bookmarks: bookmarks, cursor: bookmarkListCursor)
+            switch action {
+            case .moveCursor(let newCursor):
+                bookmarkListCursor = newCursor
+            case .selectAndClose(let imageIndex):
+                showBookmarkList = false
+                focusedIndex = min(imageIndex, entries.count - 1)
+                print("[Filer] Bookmark list → jump to \(imageIndex)")
+            case .close:
+                showBookmarkList = false
+            case .consumed:
+                break
+            }
+            return true
+        }
+        
         guard !entries.isEmpty else { return false }
         
         // Initialize focus if not set
@@ -1011,6 +1048,23 @@ struct ThumbnailGridView: View {
                 onRequestNextSource?()
             } else {
                 moveFocus(by: columnCount)
+            }
+            return true
+        
+        // #62 Phase 5: Shift+B = toggle bookmark list overlay
+        case "b":
+            if event.modifierFlags.contains(.shift) {
+                let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
+                showBookmarkList = true
+                // Set cursor to nearest bookmark to current position
+                if let nearest = bookmarks.enumerated().min(by: {
+                    abs($0.element.imageIndex - currentIndex) < abs($1.element.imageIndex - currentIndex)
+                }) {
+                    bookmarkListCursor = nearest.offset
+                } else {
+                    bookmarkListCursor = 0
+                }
+                print("[Filer] Shift+B → bookmark list (\(bookmarks.count) bookmarks)")
             }
             return true
         
@@ -2151,6 +2205,10 @@ struct ViewerView: View {
     @State private var previousViewerIndex: Int = 0
     @State private var currentSourceURL: URL?
     
+    // #62 Phase 5: Bookmark list overlay state
+    @State private var showBookmarkList: Bool = false
+    @State private var bookmarkListCursor: Int = 0
+    
     /// #54: Effective reading direction for this source
     private var effectiveReadingDirection: ReadingDirection {
         CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
@@ -2233,6 +2291,20 @@ struct ViewerView: View {
                 handleKeyEvent(event)
             }
             .allowsHitTesting(false)
+            
+            // #62 Phase 5: Bookmark list overlay
+            if showBookmarkList {
+                BookmarkListOverlayView(
+                    bookmarks: CacheManager.shared.getBookmarks(for: imageSource.url),
+                    selectedCursor: bookmarkListCursor,
+                    onSelect: { imageIndex in
+                        showBookmarkList = false
+                        navigateTo(min(imageIndex, entries.count - 1))
+                        print("[ViewerView] Bookmark list click → jump to \(imageIndex)")
+                    },
+                    onClose: { showBookmarkList = false }
+                )
+            }
         }
         .clipped()
         .onAppear {
@@ -2545,6 +2617,25 @@ struct ViewerView: View {
     // MARK: - Key Event Handling (#67: Spread-aware navigation)
     
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
+        // #62 Phase 5: Delegate keys to bookmark list overlay when showing
+        if showBookmarkList {
+            let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
+            let action = BookmarkListKeyHandler.handle(event: event, bookmarks: bookmarks, cursor: bookmarkListCursor)
+            switch action {
+            case .moveCursor(let newCursor):
+                bookmarkListCursor = newCursor
+            case .selectAndClose(let imageIndex):
+                showBookmarkList = false
+                navigateTo(min(imageIndex, entries.count - 1))
+                print("[ViewerView] Bookmark list → jump to \(imageIndex)")
+            case .close:
+                showBookmarkList = false
+            case .consumed:
+                break
+            }
+            return true
+        }
+        
         switch event.keyCode {
         // Escape
         case 53:
@@ -2697,6 +2788,22 @@ struct ViewerView: View {
                 onRequestNextSource?()
             } else {
                 isRTL ? goToPrevious() : goToNext()
+            }
+            return true
+        
+        // #62 Phase 5: Shift+B = toggle bookmark list overlay
+        case "b":
+            if event.modifierFlags.contains(.shift) {
+                let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
+                showBookmarkList = true
+                if let nearest = bookmarks.enumerated().min(by: {
+                    abs($0.element.imageIndex - viewerIndex) < abs($1.element.imageIndex - viewerIndex)
+                }) {
+                    bookmarkListCursor = nearest.offset
+                } else {
+                    bookmarkListCursor = 0
+                }
+                print("[ViewerView] Shift+B → bookmark list (\(bookmarks.count) bookmarks)")
             }
             return true
         

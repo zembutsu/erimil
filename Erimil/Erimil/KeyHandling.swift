@@ -13,6 +13,7 @@
 //
 
 import Foundation
+import SwiftUI
 import AppKit
 
 // MARK: - Navigation Direction
@@ -563,6 +564,155 @@ struct BookmarkDialogHelper {
                     onChanged?()
                 }
             }
+        }
+    }
+}
+
+// MARK: - Bookmark List Key Handler (#62 Phase 5)
+
+/// Shared key handling logic for bookmark list overlay
+struct BookmarkListKeyHandler {
+    enum Action {
+        case moveCursor(Int)
+        case selectAndClose(Int)  // imageIndex to jump to
+        case close
+        case consumed  // key consumed but no action needed
+    }
+    
+    /// Handle a key event while bookmark list is showing
+    static func handle(event: NSEvent, bookmarks: [Bookmark], cursor: Int) -> Action {
+        // Special keys first
+        switch event.keyCode {
+        case 53: // ESC
+            return .close
+        case 36: // Enter
+            guard !bookmarks.isEmpty, cursor >= 0, cursor < bookmarks.count else { return .close }
+            return .selectAndClose(bookmarks[cursor].imageIndex)
+        case 126, 123: // Up, Left
+            guard !bookmarks.isEmpty else { return .consumed }
+            return .moveCursor(max(0, cursor - 1))
+        case 125, 124: // Down, Right
+            guard !bookmarks.isEmpty else { return .consumed }
+            return .moveCursor(min(bookmarks.count - 1, cursor + 1))
+        default:
+            break
+        }
+        
+        // Character keys
+        guard let chars = event.charactersIgnoringModifiers?.lowercased() else {
+            return .consumed
+        }
+        
+        switch chars {
+        case "w":
+            guard !bookmarks.isEmpty else { return .consumed }
+            return .moveCursor(max(0, cursor - 1))
+        case "s":
+            guard !bookmarks.isEmpty else { return .consumed }
+            return .moveCursor(min(bookmarks.count - 1, cursor + 1))
+        case "q":
+            return .close
+        case "b":
+            if event.modifierFlags.contains(.shift) {
+                return .close  // Toggle off
+            }
+            return .consumed
+        default:
+            return .consumed
+        }
+    }
+}
+
+// MARK: - Bookmark List Overlay View (#62 Phase 5)
+
+/// Shared overlay view for displaying bookmark list
+struct BookmarkListOverlayView: View {
+    let bookmarks: [Bookmark]
+    let selectedCursor: Int
+    let onSelect: (Int) -> Void  // called with imageIndex
+    let onClose: () -> Void
+    
+    var body: some View {
+        ZStack {
+            // Semi-transparent background
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+            
+            // Center panel
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Image(systemName: "bookmark.fill")
+                        .foregroundStyle(.orange)
+                    Text("Bookmarks (栞)")
+                        .font(.headline)
+                    Spacer()
+                    Text("ESC to close")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+                
+                Divider()
+                
+                if bookmarks.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "bookmark")
+                            .font(.title)
+                            .foregroundStyle(.secondary)
+                        Text("No bookmarks")
+                            .foregroundStyle(.secondary)
+                        Text("Press Shift+S to add a bookmark")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(32)
+                } else {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 0) {
+                                ForEach(Array(bookmarks.enumerated()), id: \.element.id) { index, bookmark in
+                                    HStack {
+                                        Image(systemName: "bookmark.fill")
+                                            .foregroundStyle(.orange)
+                                            .font(.caption)
+                                        Text(bookmark.name)
+                                            .lineLimit(1)
+                                        Spacer()
+                                        Text("page \(bookmark.imageIndex + 1)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .background(index == selectedCursor ? Color.accentColor.opacity(0.3) : Color.clear)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        onSelect(bookmark.imageIndex)
+                                    }
+                                    .id(index)
+                                }
+                            }
+                        }
+                        .onAppear {
+                            // Scroll to selected cursor on appear
+                            if selectedCursor > 0 {
+                                proxy.scrollTo(selectedCursor, anchor: .center)
+                            }
+                        }
+                        .onChange(of: selectedCursor) { _, newIndex in
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                proxy.scrollTo(newIndex, anchor: .center)
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: 400, maxHeight: 500)
+            .background(.regularMaterial)
+            .cornerRadius(12)
+            .shadow(radius: 20)
         }
     }
 }

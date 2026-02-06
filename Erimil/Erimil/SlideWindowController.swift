@@ -58,6 +58,10 @@ class SlideWindowController {
     // S010: Favorites Mode state
     private var isFavoritesMode: Bool = false
     
+    // #62 Phase 5: Bookmark list state
+    private var showBookmarkList: Bool = false
+    private var bookmarkListCursor: Int = 0
+    
     // #76: RTL navigation support
     private var isRTL: Bool {
         guard let source = storedImageSource else { return false }
@@ -93,6 +97,8 @@ class SlideWindowController {
         
         currentIndex = initialIndex
         isFavoritesMode = false
+        showBookmarkList = false
+        bookmarkListCursor = 0
         
         // S008: Store callbacks and state for event monitor
         storedOnClose = onClose
@@ -293,6 +299,7 @@ class SlideWindowController {
         // S008: Update stored state for event monitor
         currentIndex = startIndex
         isFavoritesMode = false  // Reset mode on source change
+        showBookmarkList = false  // #62: Reset bookmark list on source change
         storedOnClose = onClose
         storedImageSource = imageSource  // #54
         storedOnNextSource = onNextSource
@@ -393,6 +400,29 @@ class SlideWindowController {
         let hasShift = event.modifierFlags.contains(.shift)  // #62: Bookmark keys
         
         print("[SlideWindowController] handleKeyEvent: keyCode=\(event.keyCode), ctrl=\(hasControl), cmd=\(hasCommand), shift=\(hasShift), favMode=\(isFavoritesMode)")
+        
+        // #62 Phase 5: Delegate keys to bookmark list when showing
+        if showBookmarkList {
+            guard let source = storedImageSource else { return nil }
+            let bookmarks = CacheManager.shared.getBookmarks(for: source.url)
+            let action = BookmarkListKeyHandler.handle(event: event, bookmarks: bookmarks, cursor: bookmarkListCursor)
+            switch action {
+            case .moveCursor(let newCursor):
+                bookmarkListCursor = newCursor
+                notifyViewOfBookmarkListChange()
+            case .selectAndClose(let imageIndex):
+                showBookmarkList = false
+                notifyViewOfBookmarkListChange()
+                jumpToIndex(min(imageIndex, storedEntries.count - 1))
+                print("[SlideWindowController] Bookmark list → jump to \(imageIndex)")
+            case .close:
+                showBookmarkList = false
+                notifyViewOfBookmarkListChange()
+            case .consumed:
+                break
+            }
+            return nil
+        }
         
         switch event.keyCode {
         // Escape - close fullscreen
@@ -599,6 +629,25 @@ class SlideWindowController {
                         isRTL ? goToPrevious() : goToNext()
                     }
                     return nil
+                
+                // #62 Phase 5: Shift+B = toggle bookmark list overlay
+                case "b":
+                    if hasShift {
+                        if let source = storedImageSource {
+                            let bookmarks = CacheManager.shared.getBookmarks(for: source.url)
+                            showBookmarkList = true
+                            if let nearest = bookmarks.enumerated().min(by: {
+                                abs($0.element.imageIndex - currentIndex) < abs($1.element.imageIndex - currentIndex)
+                            }) {
+                                bookmarkListCursor = nearest.offset
+                            } else {
+                                bookmarkListCursor = 0
+                            }
+                            notifyViewOfBookmarkListChange()
+                            print("[SlideWindowController] Shift+B → bookmark list (\(bookmarks.count) bookmarks)")
+                        }
+                        return nil
+                    }
                 
                 // #72: Cmd+1-5 = jump to percentage position (RTL-aware, Cmd to avoid system shortcut conflict)
                 case "1":
@@ -907,6 +956,18 @@ class SlideWindowController {
             object: nil
         )
     }
+    
+    /// Notify the view of bookmark list state change via NotificationCenter (#62 Phase 5)
+    private func notifyViewOfBookmarkListChange() {
+        NotificationCenter.default.post(
+            name: NSNotification.Name("SlideWindowBookmarkListChanged"),
+            object: nil,
+            userInfo: [
+                "show": showBookmarkList,
+                "cursor": bookmarkListCursor
+            ]
+        )
+    }
 }
 
 // MARK: - Slide Window View
@@ -933,6 +994,10 @@ struct SlideWindowView: View {
     @State private var isFavoritesMode: Bool = false
     @State private var favoriteIndices: Set<Int> = []
     @State private var selectedIndices: Set<Int> = []
+    
+    // #62 Phase 5: Bookmark list overlay state
+    @State private var showBookmarkList: Bool = false
+    @State private var bookmarkListCursor: Int = 0
     
     // #54: Effective reading direction
     private var isRTL: Bool {
@@ -1016,6 +1081,21 @@ struct SlideWindowView: View {
                 }
             }
             
+            // #62 Phase 5: Bookmark list overlay
+            if showBookmarkList {
+                BookmarkListOverlayView(
+                    bookmarks: CacheManager.shared.getBookmarks(for: imageSource.url),
+                    selectedCursor: bookmarkListCursor,
+                    onSelect: { imageIndex in
+                        // Close overlay and jump (controller handles via notification)
+                        showBookmarkList = false
+                        currentIndex = min(imageIndex, entries.count - 1)
+                        print("[SlideWindowView] Bookmark list click → jump to \(imageIndex)")
+                    },
+                    onClose: { showBookmarkList = false }
+                )
+            }
+            
             // Key event handler (supplementary - main handling in Controller)
             SlideKeyHandler(
                 onClose: onClose,
@@ -1060,6 +1140,15 @@ struct SlideWindowView: View {
             }
             if let sels = notification.userInfo?["selectedIndices"] as? Set<Int> {
                 selectedIndices = sels
+            }
+        }
+        // #62 Phase 5: Listen for bookmark list changes from controller
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowBookmarkListChanged"))) { notification in
+            if let show = notification.userInfo?["show"] as? Bool {
+                showBookmarkList = show
+            }
+            if let cursor = notification.userInfo?["cursor"] as? Int {
+                bookmarkListCursor = cursor
             }
         }
     }
