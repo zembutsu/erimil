@@ -12,6 +12,9 @@ struct ErimilApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+                    CacheManager.shared.flushPendingWrites()
+                }
         }
         
         // Settings window (⌘,)
