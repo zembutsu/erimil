@@ -93,6 +93,7 @@ Manages thumbnails, metadata, and aspect ratio information.
   - **Path index**: pathHash → contentHash mapping
   - **Favorites storage**: Per-source favorites with hybrid format
   - **Source settings**: Per-source lastPosition, readingDirection, singlePageIndices (#54, #56)
+  - **Bookmarks storage**: Per-source bookmarks with name, imageIndex, createdAt (#62)
   - **Aspect ratio cache**: In-memory cache for spread detection (#67 Phase 3)
     - `cacheAspectRatio(for:path:ratio:)` - Store aspect ratio
     - `getCachedAspectRatio(for:path:)` - Retrieve cached ratio
@@ -132,6 +133,9 @@ SwiftUI views for user interaction.
   - **ThumbnailDisplayItem**: Enum for display item types (#69)
     - `.single(Int)` - Single thumbnail
     - `.spread(leftIndex:rightIndex:)` - Spread pair
+  - **GridSection**: Section model for bookmark dividers (#62)
+    - Orange bookmark icon + section name + divider line
+    - Pinned section headers during scroll
   - **ThumbnailSidebarView**: Vertical/horizontal thumbnail strip (S014)
   - **SpreadThumbnailPairView**: Paired thumbnail display for spreads (#69)
   - **ViewerView**: In-grid image viewer with thumbnail sidebar
@@ -173,6 +177,9 @@ Fullscreen image viewing with Favorites Mode and source navigation.
   | Ctrl+W/S, Ctrl+↑/↓ | Previous/Next source | Same |
   | Ctrl+T | Cycle thumbnail position | Same |
   | Ctrl+R | Toggle reading direction | Same |
+  | Shift+S | Add/delete bookmark (栞) | Same |
+  | Shift+A/D | Previous/Next bookmark (RTL-aware) | Same |
+  | Shift+B | Bookmark list overlay | Same |
   | Space | Toggle controls | Toggle controls |
 
 - **Favorites Mode State**:
@@ -211,6 +218,9 @@ Consolidated key handling logic shared across viewer modes.
     - `nextIndex/previousIndex` - Spread-aware index calculation
   - `KeyCode`: macOS key code constants
   - `CommonKeyParser`: Shared key event parsing
+  - `BookmarkDialogHelper`: NSAlert-based add/delete dialogs for bookmarks (#62)
+  - `BookmarkListKeyHandler`: Shared key handling for bookmark list overlay (#62 Phase 5)
+  - `BookmarkListOverlayView`: SwiftUI overlay for bookmark list display (#62 Phase 5)
 
 - **Mode-Specific Handlers**:
   | Mode | Handler Location | Notes |
@@ -221,8 +231,14 @@ Consolidated key handling logic shared across viewer modes.
   | Quick Look | QuickLookKeyView.keyDown | NSView based |
 
 - **RTL Navigation**:
-  All navigation keys (←/→, ↑/↓, A/D, W/S, Z/C) are RTL-aware.
+  All navigation keys (←/→, ↑/↓, A/D, W/S, Z/C, Shift+A/D) are RTL-aware.
   When reading direction is RTL, logical direction is inverted.
+
+- **Bookmark Navigation** (Shift+S/A/D/B):
+  Mnemonic: Shift = Shiori (栞, bookmark). All bookmark operations use Shift modifier.
+  - Shift+S = Add/delete bookmark at current position
+  - Shift+A = Previous bookmark, Shift+D = Next bookmark (RTL-aware, wrapping)
+  - Shift+B = Toggle bookmark list overlay (↑↓/W/S to browse, Enter to jump, ESC to close)
 
 - **Position Jump** (Ctrl+A/D, Cmd+1-5):
   One-handed navigation for quick position access.
@@ -681,6 +697,7 @@ Required keys in `Erimil.entitlements`:
 |--------|-----------|
 | `[AppSettings]` | Settings, Bookmarks |
 | `[CacheManager]` | Cache, Favorites, Aspect Ratio |
+| `[Bookmark]` | Bookmark operations (#62) |
 | `[SidebarView]` | Folder tree |
 | `[ContentView]` | Main view |
 | `[ThumbnailGridView]` | Thumbnail grid |
@@ -697,6 +714,7 @@ Required keys in `Erimil.entitlements`:
 ├── index.json                  # Path → contentHash mapping
 ├── favorites.json              # Favorites data (hybrid format)
 ├── source_settings.json        # Per-source settings (#54)
+├── bookmarks.json              # Per-source bookmarks (#62)
 └── last_folder_bookmark.data   # Folder restoration bookmark
 ```
 
@@ -763,4 +781,4 @@ A: Aspect ratio or direction issue
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2026-02-03 (S031: Key Handling Layer, consolidated keyboard shortcuts)
+> Last updated: 2026-02-06 (S034: Bookmarks/栞 system #62)
