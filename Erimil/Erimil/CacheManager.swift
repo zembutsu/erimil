@@ -86,6 +86,21 @@ class CacheManager {
     private var bookmarksBySource: [String: [Bookmark]] = [:]
     private let bookmarksLock = NSLock()
     
+    // MARK: - Async Write Infrastructure (#87)
+    
+    /// Serial background queue for all JSON writes (prevents UI blocking)
+    private let writeQueue = DispatchQueue(label: "jp.pocketstudio.zem.Erimil.CacheManager.write", qos: .utility)
+    
+    /// Debounce interval for coalescing rapid successive writes
+    private let debounceInterval: TimeInterval = 0.5
+    
+    /// Pending write work items (one per JSON file, for cancel/reschedule)
+    private var indexSaveWorkItem: DispatchWorkItem?
+    private var favoritesSaveWorkItem: DispatchWorkItem?
+    private var settingsSaveWorkItem: DispatchWorkItem?
+    private var bookmarksSaveWorkItem: DispatchWorkItem?
+    private let writeLock = NSLock()
+    
     // MARK: - Initialization
     
     private init() {
@@ -134,6 +149,32 @@ class CacheManager {
         }
     }
     
+    // MARK: - Write Flush (#87)
+    
+    /// Flush all pending debounced writes synchronously.
+    /// Call on app termination to prevent data loss.
+    func flushPendingWrites() {
+        writeLock.lock()
+        indexSaveWorkItem?.cancel()
+        favoritesSaveWorkItem?.cancel()
+        settingsSaveWorkItem?.cancel()
+        bookmarksSaveWorkItem?.cancel()
+        indexSaveWorkItem = nil
+        favoritesSaveWorkItem = nil
+        settingsSaveWorkItem = nil
+        bookmarksSaveWorkItem = nil
+        writeLock.unlock()
+        
+        // Perform all saves synchronously on writeQueue
+        writeQueue.sync {
+            self.performSaveIndex()
+            self.performSaveFavorites()
+            self.performSaveSourceSettings()
+            self.performSaveBookmarks()
+        }
+        print("[CacheManager] Flushed all pending writes")
+    }
+    
     // MARK: - Hash Calculation
     
     /// Calculate SHA256 hash of a string (for path hashing)
@@ -180,13 +221,24 @@ class CacheManager {
     }
     
     private func saveIndex() {
+        writeLock.lock()
+        indexSaveWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.performSaveIndex()
+        }
+        indexSaveWorkItem = item
+        writeQueue.asyncAfter(deadline: .now() + debounceInterval, execute: item)
+        writeLock.unlock()
+    }
+    
+    private func performSaveIndex() {
         indexLock.lock()
         let currentIndex = pathIndex
         indexLock.unlock()
         
         do {
             let data = try JSONEncoder().encode(currentIndex)
-            try data.write(to: indexFileURL)
+            try data.write(to: indexFileURL, options: .atomic)
         } catch {
             print("[CacheManager] Failed to save index: \(error)")
         }
@@ -344,6 +396,17 @@ class CacheManager {
     }
     
     private func saveFavorites() {
+        writeLock.lock()
+        favoritesSaveWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.performSaveFavorites()
+        }
+        favoritesSaveWorkItem = item
+        writeQueue.asyncAfter(deadline: .now() + debounceInterval, execute: item)
+        writeLock.unlock()
+    }
+    
+    private func performSaveFavorites() {
         favoritesLock.lock()
         
         var byContent: [String: FavoriteMetadata] = [:]
@@ -366,7 +429,7 @@ class CacheManager {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .prettyPrinted
             let data = try encoder.encode(hybrid)
-            try data.write(to: hybridURL)
+            try data.write(to: hybridURL, options: .atomic)
         } catch {
             print("[CacheManager] Failed to save favorites: \(error)")
         }
@@ -485,7 +548,7 @@ class CacheManager {
         }
         
         do {
-            try jpegData.write(to: url)
+            try jpegData.write(to: url, options: .atomic)
         } catch {
             print("[CacheManager] Failed to save thumbnail: \(error)")
         }
@@ -640,6 +703,17 @@ class CacheManager {
     
     /// Save source settings to disk
     private func saveSourceSettings() {
+        writeLock.lock()
+        settingsSaveWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.performSaveSourceSettings()
+        }
+        settingsSaveWorkItem = item
+        writeQueue.asyncAfter(deadline: .now() + debounceInterval, execute: item)
+        writeLock.unlock()
+    }
+    
+    private func performSaveSourceSettings() {
         settingsLock.lock()
         let currentSettings = sourceSettings
         settingsLock.unlock()
@@ -648,7 +722,7 @@ class CacheManager {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .prettyPrinted
             let data = try encoder.encode(currentSettings)
-            try data.write(to: sourceSettingsFileURL)
+            try data.write(to: sourceSettingsFileURL, options: .atomic)
         } catch {
             print("[CacheManager] Failed to save source settings: \(error)")
         }
@@ -838,8 +912,18 @@ class CacheManager {
         }
     }
     
-    /// Save bookmarks to disk
     private func saveBookmarks() {
+        writeLock.lock()
+        bookmarksSaveWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.performSaveBookmarks()
+        }
+        bookmarksSaveWorkItem = item
+        writeQueue.asyncAfter(deadline: .now() + debounceInterval, execute: item)
+        writeLock.unlock()
+    }
+    
+    private func performSaveBookmarks() {
         bookmarksLock.lock()
         let current = bookmarksBySource
         bookmarksLock.unlock()
@@ -848,7 +932,7 @@ class CacheManager {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .prettyPrinted
             let data = try encoder.encode(current)
-            try data.write(to: bookmarksFileURL)
+            try data.write(to: bookmarksFileURL, options: .atomic)
         } catch {
             print("[CacheManager] Failed to save bookmarks: \(error)")
         }
