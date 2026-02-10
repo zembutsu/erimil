@@ -134,6 +134,7 @@ struct ThumbnailGridView: View {
     // #54: Reading direction change trigger
     @State private var readingDirectionVersion: Int = 0
     @State private var isLoadingSource: Bool = false
+    @State private var showLoadingSpinner: Bool = false
     
     /// Dynamic columns based on thumbnail size
     private var columns: [GridItem] {
@@ -257,36 +258,28 @@ struct ThumbnailGridView: View {
             Divider()
             
             // サムネイルグリッド
-            if isLoadingSource {
-                ZStack {
-                    VStack(spacing: 12) {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                        Text("読み込み中…")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+            ZStack {
+                if isLoadingSource {
+                    if showLoadingSpinner {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("読み込み中…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        Color.clear
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    // Key event handler for source navigation during loading
-                    KeyEventHandlerView { event in
-                        handleKeyEvent(event)
-                    }
-                    .allowsHitTesting(false)
-                }
-            } else if entries.isEmpty {
-                ZStack {
+                } else if entries.isEmpty {
                     ContentUnavailableView(
                         "画像がありません",
                         systemImage: "photo",
                         description: Text("このフォルダには画像ファイルが含まれていません")
                     )
-                    // Key event handler for source navigation even with empty entries
-                    KeyEventHandlerView { event in
-                        handleKeyEvent(event)
-                    }
-                    .allowsHitTesting(false)
-                }
-            } else {
+                } else {
                 GeometryReader { geometry in
                     ZStack {
                         ScrollViewReader { scrollProxy in
@@ -341,12 +334,6 @@ struct ThumbnailGridView: View {
                                 }
                             }
                         }
-                        
-                        // Key event handler overlay (transparent, captures keys)
-                        KeyEventHandlerView { event in
-                            handleKeyEvent(event)
-                        }
-                        .allowsHitTesting(false)  // Let clicks pass through to grid
                     }
                     .onAppear {
                         updateColumnCount(for: geometry.size.width)
@@ -362,6 +349,13 @@ struct ThumbnailGridView: View {
                         updateColumnCount(for: geometry.size.width)
                     }
                 }
+                }
+                
+                // Key event handler — always present, survives branch switches
+                KeyEventHandlerView { event in
+                    handleKeyEvent(event)
+                }
+                .allowsHitTesting(false)
             }
             
             // フッター（選択がある場合のみ表示）
@@ -728,6 +722,13 @@ struct ThumbnailGridView: View {
         previewMode = .none
         entries = []
         isLoadingSource = true
+        showLoadingSpinner = false
+        
+        // Show spinner only if load takes >100ms (avoid flicker)
+        let spinnerTimer = DispatchWorkItem {
+            showLoadingSpinner = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: spinnerTimer)
         
         // Capture source reference for background work
         let source = imageSource
@@ -737,11 +738,13 @@ struct ThumbnailGridView: View {
             let loadedEntries = source.listImageEntries()
             
             DispatchQueue.main.async {
+                spinnerTimer.cancel()
                 // Stale check: discard if source changed during loading
                 guard loadID == newLoadID else { return }
                 
                 entries = loadedEntries
                 isLoadingSource = false
+                showLoadingSpinner = false
                 
                 // #52: Filer does not restore last position
                 // Last position is restored when entering Viewer/Slide Mode
