@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import os
 
 struct SidebarView: View {
     @Binding var selectedFolderURL: URL?
@@ -71,11 +72,11 @@ struct SidebarView: View {
         .navigationTitle("Erimil")
         .onAppear {
             // Load tree on initial appear (for restored folder)
-            print("[SidebarView] onAppear, selectedFolderURL: \(selectedFolderURL?.path ?? "nil")")
+            Logger.sidebar.debug("onAppear, selectedFolderURL: \(selectedFolderURL?.path ?? "nil")")
             reloadTree()
         }
         .onChange(of: selectedFolderURL) { oldValue, newValue in
-            print("[SidebarView] onChange: \(oldValue?.path ?? "nil") → \(newValue?.path ?? "nil")")
+            Logger.sidebar.debug("onChange: \(oldValue?.path ?? "nil") → \(newValue?.path ?? "nil")")
             // S023: Clear expansion state only when root folder changes
             if oldValue != newValue {
                 expandedNodes.removeAll()
@@ -117,14 +118,14 @@ struct SidebarView: View {
     }
     
     private func reloadTree() {
-        print("[SidebarView] reloadTree called, selectedFolderURL: \(selectedFolderURL?.path ?? "nil")")
+        Logger.sidebar.debug("reloadTree called, selectedFolderURL: \(selectedFolderURL?.path ?? "nil")")
         if let url = selectedFolderURL {
             // Verify folder exists
             if FileManager.default.fileExists(atPath: url.path) {
                 rootNode = FolderNode(url: url)
-                print("[SidebarView] rootNode created, children count: \(rootNode?.children?.count ?? 0)")
+                Logger.sidebar.info("rootNode created, children count: \(rootNode?.children?.count ?? 0, privacy: .public)")
             } else {
-                print("[SidebarView] ERROR: Folder does not exist: \(url.path)")
+                Logger.sidebar.error("ERROR: Folder does not exist: \(url.path, privacy: .public)")
                 // Fallback to Desktop
                 fallbackToDesktop()
             }
@@ -135,7 +136,7 @@ struct SidebarView: View {
     
     private func fallbackToDesktop() {
         let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-        print("[SidebarView] Fallback to Desktop: \(desktop?.path ?? "nil")")
+        Logger.sidebar.debug("Fallback to Desktop: \(desktop?.path ?? "nil")")
         if let desktop = desktop {
             selectedFolderURL = desktop
             AppSettings.shared.lastOpenedFolderURL = desktop
@@ -150,17 +151,17 @@ struct SidebarView: View {
         panel.message = "表示するフォルダを選択してください"
         panel.prompt = "選択"
         
-        print("[SidebarView] Opening folder picker...")
+        Logger.sidebar.debug("Opening folder picker...")
         
         let response = panel.runModal()
-        print("[SidebarView] Folder picker response: \(response == .OK ? "OK" : "Cancel")")
+        Logger.sidebar.debug("Folder picker response: \(response == .OK ? "OK" : "Cancel")")
         
         if response == .OK, let url = panel.url {
-            print("[SidebarView] Selected folder: \(url.path)")
+            Logger.sidebar.debug("Selected folder: \(url.path, privacy: .public)")
             
             // Force update even if same folder (by clearing first)
             if selectedFolderURL == url {
-                print("[SidebarView] Same folder selected, forcing reload")
+                Logger.sidebar.debug("Same folder selected, forcing reload")
                 rootNode = nil
                 // S023: Don't clear expandedNodes for same folder reload
             }
@@ -171,7 +172,7 @@ struct SidebarView: View {
             // Explicit reload in case onChange doesn't fire
             reloadTree()
         } else {
-            print("[SidebarView] Folder selection cancelled or failed")
+            Logger.sidebar.error("Folder selection cancelled or failed")
         }
     }
 

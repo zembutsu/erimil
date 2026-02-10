@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 /// Handles navigation between sibling sources (ZIP files, PDF documents, and image folders)
 /// within the same parent directory.
@@ -68,7 +69,7 @@ struct SourceNavigator {
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else {
-            print("[SourceNavigator] Failed to list contents of \(parentURL.path)")
+            Logger.sourceNav.error("Failed to list contents of \(parentURL.path, privacy: .public)")
             return []
         }
         
@@ -85,7 +86,7 @@ struct SourceNavigator {
             $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
         }
         
-        print("[SourceNavigator] Found \(sorted.count) siblings in \(parentURL.lastPathComponent)")
+        Logger.sourceNav.debug("Found \(sorted.count, privacy: .public) siblings in \(parentURL.lastPathComponent, privacy: .public)")
         return sorted
     }
 }

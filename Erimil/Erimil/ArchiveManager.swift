@@ -9,6 +9,7 @@
 import Foundation
 import ZIPFoundation
 import AppKit
+import os
 
 class ArchiveManager: ImageSource {
     let url: URL
@@ -39,17 +40,17 @@ class ArchiveManager: ImageSource {
         do {
             switch detectedEncoding {
             case .shiftJIS:
-                print("[ArchiveManager] Opening with Shift_JIS encoding")
+                Logger.archive.debug("Opening with Shift_JIS encoding")
                 return try Archive(url: url, accessMode: .read, pathEncoding: .shiftJIS)
             case .utf8:
-                print("[ArchiveManager] Opening with UTF-8 encoding")
+                Logger.archive.debug("Opening with UTF-8 encoding")
                 return try Archive(url: url, accessMode: .read, pathEncoding: .utf8)
             case .unknown, .none:
-                print("[ArchiveManager] Opening with default encoding")
+                Logger.archive.debug("Opening with default encoding")
                 return try Archive(url: url, accessMode: .read)
             }
         } catch {
-            print("[ArchiveManager] Failed to open archive: \(error)")
+            Logger.archive.error("Failed to open archive: \(error, privacy: .public)")
             return nil
         }
     }
@@ -69,10 +70,10 @@ class ArchiveManager: ImageSource {
     /// List all image entries in the ZIP
     func listImageEntries() -> [ImageEntry] {
         return accessQueue.sync {
-            print("[ArchiveManager] listImageEntries called for: \(url.lastPathComponent)")
+            Logger.archive.debug("listImageEntries called for: \(self.url.lastPathComponent, privacy: .public)")
             
             guard let archive = openArchive() else {
-                print("[ArchiveManager] Failed to open archive: \(url)")
+                Logger.archive.error("Failed to open archive: \(self.url, privacy: .public)")
                 return []
             }
             
@@ -97,13 +98,13 @@ class ArchiveManager: ImageSource {
                 }
             }
             
-            print("[ArchiveManager] Archive contains \(allEntries.count) total entries")
-            print("[ArchiveManager] Found \(results.count) image entries:")
+            Logger.archive.debug("Archive contains \(allEntries.count, privacy: .public) total entries")
+            Logger.archive.debug("Found \(results.count, privacy: .public) image entries:")
             for (index, entry) in results.prefix(10).enumerated() {
-                print("  [\(index)] \(entry.name) - \(entry.path)")
+                Logger.archive.debug("  [\(index, privacy: .public)] \(entry.name, privacy: .public) - \(entry.path, privacy: .public)")
             }
             if results.count > 10 {
-                print("  ... and \(results.count - 10) more")
+                Logger.archive.debug("  ... and \(results.count - 10, privacy: .public) more")
             }
             
             return results.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
@@ -122,13 +123,13 @@ class ArchiveManager: ImageSource {
         if let contentHash = cache.getContentHash(for: pathHash) {
             // Try to get cached thumbnail
             if let cached = cache.getThumbnail(for: contentHash) {
-                print("[thumbnail] Cache HIT for \(entry.name)")
+                Logger.thumbnailGrid.debug("Cache HIT for \(entry.name, privacy: .public)")
                 return cached
             }
         }
         
         // Cache miss - extract and generate
-        print("[thumbnail] Cache MISS for \(entry.name), extracting...")
+        Logger.thumbnailGrid.debug("Cache MISS for \(entry.name, privacy: .public), extracting...")
         guard let (image, imageData) = extractImageWithData(for: entry) else { return nil }
         
         // Calculate content hash
@@ -156,10 +157,10 @@ class ArchiveManager: ImageSource {
     /// Extract image and raw data from ZIP
     private func extractImageWithData(for imageEntry: ImageEntry) -> (NSImage, Data)? {
         return accessQueue.sync {
-            print("[extractImage] Looking for '\(imageEntry.path)' in '\(url.lastPathComponent)'")
+            Logger.archive.debug("Looking for '\(imageEntry.path, privacy: .public)' in '\(self.url.lastPathComponent, privacy: .public)'")
             
             guard let archive = openArchive() else {
-                print("[extractImage] Failed to open archive: \(url.path)")
+                Logger.archive.error("Failed to open archive: \(self.url.path, privacy: .public)")
                 return nil
             }
             
@@ -178,13 +179,13 @@ class ArchiveManager: ImageSource {
             }
             
             guard let entry = foundEntry else {
-                print("[extractImage] Entry not found: \(imageEntry.path)")
-                print("[extractImage] ZIP '\(url.lastPathComponent)' contains \(availablePaths.count) entries:")
+                Logger.archive.debug("Entry not found: \(imageEntry.path, privacy: .public)")
+                Logger.archive.debug("ZIP '\(self.url.lastPathComponent, privacy: .public)' contains \(availablePaths.count, privacy: .public) entries:")
                 for path in availablePaths.prefix(10) {
-                    print("  - \(path)")
+                    Logger.archive.debug("  - \(path, privacy: .public)")
                 }
                 if availablePaths.count > 10 {
-                    print("  ... and \(availablePaths.count - 10) more")
+                    Logger.archive.debug("  ... and \(availablePaths.count - 10, privacy: .public) more")
                 }
                 return nil
             }
@@ -195,12 +196,12 @@ class ArchiveManager: ImageSource {
                     imageData.append(data)
                 }
             } catch {
-                print("[extractImage] Extract failed for \(imageEntry.name): \(error)")
+                Logger.archive.error("Extract failed for \(imageEntry.name, privacy: .public): \(error, privacy: .public)")
                 return nil
             }
             
             guard let image = NSImage(data: imageData) else {
-                print("[extractImage] Invalid image data for: \(imageEntry.name), size: \(imageData.count) bytes")
+                Logger.archive.error("Invalid image data for: \(imageEntry.name, privacy: .public), size: \(imageData.count, privacy: .public) bytes")
                 return nil
             }
             
@@ -238,20 +239,20 @@ class ArchiveManager: ImageSource {
     /// Export excluding specified paths
     /// Reference: https://github.com/weichsel/ZIPFoundation#adding-and-removing-entries
     func exportOptimized(excluding excludedPaths: Set<String>, to destinationURL: URL) throws {
-        print("exportOptimized called")
-        print("Excluded paths: \(excludedPaths)")
+        Logger.archive.info("exportOptimized called")
+        Logger.archive.debug("Excluded paths: \(excludedPaths, privacy: .public)")
         
         guard let sourceArchive = openArchive() else {
-            print("Failed to open source archive")
+            Logger.archive.error("Failed to open source archive")
             throw ArchiveError.cannotOpenSource
         }
-        print("Source archive opened")
+        Logger.archive.debug("Source archive opened")
         
         guard let destinationArchive = try? Archive(url: destinationURL, accessMode: .create) else {
-            print("Failed to create destination archive at: \(destinationURL.path)")
+            Logger.archive.error("Failed to create destination archive at: \(destinationURL.path, privacy: .public)")
             throw ArchiveError.cannotCreateDestination
         }
-        print("Destination archive created")
+        Logger.archive.debug("Destination archive created")
         
         let encoding = getPathEncoding()
         
@@ -259,30 +260,30 @@ class ArchiveManager: ImageSource {
             let path = encoding != nil ? entry.path(using: encoding!) : entry.path
             
             if excludedPaths.contains(path) {
-                print("Excluding: \(path)")
+                Logger.archive.debug("Excluding: \(path, privacy: .public)")
                 continue
             }
             
             if path.contains("__MACOSX/") {
-                print("Skipping __MACOSX: \(path)")
+                Logger.archive.debug("Skipping __MACOSX: \(path, privacy: .public)")
                 continue
             }
             
             if entry.type == .directory {
-                print("Skipping directory: \(path)")
+                Logger.archive.debug("Skipping directory: \(path, privacy: .public)")
                 continue
             }
             
-            print("Copying: \(path)")
+            Logger.archive.debug("Copying: \(path, privacy: .public)")
             
             var entryData = Data()
             do {
                 _ = try sourceArchive.extract(entry) { data in
                     entryData.append(data)
                 }
-                print("  Extracted: \(entryData.count) bytes")
+                Logger.archive.debug("  Extracted: \(entryData.count, privacy: .public) bytes")
             } catch {
-                print("  Extract failed: \(error)")
+                Logger.archive.error("  Extract failed: \(error, privacy: .public)")
                 continue
             }
             
@@ -298,14 +299,14 @@ class ArchiveManager: ImageSource {
                         return entryData.subdata(in: start..<end)
                     }
                 )
-                print("  Added to destination")
+                Logger.archive.debug("  Added to destination")
             } catch {
-                print("  Add failed: \(error)")
+                Logger.archive.error("  Add failed: \(error, privacy: .public)")
                 continue
             }
         }
         
-        print("Export completed successfully")
+        Logger.archive.info("Export completed successfully")
     }
 }
 

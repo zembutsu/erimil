@@ -11,6 +11,7 @@
 import Foundation
 import AppKit
 import CryptoKit
+import os
 
 /// Per-source settings (#54, #56)
 struct SourceSettings: Codable {
@@ -137,15 +138,15 @@ class CacheManager {
         do {
             if !fm.fileExists(atPath: baseDirectory.path) {
                 try fm.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
-                print("[CacheManager] Created base directory: \(baseDirectory.path)")
+                Logger.cache.info("Created base directory: \(self.baseDirectory.path, privacy: .public)")
             }
             
             if !fm.fileExists(atPath: cacheDirectory.path) {
                 try fm.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
-                print("[CacheManager] Created cache directory: \(cacheDirectory.path)")
+                Logger.cache.info("Created cache directory: \(self.cacheDirectory.path, privacy: .public)")
             }
         } catch {
-            print("[CacheManager] Failed to create directories: \(error)")
+            Logger.cache.error("Failed to create directories: \(error, privacy: .public)")
         }
     }
     
@@ -172,7 +173,7 @@ class CacheManager {
             self.performSaveSourceSettings()
             self.performSaveBookmarks()
         }
-        print("[CacheManager] Flushed all pending writes")
+        Logger.cache.debug("Flushed all pending writes")
     }
     
     // MARK: - Hash Calculation
@@ -213,9 +214,9 @@ class CacheManager {
             indexLock.lock()
             pathIndex = try JSONDecoder().decode([String: String].self, from: data)
             indexLock.unlock()
-            print("[CacheManager] Loaded index with \(pathIndex.count) entries")
+            Logger.cache.info("Loaded index with \(self.pathIndex.count, privacy: .public) entries")
         } catch {
-            print("[CacheManager] Failed to load index: \(error)")
+            Logger.cache.error("Failed to load index: \(error, privacy: .public)")
             pathIndex = [:]
         }
     }
@@ -240,7 +241,7 @@ class CacheManager {
             let data = try JSONEncoder().encode(currentIndex)
             try data.write(to: indexFileURL, options: .atomic)
         } catch {
-            print("[CacheManager] Failed to save index: \(error)")
+            Logger.cache.error("Failed to save index: \(error, privacy: .public)")
         }
     }
     
@@ -352,20 +353,20 @@ class CacheManager {
                 let hybrid = try JSONDecoder().decode(HybridFavoritesFile.self, from: data)
                 
                 favoritesLock.lock()
-                favoritesByContent = Set(hybrid.byContent.keys)
-                favoritesBySource = Set(hybrid.bySource.keys)
-                sourceToContent = [:]
+                self.favoritesByContent = Set(hybrid.byContent.keys)
+                self.favoritesBySource = Set(hybrid.bySource.keys)
+                self.sourceToContent = [:]
                 for (sourceKey, metadata) in hybrid.bySource {
                     if let cHash = metadata.contentHash {
-                        sourceToContent[sourceKey] = cHash
+                        self.sourceToContent[sourceKey] = cHash
                     }
                 }
                 favoritesLock.unlock()
                 
-                print("[CacheManager] Loaded hybrid favorites: \(favoritesByContent.count) by content, \(favoritesBySource.count) by source")
+                Logger.cache.info("Loaded hybrid favorites: \(self.favoritesByContent.count, privacy: .public) by content, \(self.favoritesBySource.count, privacy: .public) by source")
                 return
             } catch {
-                print("[CacheManager] Failed to load hybrid favorites: \(error)")
+                Logger.cache.error("Failed to load hybrid favorites: \(error, privacy: .public)")
             }
         }
         
@@ -376,23 +377,23 @@ class CacheManager {
                 let legacyFavorites = try JSONDecoder().decode([String].self, from: data)
                 
                 favoritesLock.lock()
-                favoritesByContent = Set(legacyFavorites)
-                favoritesBySource = []
-                sourceToContent = [:]
+                self.favoritesByContent = Set(legacyFavorites)
+                self.favoritesBySource = []
+                self.sourceToContent = [:]
                 favoritesLock.unlock()
                 
-                print("[CacheManager] Migrated \(legacyFavorites.count) legacy favorites")
+                Logger.cache.debug("Migrated \(legacyFavorites.count, privacy: .public) legacy favorites")
                 saveFavorites()  // Save in new format
                 return
             } catch {
-                print("[CacheManager] Failed to load legacy favorites: \(error)")
+                Logger.cache.error("Failed to load legacy favorites: \(error, privacy: .public)")
             }
         }
         
         // No favorites file
-        favoritesByContent = []
-        favoritesBySource = []
-        sourceToContent = [:]
+        self.favoritesByContent = []
+        self.favoritesBySource = []
+        self.sourceToContent = [:]
     }
     
     private func saveFavorites() {
@@ -431,7 +432,7 @@ class CacheManager {
             let data = try encoder.encode(hybrid)
             try data.write(to: hybridURL, options: .atomic)
         } catch {
-            print("[CacheManager] Failed to save favorites: \(error)")
+            Logger.cache.error("Failed to save favorites: \(error, privacy: .public)")
         }
     }
     
@@ -543,14 +544,14 @@ class CacheManager {
         guard let tiffData = image.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiffData),
               let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
-            print("[CacheManager] Failed to convert thumbnail to JPEG")
+            Logger.cache.error("Failed to convert thumbnail to JPEG")
             return
         }
         
         do {
             try jpegData.write(to: url, options: .atomic)
         } catch {
-            print("[CacheManager] Failed to save thumbnail: \(error)")
+            Logger.cache.error("Failed to save thumbnail: \(error, privacy: .public)")
         }
     }
     
@@ -605,7 +606,7 @@ class CacheManager {
     /// Clear memory cache
     func clearMemoryCache() {
         thumbnailCache.removeAllObjects()
-        print("[CacheManager] Memory cache cleared")
+        Logger.cache.debug("Memory cache cleared")
     }
     
     /// Clear all cache (memory + disk)
@@ -626,9 +627,9 @@ class CacheManager {
             indexLock.unlock()
             saveIndex()
             
-            print("[CacheManager] All cache cleared")
+            Logger.cache.debug("All cache cleared")
         } catch {
-            print("[CacheManager] Failed to clear cache: \(error)")
+            Logger.cache.error("Failed to clear cache: \(error, privacy: .public)")
         }
     }
     
@@ -665,10 +666,10 @@ class CacheManager {
                 settingsLock.lock()
                 sourceSettings = try JSONDecoder().decode([String: SourceSettings].self, from: data)
                 settingsLock.unlock()
-                print("[CacheManager] Loaded source settings with \(sourceSettings.count) entries")
+                Logger.cache.info("Loaded source settings with \(self.sourceSettings.count, privacy: .public) entries")
                 return
             } catch {
-                print("[CacheManager] Failed to load source settings: \(error)")
+                Logger.cache.error("Failed to load source settings: \(error, privacy: .public)")
             }
         }
         
@@ -685,15 +686,15 @@ class CacheManager {
                 }
                 settingsLock.unlock()
                 
-                print("[CacheManager] Migrated \(legacyPositions.count) entries from last_position.json")
+                Logger.cache.debug("Migrated \(legacyPositions.count, privacy: .public) entries from last_position.json")
                 saveSourceSettings()
                 
                 // Remove legacy file after successful migration
                 try? fm.removeItem(at: lastPositionFileURL)
-                print("[CacheManager] Removed legacy last_position.json")
+                Logger.cache.debug("Removed legacy last_position.json")
                 return
             } catch {
-                print("[CacheManager] Failed to migrate legacy positions: \(error)")
+                Logger.cache.error("Failed to migrate legacy positions: \(error, privacy: .public)")
             }
         }
         
@@ -724,7 +725,7 @@ class CacheManager {
             let data = try encoder.encode(currentSettings)
             try data.write(to: sourceSettingsFileURL, options: .atomic)
         } catch {
-            print("[CacheManager] Failed to save source settings: \(error)")
+            Logger.cache.error("Failed to save source settings: \(error, privacy: .public)")
         }
     }
     
@@ -800,7 +801,7 @@ class CacheManager {
         updateSourceSettings(for: sourceURL) { settings in
             settings.readingDirection = direction
         }
-        print("[CacheManager] Set reading direction for \(sourceURL.lastPathComponent): \(direction?.displayName ?? "global default")")
+        Logger.cache.debug("Set reading direction for \(sourceURL.lastPathComponent, privacy: .public): \(direction?.displayName ?? "global default")")
     }
     
     /// Toggle reading direction for a source
@@ -838,7 +839,7 @@ class CacheManager {
             }
             settings.singlePageIndices = indices.isEmpty ? nil : indices
         }
-        print("[CacheManager] Single page marker at \(index): \(added ? "added" : "removed")")
+        Logger.cache.debug("Single page marker at \(index, privacy: .public): \(added ? "added" : "removed")")
         return added
     }
     
@@ -887,7 +888,7 @@ class CacheManager {
         aspectRatioLock.lock()
         aspectRatioCache.removeAll()
         aspectRatioLock.unlock()
-        print("[CacheManager] Aspect ratio cache cleared")
+        Logger.cache.debug("Aspect ratio cache cleared")
     }
     
     // MARK: - Bookmarks (#62)
@@ -905,9 +906,9 @@ class CacheManager {
             bookmarksBySource = try JSONDecoder().decode([String: [Bookmark]].self, from: data)
             bookmarksLock.unlock()
             let total = bookmarksBySource.values.reduce(0) { $0 + $1.count }
-            print("[CacheManager] Loaded bookmarks: \(total) across \(bookmarksBySource.count) sources")
+            Logger.cache.info("Loaded bookmarks: \(total, privacy: .public) across \(self.bookmarksBySource.count, privacy: .public) sources")
         } catch {
-            print("[CacheManager] Failed to load bookmarks: \(error)")
+            Logger.cache.error("Failed to load bookmarks: \(error, privacy: .public)")
             bookmarksBySource = [:]
         }
     }
@@ -934,7 +935,7 @@ class CacheManager {
             let data = try encoder.encode(current)
             try data.write(to: bookmarksFileURL, options: .atomic)
         } catch {
-            print("[CacheManager] Failed to save bookmarks: \(error)")
+            Logger.cache.error("Failed to save bookmarks: \(error, privacy: .public)")
         }
     }
     
@@ -969,7 +970,7 @@ class CacheManager {
         // Duplicate check
         if bookmarks.contains(where: { $0.imageIndex == imageIndex }) {
             bookmarksLock.unlock()
-            print("[CacheManager] Bookmark already exists at index \(imageIndex)")
+            Logger.cache.debug("Bookmark already exists at index \(imageIndex, privacy: .public)")
             return nil
         }
         
@@ -985,7 +986,7 @@ class CacheManager {
         bookmarksLock.unlock()
         
         saveBookmarks()
-        print("[CacheManager] Added bookmark '\(name)' at index \(imageIndex)")
+        Logger.cache.debug("Added bookmark '\(name, privacy: .public)' at index \(imageIndex, privacy: .public)")
         return bookmark
     }
     
@@ -1014,7 +1015,7 @@ class CacheManager {
         let removed = bookmarks.count < beforeCount
         if removed {
             saveBookmarks()
-            print("[CacheManager] Removed bookmark id=\(id)")
+            Logger.cache.debug("Removed bookmark id=\(id, privacy: .public)")
         }
         return removed
     }
@@ -1035,7 +1036,7 @@ class CacheManager {
         bookmarksLock.unlock()
         
         saveBookmarks()
-        print("[CacheManager] Updated bookmark name to '\(name)'")
+        Logger.cache.debug("Updated bookmark name to '\(name, privacy: .public)'")
     }
     
     /// Get sorted bookmark indices for a source (for navigation)

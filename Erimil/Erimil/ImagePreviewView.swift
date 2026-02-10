@@ -12,6 +12,7 @@
 
 import SwiftUI
 import AppKit
+import os
 
 /// Quick Look preview window with navigation support
 /// - Space/Esc/Enter: close
@@ -93,7 +94,7 @@ struct ImagePreviewView: View {
                     } else {
                         bookmarkListCursor = 0
                     }
-                    print("[ImagePreviewView] Shift+B → bookmark list (\(bookmarks.count) bookmarks)")
+                    Logger.preview.debug("Shift+B → bookmark list (\(bookmarks.count, privacy: .public) bookmarks)")
                 },
                 onBookmarkListKeyEvent: { event in
                     let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
@@ -104,7 +105,7 @@ struct ImagePreviewView: View {
                     case .selectAndClose(let imageIndex):
                         showBookmarkList = false
                         currentIndex = min(imageIndex, entries.count - 1)
-                        print("[ImagePreviewView] Bookmark list → jump to \(imageIndex)")
+                        Logger.preview.debug("Bookmark list → jump to \(imageIndex, privacy: .public)")
                     case .close:
                         showBookmarkList = false
                     case .consumed:
@@ -122,7 +123,7 @@ struct ImagePreviewView: View {
                     onSelect: { imageIndex in
                         showBookmarkList = false
                         currentIndex = min(imageIndex, entries.count - 1)
-                        print("[ImagePreviewView] Bookmark list click → jump to \(imageIndex)")
+                        Logger.preview.debug("Bookmark list click → jump to \(imageIndex, privacy: .public)")
                     },
                     onClose: { showBookmarkList = false }
                 )
@@ -195,7 +196,7 @@ struct ImagePreviewView: View {
             
             // Fullscreen button (for debugging / alternative to f key)
             Button {
-                print("[ImagePreviewView] Fullscreen button clicked")
+                Logger.preview.debug("Fullscreen button clicked")
                 onToggleFullScreen()
             } label: {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
@@ -240,7 +241,7 @@ struct ImagePreviewView: View {
     // MARK: - Navigation (#67: Cache-based spread-aware navigation)
     
     private func goToPrevious() {
-        print("[ImagePreviewView] goToPrevious called, current: \(currentIndex)")
+        Logger.preview.debug("goToPrevious called, current: \(currentIndex, privacy: .public)")
         guard currentIndex > 0 else { return }
         
         // #67: Try to determine step using cached aspect ratios
@@ -254,7 +255,7 @@ struct ImagePreviewView: View {
             )
             
             if !wouldBeSingle {
-                print("[ImagePreviewView] goToPrevious: cached spread at \(prevIndex), stepping -2")
+                Logger.preview.debug("goToPrevious: cached spread at \(prevIndex, privacy: .public), stepping -2")
                 currentIndex = prevIndex
                 return
             }
@@ -262,11 +263,11 @@ struct ImagePreviewView: View {
         
         // Fallback: step -1
         currentIndex -= 1
-        print("[ImagePreviewView] → new index: \(currentIndex)")
+        Logger.preview.debug("→ new index: \(currentIndex, privacy: .public)")
     }
     
     private func goToNext() {
-        print("[ImagePreviewView] goToNext called, current: \(currentIndex)")
+        Logger.preview.debug("goToNext called, current: \(currentIndex, privacy: .public)")
         guard currentIndex < entries.count - 1 else { return }
         
         // #67: Calculate step using cached aspect ratios
@@ -277,16 +278,16 @@ struct ImagePreviewView: View {
             entries: entries
         )
         let step = isSingle ? 1 : 2
-        print("[ImagePreviewView] goToNext: step = \(step) (single: \(isSingle))")
+        Logger.preview.debug("goToNext: step = \(step, privacy: .public) (single: \(isSingle, privacy: .public))")
         
         let nextIndex = currentIndex + step
         if nextIndex < entries.count {
             currentIndex = nextIndex
-            print("[ImagePreviewView] → new index: \(currentIndex)")
+            Logger.preview.debug("→ new index: \(currentIndex, privacy: .public)")
         } else if currentIndex < entries.count - 1 {
             // Step would overshoot but there's still a page
             currentIndex = entries.count - 1
-            print("[ImagePreviewView] → last page: \(currentIndex)")
+            Logger.preview.debug("→ last page: \(currentIndex, privacy: .public)")
         }
     }
     
@@ -313,7 +314,7 @@ struct ImagePreviewView: View {
     // #55: Toggle single page marker
     private func toggleSinglePageMarker() {
         let added = CacheManager.shared.toggleSinglePageMarker(for: imageSource.url, at: currentIndex)
-        print("[ImagePreviewView] Single page marker at \(currentIndex): \(added ? "ON" : "OFF")")
+        Logger.preview.debug("Single page marker at \(currentIndex, privacy: .public): \(added ? "ON" : "OFF")")
         spreadUpdateTrigger.toggle()
     }
     
@@ -324,14 +325,14 @@ struct ImagePreviewView: View {
         guard targetIndex != currentIndex else { return }
         
         currentIndex = targetIndex
-        print("[ImagePreviewView] → jumped to: \(currentIndex)")
+        Logger.preview.debug("→ jumped to: \(currentIndex, privacy: .public)")
     }
     
     // #72: Jump to first favorite (Ctrl+Z)
     private func jumpToFirstFavorite() {
         if let firstFav = favoriteIndices.min() {
             currentIndex = firstFav
-            print("[ImagePreviewView] → jumped to first favorite: \(firstFav)")
+            Logger.preview.debug("→ jumped to first favorite: \(firstFav, privacy: .public)")
         }
     }
     
@@ -339,7 +340,7 @@ struct ImagePreviewView: View {
     private func jumpToLastFavorite() {
         if let lastFav = favoriteIndices.max() {
             currentIndex = lastFav
-            print("[ImagePreviewView] → jumped to last favorite: \(lastFav)")
+            Logger.preview.debug("→ jumped to last favorite: \(lastFav, privacy: .public)")
         }
     }
     
@@ -363,7 +364,7 @@ struct ImagePreviewView: View {
             sourceURL: imageSource.url, isRTL: isRTL
         ) {
             currentIndex = target
-            print("[ImagePreviewView] → bookmark at \(target)")
+            Logger.preview.debug("→ bookmark at \(target, privacy: .public)")
         }
     }
 }
@@ -411,10 +412,10 @@ struct QuickLookKeyHandler: NSViewRepresentable {
         view.showBookmarkList = showBookmarkList  // #62 Phase 5
         view.onToggleBookmarkList = onToggleBookmarkList  // #62 Phase 5
         view.onBookmarkListKeyEvent = onBookmarkListKeyEvent  // #62 Phase 5
-        print("[QuickLookKeyHandler] makeNSView called")
+        Logger.preview.debug("makeNSView called")
         DispatchQueue.main.async {
             view.window?.makeFirstResponder(view)
-            print("[QuickLookKeyHandler] makeFirstResponder called, success: \(view.window?.firstResponder === view)")
+            Logger.preview.info("makeFirstResponder called, success: \(view.window?.firstResponder === view, privacy: .public)")
         }
         return view
     }
@@ -467,7 +468,7 @@ struct QuickLookKeyHandler: NSViewRepresentable {
             let hasControl = event.modifierFlags.contains(.control)
             let hasCommand = event.modifierFlags.contains(.command)
             let hasShift = event.modifierFlags.contains(.shift)  // #62
-            print("[QuickLookKeyView] keyDown: keyCode=\(event.keyCode), chars='\(event.charactersIgnoringModifiers ?? "nil")', ctrl=\(hasControl), cmd=\(hasCommand), shift=\(hasShift)")
+            Logger.preview.debug("keyDown: keyCode=\(event.keyCode, privacy: .public), chars='\(event.charactersIgnoringModifiers ?? "nil")', ctrl=\(hasControl), cmd=\(hasCommand), shift=\(hasShift)")
             
             // #62 Phase 5: Delegate keys to bookmark list when showing
             if showBookmarkList {
@@ -478,27 +479,27 @@ struct QuickLookKeyHandler: NSViewRepresentable {
             switch event.keyCode {
             // Space (49), Escape (53), Enter (36) - close
             case 49, 53, 36:
-                print("[QuickLookKeyView] → Close triggered")
+                Logger.preview.debug("→ Close triggered")
                 onClose?()
                 
             // Left arrow (123)
             case 123:
-                print("[QuickLookKeyView] → Previous triggered")
+                Logger.preview.debug("→ Previous triggered")
                 onPrevious?()
                 
             // Right arrow (124)
             case 124:
-                print("[QuickLookKeyView] → Next triggered")
+                Logger.preview.debug("→ Next triggered")
                 onNext?()
             
             // #72: Up arrow (126) - same as Left (unified with Slide/Viewer)
             case 126:
-                print("[QuickLookKeyView] → Previous (↑) triggered")
+                Logger.preview.debug("→ Previous (↑) triggered")
                 onPrevious?()
                 
             // #72: Down arrow (125) - same as Right (unified with Slide/Viewer)
             case 125:
-                print("[QuickLookKeyView] → Next (↓) triggered")
+                Logger.preview.debug("→ Next (↓) triggered")
                 onNext?()
                 
             default:
@@ -508,117 +509,117 @@ struct QuickLookKeyHandler: NSViewRepresentable {
                     case "a":
                         if hasShift {
                             // #62: Shift+A = previous bookmark
-                            print("[QuickLookKeyView] → Previous bookmark (Shift+A)")
+                            Logger.preview.debug("→ Previous bookmark (Shift+A)")
                             onPreviousBookmark?()
                         } else if hasControl {
                             // #72: Ctrl+A = jump to visual left (start in LTR, end in RTL)
                             let target = isRTL ? NavigationHelper.lastIndex(totalCount: totalCount) : 0
-                            print("[QuickLookKeyView] → Jump to \(isRTL ? "end" : "start") (Ctrl+A)")
+                            Logger.preview.debug("→ Jump to \(self.isRTL ? "end" : "start") (Ctrl+A)")
                             onJumpToIndex?(target)
                         } else {
-                            print("[QuickLookKeyView] → Previous (a) triggered")
+                            Logger.preview.debug("→ Previous (a) triggered")
                             onPrevious?()
                         }
                     case "d":
                         if hasShift {
                             // #62: Shift+D = next bookmark
-                            print("[QuickLookKeyView] → Next bookmark (Shift+D)")
+                            Logger.preview.debug("→ Next bookmark (Shift+D)")
                             onNextBookmark?()
                         } else if hasControl {
                             // #72: Ctrl+D = jump to visual right (end in LTR, start in RTL)
                             let target = isRTL ? 0 : NavigationHelper.lastIndex(totalCount: totalCount)
-                            print("[QuickLookKeyView] → Jump to \(isRTL ? "start" : "end") (Ctrl+D)")
+                            Logger.preview.debug("→ Jump to \(self.isRTL ? "start" : "end") (Ctrl+D)")
                             onJumpToIndex?(target)
                         } else {
-                            print("[QuickLookKeyView] → Next (d) triggered")
+                            Logger.preview.debug("→ Next (d) triggered")
                             onNext?()
                         }
                     // #72: W - same as A (unified with Slide/Viewer)
                     case "w":
-                        print("[QuickLookKeyView] → Previous (w) triggered")
+                        Logger.preview.debug("→ Previous (w) triggered")
                         onPrevious?()
                     // #72: S - same as D (unified with Slide/Viewer)
                     // #62: Shift+S = bookmark
                     case "s":
                         if hasShift {
-                            print("[QuickLookKeyView] → Bookmark (Shift+S) triggered")
+                            Logger.preview.debug("→ Bookmark (Shift+S) triggered")
                             onAddOrDeleteBookmark?()
                         } else {
-                            print("[QuickLookKeyView] → Next (s) triggered")
+                            Logger.preview.debug("→ Next (s) triggered")
                             onNext?()
                         }
                     // #72: Cmd+1-5 = jump to percentage position (RTL-aware, Cmd to avoid system shortcut conflict)
                     case "1":
                         if hasCommand {
                             let percent = isRTL ? 100 : 0
-                            print("[QuickLookKeyView] → Jump to \(percent)% (Cmd+1)")
+                            Logger.preview.debug("→ Jump to \(percent, privacy: .public)% (Cmd+1)")
                             onJumpToIndex?(NavigationHelper.indexForPercent(percent, totalCount: totalCount))
                         }
                     case "2":
                         if hasCommand {
                             let percent = isRTL ? 75 : 25
-                            print("[QuickLookKeyView] → Jump to \(percent)% (Cmd+2)")
+                            Logger.preview.debug("→ Jump to \(percent, privacy: .public)% (Cmd+2)")
                             onJumpToIndex?(NavigationHelper.indexForPercent(percent, totalCount: totalCount))
                         }
                     case "3":
                         if hasCommand {
-                            print("[QuickLookKeyView] → Jump to 50% (Cmd+3)")
+                            Logger.preview.debug("→ Jump to 50% (Cmd+3)")
                             onJumpToIndex?(NavigationHelper.indexForPercent(50, totalCount: totalCount))
                         }
                     case "4":
                         if hasCommand {
                             let percent = isRTL ? 25 : 75
-                            print("[QuickLookKeyView] → Jump to \(percent)% (Cmd+4)")
+                            Logger.preview.debug("→ Jump to \(percent, privacy: .public)% (Cmd+4)")
                             onJumpToIndex?(NavigationHelper.indexForPercent(percent, totalCount: totalCount))
                         }
                     case "5":
                         if hasCommand {
                             let percent = isRTL ? 0 : 100
-                            print("[QuickLookKeyView] → Jump to \(percent)% (Cmd+5)")
+                            Logger.preview.debug("→ Jump to \(percent, privacy: .public)% (Cmd+5)")
                             onJumpToIndex?(NavigationHelper.indexForPercent(percent, totalCount: totalCount))
                         }
                     // #72: Z - previous favorite, Ctrl+Z - first/last favorite (RTL-aware)
                     case "z":
                         if hasControl {
                             // Ctrl+Z = visual left favorite (first in LTR, last in RTL)
-                            print("[QuickLookKeyView] → \(isRTL ? "Last" : "First") favorite (Ctrl+Z)")
+                            Logger.preview.debug("→ \(self.isRTL ? "Last" : "First") favorite (Ctrl+Z)")
                             isRTL ? onJumpToLastFavorite?() : onJumpToFirstFavorite?()
                         } else {
-                            print("[QuickLookKeyView] → Previous favorite (z) triggered")
+                            Logger.preview.debug("→ Previous favorite (z) triggered")
                             onPreviousFavorite?()
                         }
                     // #72: C - next favorite, Ctrl+C - last/first favorite (RTL-aware)
                     case "c":
                         if hasControl {
                             // Ctrl+C = visual right favorite (last in LTR, first in RTL)
-                            print("[QuickLookKeyView] → \(isRTL ? "First" : "Last") favorite (Ctrl+C)")
+                            Logger.preview.debug("→ \(self.isRTL ? "First" : "Last") favorite (Ctrl+C)")
                             isRTL ? onJumpToFirstFavorite?() : onJumpToLastFavorite?()
                         } else {
-                            print("[QuickLookKeyView] → Next favorite (c) triggered")
+                            Logger.preview.debug("→ Next favorite (c) triggered")
                             onNextFavorite?()
                         }
                     case "f":
-                        print("[QuickLookKeyView] → FullScreen (f) triggered, calling onToggleFullScreen")
+                        Logger.preview.debug("→ FullScreen (f) triggered, calling onToggleFullScreen")
                         onToggleFullScreen?()
                     case "v":  // #55
-                        print("[QuickLookKeyView] → Toggle single page (v) triggered")
+                        Logger.preview.debug("→ Toggle single page (v) triggered")
                         onToggleSinglePage?()
                     // #72: Q - close (unified with Slide/Viewer)
                     case "q":
-                        print("[QuickLookKeyView] → Close (q) triggered")
+                        Logger.preview.debug("→ Close (q) triggered")
                         onClose?()
                     // #62 Phase 5: Shift+B = toggle bookmark list
                     case "b":
                         if hasShift {
-                            print("[QuickLookKeyView] → Bookmark list (Shift+B) triggered")
+                            Logger.preview.debug("→ Bookmark list (Shift+B) triggered")
                             onToggleBookmarkList?()
                         }
                     default:
-                        print("[QuickLookKeyView] → Unhandled key, passing to super")
+                        Logger.preview.debug("→ Unhandled key, passing to super")
                         super.keyDown(with: event)
                     }
                 } else {
-                    print("[QuickLookKeyView] → No chars, passing to super")
+                    Logger.preview.debug("→ No chars, passing to super")
                     super.keyDown(with: event)
                 }
             }

@@ -9,6 +9,7 @@
 
 import SwiftUI
 import AppKit
+import os
 
 /// Core image viewer component shared between Quick Look and Slide Mode
 /// Provides: image display, a/d navigation, z/c favorite jump, position indicator
@@ -112,14 +113,14 @@ struct ImageViewerCore: View {
                 imageSource: imageSource,
                 previousIndex: previousIndex
             )
-            print("[ImageViewerCore] Cache HIT for \(entry.name)")
+            Logger.viewer.debug("Cache HIT for \(entry.name, privacy: .public)")
             return
         }
         
         // Cache miss - load normally
         isLoading = true
         loadedImage = nil
-        print("[ImageViewerCore] Cache MISS for \(entry.name), loading...")
+        Logger.viewer.debug("Cache MISS for \(entry.name, privacy: .public), loading...")
         
         // Capture for async
         let capturedSource = imageSource
