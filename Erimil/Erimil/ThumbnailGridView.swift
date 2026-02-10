@@ -257,11 +257,18 @@ struct ThumbnailGridView: View {
             
             // サムネイルグリッド
             if entries.isEmpty {
-                ContentUnavailableView(
-                    "画像がありません",
-                    systemImage: "photo",
-                    description: Text("このフォルダには画像ファイルが含まれていません")
-                )
+                ZStack {
+                    ContentUnavailableView(
+                        "画像がありません",
+                        systemImage: "photo",
+                        description: Text("このフォルダには画像ファイルが含まれていません")
+                    )
+                    // Key event handler for source navigation even with empty entries
+                    KeyEventHandlerView { event in
+                        handleKeyEvent(event)
+                    }
+                    .allowsHitTesting(false)
+                }
             } else {
                 GeometryReader { geometry in
                     ZStack {
@@ -895,6 +902,36 @@ struct ThumbnailGridView: View {
                 break
             }
             return true
+        }
+        
+        // Source navigation works even with empty entries
+        if let chars = event.charactersIgnoringModifiers?.lowercased() {
+            let hasControl = event.modifierFlags.contains(.control)
+            if hasControl {
+                switch chars {
+                case "w":
+                    onRequestPreviousSource?()
+                    return true
+                case "s":
+                    onRequestNextSource?()
+                    return true
+                default:
+                    break
+                }
+            }
+        }
+        let hasControlArrow = event.modifierFlags.contains(.control)
+        if hasControlArrow {
+            switch event.keyCode {
+            case 123, 126: // Left/Up arrow + Ctrl
+                onRequestPreviousSource?()
+                return true
+            case 124, 125: // Right/Down arrow + Ctrl
+                onRequestNextSource?()
+                return true
+            default:
+                break
+            }
         }
         
         guard !entries.isEmpty else { return false }
