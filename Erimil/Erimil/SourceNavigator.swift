@@ -7,7 +7,7 @@
 
 import Foundation
 
-/// Handles navigation between sibling sources (ZIP files and image folders)
+/// Handles navigation between sibling sources (ZIP files, PDF documents, and image folders)
 /// within the same parent directory.
 struct SourceNavigator {
     
@@ -57,7 +57,7 @@ struct SourceNavigator {
     
     // MARK: - Private
     
-    /// Lists all sibling sources (ZIPs and directories) in the same parent folder
+    /// Lists all sibling sources (ZIPs, PDFs, and directories) in the same parent folder
     /// Uses the same filtering logic as FolderNode.loadChildren for consistency
     private static func siblingSourcesOf(_ url: URL) -> [URL] {
         let parentURL = url.deletingLastPathComponent()
@@ -72,11 +72,12 @@ struct SourceNavigator {
             return []
         }
         
-        // Filter: directories or ZIP files only (same as FolderNode.loadChildren)
+        // Filter: directories, ZIP files, or PDF files (same as FolderNode.loadChildren)
         let sources = contents.filter { item in
             var isDir: ObjCBool = false
             fm.fileExists(atPath: item.path, isDirectory: &isDir)
-            return isDir.boolValue || item.pathExtension.lowercased() == "zip"
+            let ext = item.pathExtension.lowercased()
+            return isDir.boolValue || ext == "zip" || ext == "pdf"
         }
         
         // Sort: localized standard compare (same as FolderNode.loadChildren)
