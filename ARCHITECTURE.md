@@ -683,28 +683,50 @@ Required keys in `Erimil.entitlements`:
 
 ### Debugging
 
-**Check logs in Console.app**
+**Structured logging with os.Logger (#94)**
+
+All debug output uses Apple's `os.Logger` framework with subsystem `com.erimil.app`.
+Logger categories are defined in `Logger.swift` as static extensions.
+
+**Filtering in Console.app**
 
 ```
 1. Open Console.app
-2. Filter: Process name "Erimil" or search "[AppSettings]"
-3. Operate the app and check logs
+2. Filter: Process name "Erimil"
+3. Filter: Subsystem "com.erimil.app"
+4. Optionally filter by Category (e.g., "ThumbnailGrid")
+5. Action → Include Debug Messages to show .debug level
 ```
 
-**Common log prefixes**
+**Logger categories**
 
-| Prefix | Component |
-|--------|-----------|
-| `[AppSettings]` | Settings, Bookmarks |
-| `[CacheManager]` | Cache, Favorites, Aspect Ratio |
-| `[Bookmark]` | Bookmark operations (#62) |
-| `[SidebarView]` | Folder tree |
-| `[ContentView]` | Main view |
-| `[ThumbnailGridView]` | Thumbnail grid |
-| `[SlideWindowController]` | Slide Mode |
-| `[SourceNavigator]` | Source navigation |
-| `[PDFManager]` | PDF operations |
-| `[ImagePrefetcher]` | Image prefetching |
+| Category | Component |
+|----------|-----------|
+| `AppSettings` | Settings, Bookmarks |
+| `ArchiveManager` | ZIP archive operations |
+| `CacheManager` | Cache, Favorites, Aspect Ratio |
+| `Bookmark` | Bookmark operations (#62) |
+| `SidebarView` | Folder tree |
+| `ContentView` | Main view |
+| `ThumbnailGrid` | Thumbnail grid |
+| `SlideWindow` | Slide Mode |
+| `SourceNavigator` | Source navigation |
+| `PDFManager` | PDF operations |
+| `Prefetcher` | Image prefetching |
+| `FolderManager` | Folder operations |
+| `ZIPEncoding` | ZIP filename encoding |
+| `ImagePreview` | Quick Look preview |
+| `Viewer` | ViewerView |
+| `SpreadViewer` | Spread display |
+| `KeyHandling` | Keyboard event handling |
+
+**Log levels**
+
+| Level | Usage |
+|-------|-------|
+| `.debug` | Development traces (thumbnail loading, key detection) |
+| `.info` | Milestones (source switch, export complete) |
+| `.error` | Failures (file read error, archive open failure) |
 
 ### Application Support Location
 
@@ -724,7 +746,7 @@ Required keys in `Erimil.entitlements`:
 ```
 A: Security-Scoped Bookmarks issue
    1. Verify bookmarks.app-scope in Entitlements
-   2. Check "[AppSettings]" logs in Console.app
+   2. Check AppSettings category logs in Console.app
    3. Verify last_folder_bookmark.data is created
 ```
 
@@ -745,14 +767,14 @@ A: Build Settings misconfiguration
 **Q: Keyboard shortcuts not working in Slide Mode**
 ```
 A: Event monitor issue
-   1. Check "[SlideWindowController]" logs for "Event monitor registered"
+   1. Check SlideWindow category logs for "Event monitor registered"
    2. Verify window is key window (isKeyWindow == true)
 ```
 
 **Q: PDF pages not displaying**
 ```
 A: PDFManager issue
-   1. Check "[PDFManager]" logs for page count
+   1. Check PDFManager category logs for page count
    2. Verify PDF is not password-protected
    3. Check memory usage for large PDFs
 ```
@@ -781,4 +803,4 @@ A: Aspect ratio or direction issue
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2026-02-06 (S034: Bookmarks/栞 system #62)
+> Last updated: 2026-02-10 (S038: os.Logger migration #94)
