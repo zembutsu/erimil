@@ -15,6 +15,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import os
 
 // MARK: - Key Event Handler (NSViewRepresentable)
 
@@ -165,121 +166,318 @@ struct ThumbnailGridView: View {
     var body: some View {
         // S013: Viewer Mode - full window image display
         if case .viewer(let viewerIndex) = previewMode {
-            ViewerView(
+            viewerModeView(index: viewerIndex)
+        } else {
+            thumbnailBrowserView
+        } // end else (Grid view)
+    }
+    
+    // MARK: - Viewer Mode
+
+    @ViewBuilder
+    private func viewerModeView(index viewerIndex: Int) -> some View {
+        ViewerView(
+            imageSource: imageSource,
+            entries: entries,
+            currentIndex: viewerIndex,
+            contentHashes: contentHashes,
+            favoriteIndices: favoriteIndices,  // #67: Add for SpreadImageViewer
+            selectionMode: settings.selectionMode,
+            selectedPaths: $selectedPaths,
+            favoritesVersion: $favoritesVersion,
+            onClose: {
+                previewMode = .none
+            },
+            onIndexChange: { newIndex in
+                focusedIndex = newIndex
+                previewMode = .viewer(index: newIndex)
+                // #52: Save last position
+                CacheManager.shared.setLastPosition(for: imageSource.url, index: newIndex)
+            },
+            onEnterSlideMode: { index in
+                // Close Viewer Mode first
+                previewMode = .none
+                
+                // Open Slide Mode directly
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    let positionInfo = SourceNavigator.positionInfo(for: imageSource.url)
+                    let sourceName = imageSource.url.lastPathComponent
+                    let selectedIndices = Set(entries.enumerated().compactMap { idx, entry in
+                        selectedPaths.contains(entry.path) ? idx : nil
+                    })
+                    
+                    SlideWindowController.shared.open(
+                        imageSource: imageSource,
+                        entries: entries,
+                        initialIndex: index,
+                        favoriteIndices: favoriteIndices,
+                        selectedIndices: selectedIndices,
+                        sourceName: sourceName,
+                        sourcePosition: positionInfo?.position ?? 0,
+                        totalSources: positionInfo?.total ?? 0,
+                        onClose: {
+                            Logger.thumbnailGrid.info("SlideWindowController closed from ViewerMode")
+                        },
+                        onIndexChange: { newIndex in
+                            focusedIndex = newIndex
+                            // #52: Save last position
+                            CacheManager.shared.setLastPosition(for: imageSource.url, index: newIndex)
+                        },
+                        onNextSource: onRequestNextSource,
+                        onPreviousSource: onRequestPreviousSource,
+                        onToggleFavorite: { [self] idx in
+                            guard idx >= 0, idx < entries.count else { return }
+                            let entry = entries[idx]
+                            let hash = contentHashes[entry.path]
+                            _ = CacheManager.shared.toggleFavorite(
+                                sourceURL: imageSource.url,
+                                entryPath: entry.path,
+                                contentHash: hash
+                            )
+                            favoritesVersion += 1
+                        },
+                        onToggleSelection: { [self] idx in
+                            guard idx >= 0, idx < entries.count else { return }
+                            let entry = entries[idx]
+                            if selectedPaths.contains(entry.path) {
+                                selectedPaths.remove(entry.path)
+                            } else {
+                                selectedPaths.insert(entry.path)
+                            }
+                        },
+                        onExitToViewerMode: {
+                            let currentIdx = SlideWindowController.shared.getCurrentIndex
+                            previewMode = .viewer(index: currentIdx)
+                        }
+                    )
+                }
+            },
+            onRequestNextSource: {
+                shouldReopenViewerMode = true
+                onRequestNextSource?()
+            },
+            onRequestPreviousSource: {
+                shouldReopenViewerMode = true
+                onRequestPreviousSource?()
+            }
+        )
+    }
+
+    // MARK: - Thumbnail Browser
+
+    @ViewBuilder
+    private var thumbnailBrowserView: some View {
+        thumbnailBrowserContent
+            .overlay {
+                if showBookmarkList {
+                    BookmarkListOverlayView(
+                        bookmarks: CacheManager.shared.getBookmarks(for: imageSource.url),
+                        selectedCursor: bookmarkListCursor,
+                        onSelect: { imageIndex in
+                            showBookmarkList = false
+                            focusedIndex = min(imageIndex, entries.count - 1)
+                            Logger.folder.debug("Bookmark list click → jump to \(imageIndex, privacy: .public)")
+                        },
+                        onClose: { showBookmarkList = false }
+                    )
+                }
+            }
+            .onChange(of: imageSource.url) { oldURL, newURL in
+                if currentSourceURL != newURL {
+                    loadSource()
+                }
+            }
+            .onChange(of: entries) { _, newEntries in
+                handleEntriesChange(newEntries)
+            }
+            .onAppear {
+                if currentSourceURL != imageSource.url {
+                    loadSource()
+                }
+            }
+            .sheet(isPresented: Binding(
+                get: { previewMode.isQuickLook },
+                set: { if !$0 { previewMode = .none } }
+            )) {
+                quickLookSheet
+            }
+            .onChange(of: shouldReopenSlideMode) { _, newValue in
+                handleSlideModeReopen(newValue)
+            }
+            .onChange(of: previewMode) { oldMode, newMode in
+                handlePreviewModeChange(oldMode: oldMode, newMode: newMode)
+            }
+            .alert("エクスポート完了", isPresented: $showExportSuccess) {
+                Button("OK") { }
+            } message: {
+                Text(exportMessage)
+            }
+            .alert("エラー", isPresented: $showExportError) {
+                Button("OK") { }
+            } message: {
+                Text(exportMessage)
+            }
+            .alert("ゴミ箱に移動", isPresented: $showDeleteConfirm) {
+                Button("キャンセル", role: .cancel) { }
+                Button("削除", role: .destructive) {
+                    performDelete()
+                }
+            } message: {
+                Text("\(pathsToRemove.count) 件のファイルをゴミ箱に移動しますか？")
+            }
+    }
+
+    private var thumbnailBrowserContent: some View {
+        VStack(spacing: 0) {
+            headerView
+            Divider()
+            gridContentView
+            if !selectedPaths.isEmpty {
+                Divider()
+                footerView
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var quickLookSheet: some View {
+        if let index = previewMode.index {
+            ImagePreviewView(
                 imageSource: imageSource,
                 entries: entries,
-                currentIndex: viewerIndex,
-                contentHashes: contentHashes,
-                favoriteIndices: favoriteIndices,  // #67: Add for SpreadImageViewer
-                selectionMode: settings.selectionMode,
-                selectedPaths: $selectedPaths,
-                favoritesVersion: $favoritesVersion,
-                onClose: {
-                    previewMode = .none
-                },
-                onIndexChange: { newIndex in
-                    focusedIndex = newIndex
-                    previewMode = .viewer(index: newIndex)
-                    // #52: Save last position
-                    CacheManager.shared.setLastPosition(for: imageSource.url, index: newIndex)
-                },
-                onEnterSlideMode: { index in
-                    // Close Viewer Mode first
-                    previewMode = .none
-                    
-                    // Open Slide Mode directly
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        let positionInfo = SourceNavigator.positionInfo(for: imageSource.url)
-                        let sourceName = imageSource.url.lastPathComponent
-                        let selectedIndices = Set(entries.enumerated().compactMap { idx, entry in
-                            selectedPaths.contains(entry.path) ? idx : nil
-                        })
-                        
-                        SlideWindowController.shared.open(
-                            imageSource: imageSource,
-                            entries: entries,
-                            initialIndex: index,
-                            favoriteIndices: favoriteIndices,
-                            selectedIndices: selectedIndices,
-                            sourceName: sourceName,
-                            sourcePosition: positionInfo?.position ?? 0,
-                            totalSources: positionInfo?.total ?? 0,
-                            onClose: {
-                                print("[ThumbnailGridView] SlideWindowController closed from ViewerMode")
-                            },
-                            onIndexChange: { newIndex in
-                                focusedIndex = newIndex
-                                // #52: Save last position
-                                CacheManager.shared.setLastPosition(for: imageSource.url, index: newIndex)
-                            },
-                            onNextSource: onRequestNextSource,
-                            onPreviousSource: onRequestPreviousSource,
-                            onToggleFavorite: { [self] idx in
-                                guard idx >= 0, idx < entries.count else { return }
-                                let entry = entries[idx]
-                                let hash = contentHashes[entry.path]
-                                _ = CacheManager.shared.toggleFavorite(
-                                    sourceURL: imageSource.url,
-                                    entryPath: entry.path,
-                                    contentHash: hash
-                                )
-                                favoritesVersion += 1
-                            },
-                            onToggleSelection: { [self] idx in
-                                guard idx >= 0, idx < entries.count else { return }
-                                let entry = entries[idx]
-                                if selectedPaths.contains(entry.path) {
-                                    selectedPaths.remove(entry.path)
-                                } else {
-                                    selectedPaths.insert(entry.path)
-                                }
-                            },
-                            onExitToViewerMode: {
-                                let currentIdx = SlideWindowController.shared.getCurrentIndex
-                                previewMode = .viewer(index: currentIdx)
-                            }
-                        )
+                initialIndex: index,
+                favoriteIndices: favoriteIndices,
+                onClose: { previewMode = .none },
+                onToggleFullScreen: {
+                    Logger.thumbnailGrid.debug("onToggleFullScreen called")
+                    Logger.thumbnailGrid.debug("Current previewMode: \(String(describing: previewMode), privacy: .public)")
+                    if let idx = previewMode.index {
+                        Logger.thumbnailGrid.debug("Setting previewMode to .slideMode(index: \(idx, privacy: .public))")
+                        previewMode = .slideMode(index: idx)
+                    } else {
+                        Logger.thumbnailGrid.error("ERROR: previewMode.index is nil")
                     }
-                },
-                onRequestNextSource: {
-                    shouldReopenViewerMode = true  // 追加
-                    onRequestNextSource?()
-                },
-                onRequestPreviousSource: {
-                    shouldReopenViewerMode = true  // 追加
-                    onRequestPreviousSource?()
                 }
             )
-        } else {
-            VStack(spacing: 0) {
-            // ヘッダー
-            headerView
+        }
+    }
+
+    private func handleEntriesChange(_ newEntries: [ImageEntry]) {
+        if shouldReopenViewerMode && !newEntries.isEmpty {
+            let startIndex: Int
+            if let lastIndex = CacheManager.shared.getLastPosition(for: imageSource.url) {
+                startIndex = min(lastIndex, newEntries.count - 1)
+            } else {
+                startIndex = 0
+            }
+            previewMode = .viewer(index: startIndex)
+            shouldReopenViewerMode = false
+        }
+    }
+
+    private func handleSlideModeReopen(_ newValue: Bool) {
+        if newValue && !entries.isEmpty && !SlideWindowController.shared.isOpen {
+            Logger.thumbnailGrid.debug("shouldReopenSlideMode triggered, opening Slide Mode")
+            shouldReopenSlideMode = false
+            let index = focusedIndex ?? 0
+            previewMode = .slideMode(index: index)
+        }
+    }
+
+    private func handlePreviewModeChange(oldMode: PreviewMode, newMode: PreviewMode) {
+        Logger.thumbnailGrid.debug("previewMode changed: \(String(describing: oldMode), privacy: .public) → \(String(describing: newMode), privacy: .public)")
+        
+        if case .slideMode(let index) = newMode {
+            Logger.thumbnailGrid.debug("Slide Mode requested at index \(index, privacy: .public)")
+            let favIndices = favoriteIndices
+            previewMode = .none
             
-            Divider()
-            
-            // サムネイルグリッド
-            ZStack {
-                if isLoadingSource {
-                    if showLoadingSpinner {
-                        VStack(spacing: 12) {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                            Text("読み込み中…")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        Color.clear
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                } else if entries.isEmpty {
-                    ContentUnavailableView(
-                        "画像がありません",
-                        systemImage: "photo",
-                        description: Text("このフォルダには画像ファイルが含まれていません")
-                    )
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                openSlideWindow(at: index, favoriteIndices: favIndices)
+            }
+        }
+    }
+
+    private func openSlideWindow(at index: Int, favoriteIndices favIndices: Set<Int>) {
+        Logger.thumbnailGrid.debug("Opening SlideWindowController...")
+        
+        let positionInfo = SourceNavigator.positionInfo(for: imageSource.url)
+        let sourceName = imageSource.url.lastPathComponent
+        let selectedIndices = Set(entries.enumerated().compactMap { idx, entry in
+            selectedPaths.contains(entry.path) ? idx : nil
+        })
+        
+        SlideWindowController.shared.open(
+            imageSource: imageSource,
+            entries: entries,
+            initialIndex: index,
+            favoriteIndices: favIndices,
+            selectedIndices: selectedIndices,
+            sourceName: sourceName,
+            sourcePosition: positionInfo?.position ?? 0,
+            totalSources: positionInfo?.total ?? 0,
+            onClose: {
+                Logger.thumbnailGrid.info("SlideWindowController closed")
+            },
+            onIndexChange: { newIndex in
+                focusedIndex = newIndex
+                CacheManager.shared.setLastPosition(for: imageSource.url, index: newIndex)
+            },
+            onNextSource: onRequestNextSource,
+            onPreviousSource: onRequestPreviousSource,
+            onToggleFavorite: { [self] index in
+                guard index >= 0, index < entries.count else { return }
+                let entry = entries[index]
+                let hash = contentHashes[entry.path]
+                _ = CacheManager.shared.toggleFavorite(
+                    sourceURL: imageSource.url,
+                    entryPath: entry.path,
+                    contentHash: hash
+                )
+                favoritesVersion += 1
+            },
+            onToggleSelection: { [self] index in
+                guard index >= 0, index < entries.count else { return }
+                let entry = entries[index]
+                if selectedPaths.contains(entry.path) {
+                    selectedPaths.remove(entry.path)
                 } else {
+                    selectedPaths.insert(entry.path)
+                }
+            },
+            onExitToViewerMode: {
+                let currentIdx = SlideWindowController.shared.getCurrentIndex
+                previewMode = .viewer(index: currentIdx)
+            }
+        )
+    }
+
+    // MARK: - Grid Content
+
+    @ViewBuilder
+    private var gridContentView: some View {
+        ZStack {
+            if isLoadingSource {
+                if showLoadingSpinner {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("読み込み中…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            } else if entries.isEmpty {
+                ContentUnavailableView(
+                    "画像がありません",
+                    systemImage: "photo",
+                    description: Text("このフォルダには画像ファイルが含まれていません")
+                )
+            } else {
                 GeometryReader { geometry in
                     ZStack {
                         ScrollViewReader { scrollProxy in
@@ -349,193 +547,18 @@ struct ThumbnailGridView: View {
                         updateColumnCount(for: geometry.size.width)
                     }
                 }
-                }
-                
-                // Key event handler — always present, survives branch switches
-                KeyEventHandlerView { event in
-                    handleKeyEvent(event)
-                }
-                .allowsHitTesting(false)
             }
             
-            // フッター（選択がある場合のみ表示）
-            if !selectedPaths.isEmpty {
-                Divider()
-                footerView
+            // Key event handler — always present, survives branch switches
+            KeyEventHandlerView { event in
+                handleKeyEvent(event)
             }
+            .allowsHitTesting(false)
         }
-        // #62 Phase 5: Bookmark list overlay
-        .overlay {
-            if showBookmarkList {
-                BookmarkListOverlayView(
-                    bookmarks: CacheManager.shared.getBookmarks(for: imageSource.url),
-                    selectedCursor: bookmarkListCursor,
-                    onSelect: { imageIndex in
-                        showBookmarkList = false
-                        focusedIndex = min(imageIndex, entries.count - 1)
-                        print("[Filer] Bookmark list click → jump to \(imageIndex)")
-                    },
-                    onClose: { showBookmarkList = false }
-                )
-            }
-        }
-        .onChange(of: imageSource.url) { oldURL, newURL in
-            if currentSourceURL != newURL {
-                loadSource()
-            }
-        }
-        .onChange(of: entries) { _, newEntries in
-            // S016: Reopen Viewer Mode if flag is set
-            if shouldReopenViewerMode && !newEntries.isEmpty {
-                // #52: Restore last position when reopening Viewer Mode after source switch
-                let startIndex: Int
-                if let lastIndex = CacheManager.shared.getLastPosition(for: imageSource.url) {
-                    startIndex = min(lastIndex, newEntries.count - 1)
-                } else {
-                    startIndex = 0
-                }
-                previewMode = .viewer(index: startIndex)
-                shouldReopenViewerMode = false
-            }
-        }
-        .onAppear {
-            if currentSourceURL != imageSource.url {
-                loadSource()
-            }
-        }
-        // Quick Look mode (sheet)
-        .sheet(isPresented: Binding(
-            get: { previewMode.isQuickLook },
-            set: { if !$0 { previewMode = .none } }
-        )) {
-            if let index = previewMode.index {
-                ImagePreviewView(
-                    imageSource: imageSource,
-                    entries: entries,
-                    initialIndex: index,
-                    favoriteIndices: favoriteIndices,
-                    onClose: { previewMode = .none },
-                    onToggleFullScreen: {
-                        print("[ThumbnailGridView] onToggleFullScreen called")
-                        print("[ThumbnailGridView] Current previewMode: \(previewMode)")
-                        // Switch from Quick Look to Slide Mode
-                        if let idx = previewMode.index {
-                            print("[ThumbnailGridView] Setting previewMode to .slideMode(index: \(idx))")
-                            previewMode = .slideMode(index: idx)
-                        } else {
-                            print("[ThumbnailGridView] ERROR: previewMode.index is nil")
-                        }
-                    }
-                )
-            }
-        }
-        // S010: Watch for Slide Mode open request from sidebar double-click
-        .onChange(of: shouldReopenSlideMode) { _, newValue in
-            if newValue && !entries.isEmpty && !SlideWindowController.shared.isOpen {
-                print("[ThumbnailGridView] shouldReopenSlideMode triggered, opening Slide Mode")
-                shouldReopenSlideMode = false
-                let index = focusedIndex ?? 0
-                previewMode = .slideMode(index: index)
-            }
-        }
-        // Slide Mode - opens separate fullscreen window
-        .onChange(of: previewMode) { oldMode, newMode in
-            print("[ThumbnailGridView] previewMode changed: \(oldMode) → \(newMode)")
-            
-            if case .slideMode(let index) = newMode {
-                print("[ThumbnailGridView] Slide Mode requested at index \(index)")
-                // Capture favoriteIndices before closing sheet
-                let favIndices = favoriteIndices
-                // Close sheet first, then open Slide window
-                previewMode = .none
-                
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    print("[ThumbnailGridView] Opening SlideWindowController...")
-                    
-                    // S010: Get source position info
-                    let positionInfo = SourceNavigator.positionInfo(for: imageSource.url)
-                    let sourceName = imageSource.url.lastPathComponent
-                    
-                    // S010: Convert selectedPaths to indices
-                    let selectedIndices = Set(entries.enumerated().compactMap { index, entry in
-                        selectedPaths.contains(entry.path) ? index : nil
-                    })
-                    
-                    SlideWindowController.shared.open(
-                        imageSource: imageSource,
-                        entries: entries,
-                        initialIndex: index,
-                        favoriteIndices: favIndices,
-                        selectedIndices: selectedIndices,
-                        sourceName: sourceName,
-                        sourcePosition: positionInfo?.position ?? 0,
-                        totalSources: positionInfo?.total ?? 0,
-                        onClose: {
-                            print("[ThumbnailGridView] SlideWindowController closed")
-                        },
-                        onIndexChange: { newIndex in
-                            focusedIndex = newIndex
-                            // #52: Save last position
-                            CacheManager.shared.setLastPosition(for: imageSource.url, index: newIndex)
-                        },
-                        onNextSource: onRequestNextSource,
-                        onPreviousSource: onRequestPreviousSource,
-                        onToggleFavorite: { [self] index in
-                            // Toggle favorite for entry at index
-                            guard index >= 0, index < entries.count else { return }
-                            let entry = entries[index]
-                            let hash = contentHashes[entry.path]
-                            _ = CacheManager.shared.toggleFavorite(
-                                sourceURL: imageSource.url,
-                                entryPath: entry.path,
-                                contentHash: hash
-                            )
-                            favoritesVersion += 1
-                        },
-                        onToggleSelection: { [self] index in
-                            // Toggle selection for entry at index
-                            guard index >= 0, index < entries.count else { return }
-                            let entry = entries[index]
-                            if selectedPaths.contains(entry.path) {
-                                selectedPaths.remove(entry.path)
-                            } else {
-                                selectedPaths.insert(entry.path)
-                            }
-                        },
-                        onExitToViewerMode: {
-                            // Get current index from SlideWindowController and open Viewer Mode
-                            let currentIdx = SlideWindowController.shared.getCurrentIndex
-                            previewMode = .viewer(index: currentIdx)
-                        }
-                    )
-                }
-
-                
-            }
-        }
-        .alert("エクスポート完了", isPresented: $showExportSuccess) {
-            Button("OK") { }
-        } message: {
-            Text(exportMessage)
-        }
-        .alert("エラー", isPresented: $showExportError) {
-            Button("OK") { }
-        } message: {
-            Text(exportMessage)
-        }
-        .alert("ゴミ箱に移動", isPresented: $showDeleteConfirm) {
-            Button("キャンセル", role: .cancel) { }
-            Button("削除", role: .destructive) {
-                performDelete()
-            }
-        } message: {
-            Text("\(pathsToRemove.count) 件のファイルをゴミ箱に移動しますか？")
-        }
-        } // end else (Grid view)
     }
-    
+
     // MARK: - Header
-    
+
     @ViewBuilder
     private var headerView: some View {
         VStack(spacing: 8) {
@@ -777,7 +800,7 @@ struct ThumbnailGridView: View {
                             sourcePosition: positionInfo?.position ?? 0,
                             totalSources: positionInfo?.total ?? 0,
                             onClose: {
-                                print("[ThumbnailGridView] SlideWindowController closed (after source switch)")
+                                Logger.thumbnailGrid.info("SlideWindowController closed (after source switch)")
                             },
                             onIndexChange: { newIndex in
                                 focusedIndex = newIndex
@@ -818,7 +841,7 @@ struct ThumbnailGridView: View {
         // CRITICAL: Check if this call is from a stale View instance
         // SwiftUI may trigger onAppear from old View instances with old imageSource
         guard imageSource.url == currentSourceURL else {
-            print("[loadThumbnail] SKIP stale View call: \(entry.name) (imageSource: \(imageSource.url.lastPathComponent), current: \(currentSourceURL?.lastPathComponent ?? "nil"))")
+            Logger.thumbnailGrid.debug("SKIP stale View call: \(entry.name, privacy: .public) (imageSource: \(imageSource.url.lastPathComponent, privacy: .public), current: \(currentSourceURL?.lastPathComponent ?? "nil"))")
             return
         }
         
@@ -841,7 +864,7 @@ struct ThumbnailGridView: View {
             fullPath = entry.path  // FolderManager already has full path
         }
         
-        print("[loadThumbnail] Starting for \(entryName) from \(capturedSourceURL.lastPathComponent), loadID: \(capturedLoadID)")
+        Logger.thumbnailGrid.debug("Starting for \(entryName, privacy: .public) from \(capturedSourceURL.lastPathComponent, privacy: .public), loadID: \(capturedLoadID, privacy: .public)")
         
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             // FIRST: Check validity on main thread BEFORE expensive operation
@@ -849,7 +872,7 @@ struct ThumbnailGridView: View {
             DispatchQueue.main.sync {
                 stillValid = (capturedLoadID == loadID && capturedSourceURL == currentSourceURL)
                 if !stillValid {
-                    print("[loadThumbnail] SKIP async stale: \(entryName)")
+                    Logger.thumbnailGrid.debug("SKIP async stale: \(entryName, privacy: .public)")
                 }
             }
             
@@ -857,7 +880,7 @@ struct ThumbnailGridView: View {
             
             // Now generate thumbnail
             guard let thumbnail = currentSource.thumbnail(for: entry, maxSize: maxSize) else {
-                print("[loadThumbnail] Failed for: \(entryName) from \(capturedSourceURL.lastPathComponent)")
+                Logger.thumbnailGrid.error("Failed for: \(entryName, privacy: .public) from \(capturedSourceURL.lastPathComponent, privacy: .public)")
                 return
             }
             
@@ -867,17 +890,17 @@ struct ThumbnailGridView: View {
             DispatchQueue.main.async {
                 // Re-check validity after thumbnail generated
                 guard capturedLoadID == loadID else {
-                    print("[loadThumbnail] Discarding stale thumbnail: \(entryName) (loadID mismatch)")
+                    Logger.thumbnailGrid.debug("Discarding stale thumbnail: \(entryName, privacy: .public) (loadID mismatch)")
                     return
                 }
                 
                 guard capturedSourceURL == currentSourceURL else {
-                    print("[loadThumbnail] Discarding stale thumbnail: \(entryName) (URL mismatch)")
+                    Logger.thumbnailGrid.debug("Discarding stale thumbnail: \(entryName, privacy: .public) (URL mismatch)")
                     return
                 }
                 
                 guard entries.contains(where: { $0.path == entryPath }) else {
-                    print("[loadThumbnail] Discarding thumbnail for removed entry: \(entryName)")
+                    Logger.thumbnailGrid.debug("Discarding thumbnail for removed entry: \(entryName, privacy: .public)")
                     return
                 }
                 
@@ -888,7 +911,7 @@ struct ThumbnailGridView: View {
                     contentHashes[entryPath] = hash
                 }
                 
-                print("[loadThumbnail] Success: \(entryName)")
+                Logger.thumbnailGrid.info("Success: \(entryName, privacy: .public)")
             }
         }
     }
@@ -915,7 +938,7 @@ struct ThumbnailGridView: View {
             case .selectAndClose(let imageIndex):
                 showBookmarkList = false
                 focusedIndex = min(imageIndex, entries.count - 1)
-                print("[Filer] Bookmark list → jump to \(imageIndex)")
+                Logger.folder.debug("Bookmark list → jump to \(imageIndex, privacy: .public)")
             case .close:
                 showBookmarkList = false
             case .consumed:
@@ -1047,13 +1070,13 @@ struct ThumbnailGridView: View {
                     wrap: settings.loopWithinSource
                 ) {
                     focusedIndex = target
-                    print("[Filer] Shift+A → bookmark at \(target)")
+                    Logger.folder.debug("Shift+A → bookmark at \(target, privacy: .public)")
                 }
             } else if event.modifierFlags.contains(.control) {
                 // #72: Ctrl+A = jump to start (RTL: end)
                 let target = isRTL ? entries.count - 1 : 0
                 focusedIndex = target
-                print("[Filer] Ctrl+A → \(isRTL ? "end" : "start")")
+                Logger.folder.debug("Ctrl+A → \(isRTL ? "end" : "start")")
             } else {
                 moveFocus(by: isRTL ? 1 : -1)  // #72: RTL-aware
             }
@@ -1069,13 +1092,13 @@ struct ThumbnailGridView: View {
                     wrap: settings.loopWithinSource
                 ) {
                     focusedIndex = target
-                    print("[Filer] Shift+D → bookmark at \(target)")
+                    Logger.folder.debug("Shift+D → bookmark at \(target, privacy: .public)")
                 }
             } else if event.modifierFlags.contains(.control) {
                 // #72: Ctrl+D = jump to end (RTL: start)
                 let target = isRTL ? 0 : entries.count - 1
                 focusedIndex = target
-                print("[Filer] Ctrl+D → \(isRTL ? "start" : "end")")
+                Logger.folder.debug("Ctrl+D → \(isRTL ? "start" : "end")")
             } else {
                 moveFocus(by: isRTL ? -1 : 1)  // #72: RTL-aware
             }
@@ -1121,7 +1144,7 @@ struct ThumbnailGridView: View {
                 } else {
                     bookmarkListCursor = 0
                 }
-                print("[Filer] Shift+B → bookmark list (\(bookmarks.count) bookmarks)")
+                Logger.folder.debug("Shift+B → bookmark list (\(bookmarks.count, privacy: .public) bookmarks)")
             }
             return true
         
@@ -1130,7 +1153,7 @@ struct ThumbnailGridView: View {
             if event.modifierFlags.contains(.command) {
                 let percent = isRTL ? 100 : 0
                 focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
-                print("[Filer] Cmd+1 → \(percent)%")
+                Logger.folder.debug("Cmd+1 → \(percent, privacy: .public)%")
                 return true
             }
             return false
@@ -1138,14 +1161,14 @@ struct ThumbnailGridView: View {
             if event.modifierFlags.contains(.command) {
                 let percent = isRTL ? 75 : 25
                 focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
-                print("[Filer] Cmd+2 → \(percent)%")
+                Logger.folder.debug("Cmd+2 → \(percent, privacy: .public)%")
                 return true
             }
             return false
         case "3":
             if event.modifierFlags.contains(.command) {
                 focusedIndex = NavigationHelper.indexForPercent(50, totalCount: entries.count)
-                print("[Filer] Cmd+3 → 50%")
+                Logger.folder.debug("Cmd+3 → 50%")
                 return true
             }
             return false
@@ -1153,7 +1176,7 @@ struct ThumbnailGridView: View {
             if event.modifierFlags.contains(.command) {
                 let percent = isRTL ? 25 : 75
                 focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
-                print("[Filer] Cmd+4 → \(percent)%")
+                Logger.folder.debug("Cmd+4 → \(percent, privacy: .public)%")
                 return true
             }
             return false
@@ -1161,7 +1184,7 @@ struct ThumbnailGridView: View {
             if event.modifierFlags.contains(.command) {
                 let percent = isRTL ? 0 : 100
                 focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
-                print("[Filer] Cmd+5 → \(percent)%")
+                Logger.folder.debug("Cmd+5 → \(percent, privacy: .public)%")
                 return true
             }
             return false
@@ -1175,7 +1198,7 @@ struct ThumbnailGridView: View {
         // #55: V key - toggle single page marker (previously: favorite)
         case "v":
             let added = CacheManager.shared.toggleSinglePageMarker(for: imageSource.url, at: currentIndex)
-            print("[ThumbnailGridView] Single page marker at \(currentIndex): \(added ? "ON" : "OFF")")
+            Logger.thumbnailGrid.debug("Single page marker at \(currentIndex, privacy: .public): \(added ? "ON" : "OFF")")
             return true
             
         // F key - open Slide Mode directly (S006)
@@ -1215,7 +1238,7 @@ struct ThumbnailGridView: View {
                 // Ctrl+R: Toggle reading direction
                 let newDirection = CacheManager.shared.toggleReadingDirection(for: imageSource.url)
                 readingDirectionVersion += 1
-                print("[Filer] Reading direction toggled to: \(newDirection.displayName)")
+                Logger.folder.debug("Reading direction toggled to: \(newDirection.displayName, privacy: .public)")
             } else {
                 // R: Open from bookmark (last viewed), fallback to current
                 let startIndex = lastViewedIndex ?? currentIndex
@@ -1230,7 +1253,7 @@ struct ThumbnailGridView: View {
                 let targetFav = isRTL ? favoriteIndices.max() : favoriteIndices.min()
                 if let fav = targetFav {
                     focusedIndex = fav
-                    print("[Filer] Ctrl+Z → \(isRTL ? "last" : "first") favorite at \(fav)")
+                    Logger.folder.debug("Ctrl+Z → \(isRTL ? "last" : "firs, privacy: .public)") favorite at \(fav)")
                 }
             } else {
                 let targetIndex = isRTL
@@ -1238,7 +1261,7 @@ struct ThumbnailGridView: View {
                     : NavigationHelper.previousFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
                 if let target = targetIndex {
                     focusedIndex = target
-                    print("[Filer] Z → favorite at \(target)")
+                    Logger.folder.debug("Z → favorite at \(target, privacy: .public)")
                 }
             }
             return true
@@ -1250,7 +1273,7 @@ struct ThumbnailGridView: View {
                 let targetFav = isRTL ? favoriteIndices.min() : favoriteIndices.max()
                 if let fav = targetFav {
                     focusedIndex = fav
-                    print("[Filer] Ctrl+C → \(isRTL ? "first" : "last") favorite at \(fav)")
+                    Logger.folder.debug("Ctrl+C → \(isRTL ? "first" : "las, privacy: .public)") favorite at \(fav)")
                 }
             } else {
                 let targetIndex = isRTL
@@ -1258,7 +1281,7 @@ struct ThumbnailGridView: View {
                     : NavigationHelper.nextFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
                 if let target = targetIndex {
                     focusedIndex = target
-                    print("[Filer] C → favorite at \(target)")
+                    Logger.folder.debug("C → favorite at \(target, privacy: .public)")
                 }
             }
             return true
@@ -1293,7 +1316,7 @@ struct ThumbnailGridView: View {
     private func toggleSelection(_ entry: ImageEntry) {
         // In exclude mode, prevent selecting direct favorites (they're protected)
         if settings.selectionMode == .exclude && isDirectFavorite(entry) {
-            print("[toggleSelection] Blocked: \(entry.name) is direct favorited (protected)")
+            Logger.thumbnailGrid.debug("Blocked: \(entry.name, privacy: .public) is direct favorited (protected)")
             showProtectedFeedback(for: entry)
             return
         }
@@ -1425,7 +1448,7 @@ struct ThumbnailGridView: View {
     
     private func openPreview(at index: Int) {
         guard index >= 0 && index < entries.count else { return }
-        print("[openPreview] Opening preview at index: \(index) - \(entries[index].name)")
+        Logger.preview.debug("Opening preview at index: \(index, privacy: .public) - \(entries[index].name, privacy: .public)")
         previewMode = .quickLook(index: index)
     }
     
@@ -1456,7 +1479,7 @@ struct ThumbnailGridView: View {
             selectedPaths.removeAll()  // Clear selections after success
             onExportSuccess?()
         } catch {
-            print("Export error: \(error)")
+            Logger.thumbnailGrid.error("Export error: \(error, privacy: .public)")
             exportMessage = error.localizedDescription
             showExportError = true
         }
@@ -1488,7 +1511,7 @@ struct ThumbnailGridView: View {
             selectedPaths.removeAll()  // Clear selections after success
             onExportSuccess?()
         } catch {
-            print("ZIP creation error: \(error)")
+            Logger.thumbnailGrid.error("ZIP creation error: \(error, privacy: .public)")
             exportMessage = error.localizedDescription
             showExportError = true
         }
@@ -1505,7 +1528,7 @@ struct ThumbnailGridView: View {
             loadSource()  // Refresh the list
             onExportSuccess?()
         } catch {
-            print("Delete error: \(error)")
+            Logger.thumbnailGrid.error("Delete error: \(error, privacy: .public)")
             exportMessage = error.localizedDescription
             showExportError = true
         }
@@ -1605,7 +1628,7 @@ struct BookmarkDividerView: View {
         let trimmed = editingName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty && trimmed != bookmark.name {
             CacheManager.shared.updateBookmarkName(for: sourceURL, id: bookmark.id, name: trimmed)
-            print("[BookmarkDivider] Renamed '\(bookmark.name)' → '\(trimmed)'")
+            Logger.bookmark.debug("Renamed '\(bookmark.name, privacy: .public)' → '\(trimmed, privacy: .public)'")
             onNameChanged?()
         }
         isEditing = false
@@ -2357,7 +2380,7 @@ struct ViewerView: View {
                     onSelect: { imageIndex in
                         showBookmarkList = false
                         navigateTo(min(imageIndex, entries.count - 1))
-                        print("[ViewerView] Bookmark list click → jump to \(imageIndex)")
+                        Logger.viewer.debug("Bookmark list click → jump to \(imageIndex, privacy: .public)")
                     },
                     onClose: { showBookmarkList = false }
                 )
@@ -2559,13 +2582,13 @@ struct ViewerView: View {
     
     private func navigateTo(_ index: Int) {
         guard index >= 0, index < entries.count else { return }
-        print("[ViewerView] navigateTo: \(viewerIndex) → \(index)")
+        Logger.viewer.debug("navigateTo: \(viewerIndex, privacy: .public) → \(index, privacy: .public)")
         previousViewerIndex = viewerIndex
         viewerIndex = index
     }
     
     private func goToPrevious() {
-        print("[ViewerView] goToPrevious called, current: \(viewerIndex), isShowingSpread: \(isShowingSpread)")
+        Logger.viewer.debug("goToPrevious called, current: \(viewerIndex, privacy: .public), isShowingSpread: \(isShowingSpread, privacy: .public)")
         
         guard viewerIndex > 0 || settings.loopWithinSource else { return }
         
@@ -2582,7 +2605,7 @@ struct ViewerView: View {
             
             if !wouldBeSingle {
                 // Previous spread starts at prevIndex, skip 2
-                print("[ViewerView] goToPrevious: cached spread at \(prevIndex), stepping -2")
+                Logger.viewer.debug("goToPrevious: cached spread at \(prevIndex, privacy: .public), stepping -2")
                 preNavIndex = viewerIndex
                 navDirection = 0  // No correction needed
                 navigateTo(prevIndex)
@@ -2603,7 +2626,7 @@ struct ViewerView: View {
     }
     
     private func goToNext() {
-        print("[ViewerView] goToNext called, current: \(viewerIndex), isShowingSpread: \(isShowingSpread)")
+        Logger.viewer.debug("goToNext called, current: \(viewerIndex, privacy: .public), isShowingSpread: \(isShowingSpread, privacy: .public)")
         preNavIndex = viewerIndex
         navDirection = 1  // forward
         
@@ -2628,7 +2651,7 @@ struct ViewerView: View {
             favoriteIndices: favoriteIndices
         ) else { return }
         
-        print("[ViewerView] goToPreviousFavorite: \(viewerIndex) → \(targetIndex)")
+        Logger.viewer.debug("goToPreviousFavorite: \(viewerIndex, privacy: .public) → \(targetIndex, privacy: .public)")
         navigateTo(targetIndex)
     }
     
@@ -2638,7 +2661,7 @@ struct ViewerView: View {
             favoriteIndices: favoriteIndices
         ) else { return }
         
-        print("[ViewerView] goToNextFavorite: \(viewerIndex) → \(targetIndex)")
+        Logger.viewer.debug("goToNextFavorite: \(viewerIndex, privacy: .public) → \(targetIndex, privacy: .public)")
         navigateTo(targetIndex)
     }
     
@@ -2653,7 +2676,7 @@ struct ViewerView: View {
         if isShowingSpread {
             // Spread表示で、右ページが元いた場所なら、さらに1つ戻る
             if preNavIndex == viewerIndex + 1 && viewerIndex > 0 {
-                print("[ViewerView] Correcting backward spread (showing spread): \(viewerIndex) → \(viewerIndex - 1)")
+                Logger.viewer.debug("Correcting backward spread (showing spread): \(viewerIndex, privacy: .public) → \(viewerIndex - 1, privacy: .public)")
                 preNavIndex = viewerIndex
                 viewerIndex -= 1
                 return  // Keep navDirection for chained corrections
@@ -2661,7 +2684,7 @@ struct ViewerView: View {
         } else if couldBeSpreadWithPrevious {
             // 単独表示だが、前のページとspreadになれる可能性がある → 戻ってみる
             if viewerIndex > 0 {
-                print("[ViewerView] Correcting backward spread (could be spread): \(viewerIndex) → \(viewerIndex - 1)")
+                Logger.viewer.debug("Correcting backward spread (could be spread): \(viewerIndex, privacy: .public) → \(viewerIndex - 1, privacy: .public)")
                 preNavIndex = viewerIndex
                 viewerIndex -= 1
                 return  // Keep navDirection for chained corrections
@@ -2684,7 +2707,7 @@ struct ViewerView: View {
             case .selectAndClose(let imageIndex):
                 showBookmarkList = false
                 navigateTo(min(imageIndex, entries.count - 1))
-                print("[ViewerView] Bookmark list → jump to \(imageIndex)")
+                Logger.viewer.debug("Bookmark list → jump to \(imageIndex, privacy: .public)")
             case .close:
                 showBookmarkList = false
             case .consumed:
@@ -2747,9 +2770,9 @@ struct ViewerView: View {
 
         // F key (keyCode 3) - Ctrl+F = Slide Mode
         case 3:
-            print("[ViewerView] keyCode 3 detected, control: \(event.modifierFlags.contains(.control))")
+            Logger.viewer.debug("keyCode 3 detected, control: \(event.modifierFlags.contains(.control), privacy: .public)")
             if event.modifierFlags.contains(.control) {
-                print("[ViewerView] Ctrl+F → entering Slide Mode")
+                Logger.viewer.debug("Ctrl+F → entering Slide Mode")
                 onEnterSlideMode(viewerIndex)
                 return true
             }
@@ -2781,13 +2804,13 @@ struct ViewerView: View {
                     sourceURL: imageSource.url, isRTL: isRTL
                 ) {
                     navigateTo(target)
-                    print("[ViewerView] Shift+A → bookmark at \(target)")
+                    Logger.viewer.debug("Shift+A → bookmark at \(target, privacy: .public)")
                 }
             } else if event.modifierFlags.contains(.control) {
                 // #72: Ctrl+A = jump to start (RTL: end)
                 let target = isRTL ? entries.count - 1 : 0
                 navigateTo(target)
-                print("[ViewerView] Ctrl+A → \(isRTL ? "end" : "start")")
+                Logger.viewer.debug("Ctrl+A → \(isRTL ? "end" : "start")")
             } else {
                 // #76: RTL inverts direction
                 isRTL ? goToNext() : goToPrevious()
@@ -2803,13 +2826,13 @@ struct ViewerView: View {
                     sourceURL: imageSource.url, isRTL: isRTL
                 ) {
                     navigateTo(target)
-                    print("[ViewerView] Shift+D → bookmark at \(target)")
+                    Logger.viewer.debug("Shift+D → bookmark at \(target, privacy: .public)")
                 }
             } else if event.modifierFlags.contains(.control) {
                 // #72: Ctrl+D = jump to end (RTL: start)
                 let target = isRTL ? 0 : entries.count - 1
                 navigateTo(target)
-                print("[ViewerView] Ctrl+D → \(isRTL ? "start" : "end")")
+                Logger.viewer.debug("Ctrl+D → \(isRTL ? "start" : "end")")
             } else {
                 // #76: RTL inverts direction
                 isRTL ? goToPrevious() : goToNext()
@@ -2860,7 +2883,7 @@ struct ViewerView: View {
                 } else {
                     bookmarkListCursor = 0
                 }
-                print("[ViewerView] Shift+B → bookmark list (\(bookmarks.count) bookmarks)")
+                Logger.viewer.debug("Shift+B → bookmark list (\(bookmarks.count, privacy: .public) bookmarks)")
             }
             return true
         
@@ -2869,7 +2892,7 @@ struct ViewerView: View {
             if event.modifierFlags.contains(.command) {
                 let percent = isRTL ? 100 : 0
                 navigateTo(NavigationHelper.indexForPercent(percent, totalCount: entries.count))
-                print("[ViewerView] Cmd+1 → \(percent)%")
+                Logger.viewer.debug("Cmd+1 → \(percent, privacy: .public)%")
                 return true
             }
             return false
@@ -2877,14 +2900,14 @@ struct ViewerView: View {
             if event.modifierFlags.contains(.command) {
                 let percent = isRTL ? 75 : 25
                 navigateTo(NavigationHelper.indexForPercent(percent, totalCount: entries.count))
-                print("[ViewerView] Cmd+2 → \(percent)%")
+                Logger.viewer.debug("Cmd+2 → \(percent, privacy: .public)%")
                 return true
             }
             return false
         case "3":
             if event.modifierFlags.contains(.command) {
                 navigateTo(NavigationHelper.indexForPercent(50, totalCount: entries.count))
-                print("[ViewerView] Cmd+3 → 50%")
+                Logger.viewer.debug("Cmd+3 → 50%")
                 return true
             }
             return false
@@ -2892,7 +2915,7 @@ struct ViewerView: View {
             if event.modifierFlags.contains(.command) {
                 let percent = isRTL ? 25 : 75
                 navigateTo(NavigationHelper.indexForPercent(percent, totalCount: entries.count))
-                print("[ViewerView] Cmd+4 → \(percent)%")
+                Logger.viewer.debug("Cmd+4 → \(percent, privacy: .public)%")
                 return true
             }
             return false
@@ -2900,7 +2923,7 @@ struct ViewerView: View {
             if event.modifierFlags.contains(.command) {
                 let percent = isRTL ? 0 : 100
                 navigateTo(NavigationHelper.indexForPercent(percent, totalCount: entries.count))
-                print("[ViewerView] Cmd+5 → \(percent)%")
+                Logger.viewer.debug("Cmd+5 → \(percent, privacy: .public)%")
                 return true
             }
             return false
@@ -2908,7 +2931,7 @@ struct ViewerView: View {
         // F - toggle favorite
         case "f":
             if event.modifierFlags.contains(.control) {
-                print("[ViewerView] Ctrl+F (char) → entering Slide Mode")
+                Logger.viewer.debug("Ctrl+F (char) → entering Slide Mode")
                 onEnterSlideMode(viewerIndex)
             } else {
                 guard let entry = currentEntry else { return true }
@@ -2928,7 +2951,7 @@ struct ViewerView: View {
             if event.modifierFlags.contains(.control) {
                 // Ctrl+R: Toggle reading direction
                 let newDirection = CacheManager.shared.toggleReadingDirection(for: imageSource.url)
-                print("[ViewerView] Reading direction toggled to: \(newDirection.displayName)")
+                Logger.viewer.debug("Reading direction toggled to: \(newDirection.displayName, privacy: .public)")
                 spreadUpdateTrigger.toggle()  // #67: Trigger SpreadImageViewer refresh
             } else {
                 // R: Exit to Filer
@@ -2955,7 +2978,7 @@ struct ViewerView: View {
         // #55/#67: V - toggle single page marker
         case "v":
             let added = CacheManager.shared.toggleSinglePageMarker(for: imageSource.url, at: viewerIndex)
-            print("[ViewerView] Single page marker at \(viewerIndex): \(added ? "ON" : "OFF")")
+            Logger.viewer.debug("Single page marker at \(viewerIndex, privacy: .public): \(added ? "ON" : "OFF")")
             spreadUpdateTrigger.toggle()  // #67: Trigger SpreadImageViewer refresh
             return true
         
@@ -2966,7 +2989,7 @@ struct ViewerView: View {
                 let targetFav = isRTL ? favoriteIndices.max() : favoriteIndices.min()
                 if let fav = targetFav {
                     navigateTo(fav)
-                    print("[ViewerView] Ctrl+Z → \(isRTL ? "last" : "first") favorite at \(fav)")
+                    Logger.viewer.debug("Ctrl+Z → \(isRTL ? "last" : "firs, privacy: .public)") favorite at \(fav)")
                 }
             } else {
                 isRTL ? goToNextFavorite() : goToPreviousFavorite()
@@ -2980,7 +3003,7 @@ struct ViewerView: View {
                 let targetFav = isRTL ? favoriteIndices.min() : favoriteIndices.max()
                 if let fav = targetFav {
                     navigateTo(fav)
-                    print("[ViewerView] Ctrl+C → \(isRTL ? "first" : "last") favorite at \(fav)")
+                    Logger.viewer.debug("Ctrl+C → \(isRTL ? "first" : "las, privacy: .public)") favorite at \(fav)")
                 }
             } else {
                 isRTL ? goToPreviousFavorite() : goToNextFavorite()

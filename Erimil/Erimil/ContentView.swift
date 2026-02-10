@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import os
 
 struct ContentView: View {
     @State private var selectedFolderURL: URL?
@@ -124,12 +125,12 @@ struct ContentView: View {
         
         // Use security-scoped bookmark restoration
         if let restoredFolder = AppSettings.shared.restoreAndAccessLastOpenedFolder() {
-            print("[ContentView] Restored folder with security scope: \(restoredFolder.path)")
+            Logger.content.info("Restored folder with security scope: \(restoredFolder.path, privacy: .public)")
             selectedFolderURL = restoredFolder
             // Update the published property (without triggering didSet bookmark save)
             AppSettings.shared.lastOpenedFolderURL = restoredFolder
         } else {
-            print("[ContentView] No folder to restore, or access denied")
+            Logger.content.debug("No folder to restore, or access denied")
         }
     }
     
@@ -192,7 +193,7 @@ struct ContentView: View {
     // MARK: - S010: Open Slide Mode from Sidebar
     
     private func openSlideModeForSource(_ url: URL) {
-        print("[ContentView] openSlideModeForSource: \(url.lastPathComponent)")
+        Logger.content.debug("openSlideModeForSource: \(url.lastPathComponent, privacy: .public)")
         
         // S010: Always set the flag - ThumbnailGridView will handle it via onChange
         shouldReopenSlideMode = true
@@ -202,12 +203,12 @@ struct ContentView: View {
     
     private func navigateToNextSource() {
         guard let currentURL = selectedSourceURL else {
-            print("[ContentView] navigateToNextSource: no current source")
+            Logger.content.debug("navigateToNextSource: no current source")
             return
         }
         
         if let nextURL = SourceNavigator.nextSource(from: currentURL) {
-            print("[ContentView] navigateToNextSource: \(currentURL.lastPathComponent) → \(nextURL.lastPathComponent)")
+            Logger.content.debug("navigateToNextSource: \(currentURL.lastPathComponent, privacy: .public) → \(nextURL.lastPathComponent, privacy: .public)")
             let type = inferSourceType(nextURL)
             
             // S005: Set flag to reopen mode after source switch
@@ -220,18 +221,18 @@ struct ContentView: View {
             selectedSourceURL = nextURL
             selectedSourceType = type
         } else {
-            print("[ContentView] navigateToNextSource: no next source available")
+            Logger.content.debug("navigateToNextSource: no next source available")
         }
     }
     
     private func navigateToPreviousSource() {
         guard let currentURL = selectedSourceURL else {
-            print("[ContentView] navigateToPreviousSource: no current source")
+            Logger.content.debug("navigateToPreviousSource: no current source")
             return
         }
         
         if let prevURL = SourceNavigator.previousSource(from: currentURL) {
-            print("[ContentView] navigateToPreviousSource: \(currentURL.lastPathComponent) → \(prevURL.lastPathComponent)")
+            Logger.content.debug("navigateToPreviousSource: \(currentURL.lastPathComponent, privacy: .public) → \(prevURL.lastPathComponent, privacy: .public)")
             let type = inferSourceType(prevURL)
             
             // S005: Set flag to reopen mode after source switch
@@ -244,7 +245,7 @@ struct ContentView: View {
             selectedSourceURL = prevURL
             selectedSourceType = type
         } else {
-            print("[ContentView] navigateToPreviousSource: no previous source available")
+            Logger.content.debug("navigateToPreviousSource: no previous source available")
         }
     }
     

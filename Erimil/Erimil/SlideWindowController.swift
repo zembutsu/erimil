@@ -18,6 +18,7 @@
 
 import SwiftUI
 import AppKit
+import os
 
 /// Controller for managing the Slide Mode fullscreen window
 class SlideWindowController {
@@ -88,9 +89,9 @@ class SlideWindowController {
         onToggleSelection: ((Int) -> Void)? = nil,
         onExitToViewerMode: (() -> Void)? = nil
     ) {
-        print("[SlideWindowController] open() called")
-        print("[SlideWindowController] entries.count: \(entries.count), initialIndex: \(initialIndex), favorites: \(favoriteIndices.count)")
-        print("[SlideWindowController] source: \(sourceName) (\(sourcePosition)/\(totalSources))")
+        Logger.slideWindow.debug("open() called")
+        Logger.slideWindow.debug("entries.count: \(entries.count, privacy: .public), initialIndex: \(initialIndex, privacy: .public), favorites: \(favoriteIndices.count, privacy: .public)")
+        Logger.slideWindow.debug("source: \(sourceName, privacy: .public) (\(sourcePosition, privacy: .public)/\(totalSources, privacy: .public))")
         
         // Close existing window if any
         close()
@@ -133,12 +134,12 @@ class SlideWindowController {
             totalSources: totalSources,
             isFavoritesMode: isFavoritesMode,
             onClose: { [weak self] in
-                print("[SlideWindowController] onClose callback triggered")
+                Logger.slideWindow.debug("onClose callback triggered")
                 self?.close()
                 onClose()
             },
             onExitFullScreen: { [weak self] in
-                print("[SlideWindowController] onExitFullScreen callback triggered")
+                Logger.slideWindow.debug("onExitFullScreen callback triggered")
                 self?.close()
                 onClose()
             },
@@ -171,14 +172,14 @@ class SlideWindowController {
         // Center on screen
         window.center()
         
-        print("[SlideWindowController] Window created, making key and ordering front")
+        Logger.slideWindow.info("Window created, making key and ordering front")
         
         // Show window
         window.makeKeyAndOrderFront(nil)
         
         // Toggle to fullscreen after a brief delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            print("[SlideWindowController] Toggling fullscreen...")
+            Logger.slideWindow.debug("Toggling fullscreen...")
             window.toggleFullScreen(nil)
         }
         
@@ -187,12 +188,12 @@ class SlideWindowController {
         // S008: Register key event monitor
         setupEventMonitor()
         
-        print("[SlideWindowController] open() complete")
+        Logger.slideWindow.info("open() complete")
     }
     
     /// Close the Slide Mode window
     func close() {
-        print("[SlideWindowController] close() called")
+        Logger.slideWindow.debug("close() called")
         
         // S008: Remove event monitor first
         removeEventMonitor()
@@ -219,11 +220,11 @@ class SlideWindowController {
         isFavoritesMode = false
         
         guard let window = slideWindow else {
-            print("[SlideWindowController] No window to close")
+            Logger.slideWindow.debug("No window to close")
             return
         }
         
-        print("[SlideWindowController] Closing window immediately (isFullScreen: \(window.styleMask.contains(.fullScreen)))")
+        Logger.slideWindow.debug("Closing window immediately (isFullScreen: \(window.styleMask.contains(.fullScreen), privacy: .public))")
         
         // Clear content view to release SwiftUI hosting view
         window.contentView = nil
@@ -237,7 +238,7 @@ class SlideWindowController {
         // Release our reference
         slideWindow = nil
         
-        print("[SlideWindowController] Window closed and released")
+        Logger.slideWindow.info("Window closed and released")
     }
     
     /// Check if Slide Mode window is open
@@ -263,7 +264,7 @@ class SlideWindowController {
         onExitToViewerMode: (() -> Void)? = nil
     ) {
         guard let window = slideWindow else {
-            print("[SlideWindowController] updateSource: no window, falling back to open()")
+            Logger.slideWindow.debug("updateSource: no window, falling back to open()")
             open(
                 imageSource: imageSource,
                 entries: entries,
@@ -283,15 +284,15 @@ class SlideWindowController {
             return
         }
         
-        print("[SlideWindowController] updateSource: updating content in-place")
-        print("[SlideWindowController] new entries.count: \(entries.count), favorites: \(favoriteIndices.count)")
-        print("[SlideWindowController] source: \(sourceName) (\(sourcePosition)/\(totalSources))")
+        Logger.slideWindow.debug("updateSource: updating content in-place")
+        Logger.slideWindow.debug("new entries.count: \(entries.count, privacy: .public), favorites: \(favoriteIndices.count, privacy: .public)")
+        Logger.slideWindow.debug("source: \(sourceName, privacy: .public) (\(sourcePosition, privacy: .public)/\(totalSources, privacy: .public))")
         
         // #52: Restore last position for new source
         let startIndex: Int
         if !entries.isEmpty, let lastIndex = CacheManager.shared.getLastPosition(for: imageSource.url) {
             startIndex = min(lastIndex, entries.count - 1)
-            print("[SlideWindowController] Restored last position: \(startIndex)")
+            Logger.slideWindow.info("Restored last position: \(startIndex, privacy: .public)")
         } else {
             startIndex = 0
         }
@@ -332,12 +333,12 @@ class SlideWindowController {
             totalSources: totalSources,
             isFavoritesMode: isFavoritesMode,
             onClose: { [weak self] in
-                print("[SlideWindowController] onClose callback triggered")
+                Logger.slideWindow.debug("onClose callback triggered")
                 self?.close()
                 onClose()
             },
             onExitFullScreen: { [weak self] in
-                print("[SlideWindowController] onExitFullScreen callback triggered")
+                Logger.slideWindow.debug("onExitFullScreen callback triggered")
                 self?.close()
                 onClose()
             },
@@ -353,7 +354,7 @@ class SlideWindowController {
         let hostingView = NSHostingView(rootView: slideView)
         window.contentView = hostingView
         
-        print("[SlideWindowController] updateSource: content replaced, fullscreen maintained")
+        Logger.slideWindow.debug("updateSource: content replaced, fullscreen maintained")
     }
     
     // MARK: - S010: Update favorite/selection state from external changes
@@ -382,14 +383,14 @@ class SlideWindowController {
             return self.handleKeyEvent(event)
         }
         
-        print("[SlideWindowController] Event monitor registered")
+        Logger.slideWindow.debug("Event monitor registered")
     }
     
     private func removeEventMonitor() {
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
-            print("[SlideWindowController] Event monitor removed")
+            Logger.slideWindow.debug("Event monitor removed")
         }
     }
     
@@ -399,7 +400,7 @@ class SlideWindowController {
         let hasCommand = event.modifierFlags.contains(.command)
         let hasShift = event.modifierFlags.contains(.shift)  // #62: Bookmark keys
         
-        print("[SlideWindowController] handleKeyEvent: keyCode=\(event.keyCode), ctrl=\(hasControl), cmd=\(hasCommand), shift=\(hasShift), favMode=\(isFavoritesMode)")
+        Logger.slideWindow.debug("handleKeyEvent: keyCode=\(event.keyCode, privacy: .public), ctrl=\(hasControl, privacy: .public), cmd=\(hasCommand, privacy: .public), shift=\(hasShift, privacy: .public), favMode=\(self.isFavoritesMode, privacy: .public)")
         
         // #62 Phase 5: Delegate keys to bookmark list when showing
         if showBookmarkList {
@@ -414,7 +415,7 @@ class SlideWindowController {
                 showBookmarkList = false
                 notifyViewOfBookmarkListChange()
                 jumpToIndex(min(imageIndex, storedEntries.count - 1))
-                print("[SlideWindowController] Bookmark list → jump to \(imageIndex)")
+                Logger.slideWindow.debug("Bookmark list → jump to \(imageIndex, privacy: .public)")
             case .close:
                 showBookmarkList = false
                 notifyViewOfBookmarkListChange()
@@ -427,7 +428,7 @@ class SlideWindowController {
         switch event.keyCode {
         // Escape - close fullscreen
         case 53:
-            print("[SlideWindowController] → Close (Esc)")
+            Logger.slideWindow.debug("→ Close (Esc)")
             triggerClose()
             return nil
             
@@ -437,7 +438,7 @@ class SlideWindowController {
             
         // Tab - next favorite + enter Favorites Mode
         case 48:
-            print("[SlideWindowController] → Next favorite + Favorites Mode ON (Tab)")
+            Logger.slideWindow.debug("→ Next favorite + Favorites Mode ON (Tab)")
             if !isFavoritesMode {
                 isFavoritesMode = true
                 notifyViewOfModeChange()
@@ -448,12 +449,12 @@ class SlideWindowController {
         // Left arrow
         case 123:
             if hasControl {
-                print("[SlideWindowController] → Previous source (Ctrl+←)")
+                Logger.slideWindow.debug("→ Previous source (Ctrl+←)")
                 storedOnPreviousSource?()
                 return nil
             } else if isFavoritesMode {
                 // #76: RTL inverts direction
-                print("[SlideWindowController] → \(isRTL ? "Next" : "Previous") favorite (← in Favorites Mode)")
+                Logger.slideWindow.debug("→ \(self.isRTL ? "Next" : "Previous") favorite (← in Favorites Mode)")
                 isRTL ? goToNextFavorite() : goToPreviousFavorite()
                 return nil
             } else {
@@ -465,12 +466,12 @@ class SlideWindowController {
         // Right arrow
         case 124:
             if hasControl {
-                print("[SlideWindowController] → Next source (Ctrl+→)")
+                Logger.slideWindow.debug("→ Next source (Ctrl+→)")
                 storedOnNextSource?()
                 return nil
             } else if isFavoritesMode {
                 // #76: RTL inverts direction
-                print("[SlideWindowController] → \(isRTL ? "Previous" : "Next") favorite (→ in Favorites Mode)")
+                Logger.slideWindow.debug("→ \(self.isRTL ? "Previous" : "Next") favorite (→ in Favorites Mode)")
                 isRTL ? goToPreviousFavorite() : goToNextFavorite()
                 return nil
             } else {
@@ -482,12 +483,12 @@ class SlideWindowController {
         // Up arrow (same as Left) - S017
         case 126:
             if hasControl {
-                print("[SlideWindowController] → Previous source (Ctrl+↑)")
+                Logger.slideWindow.debug("→ Previous source (Ctrl+↑)")
                 storedOnPreviousSource?()
                 return nil
             } else if isFavoritesMode {
                 // #76: RTL inverts direction
-                print("[SlideWindowController] → \(isRTL ? "Next" : "Previous") favorite (↑ in Favorites Mode)")
+                Logger.slideWindow.debug("→ \(self.isRTL ? "Next" : "Previous") favorite (↑ in Favorites Mode)")
                 isRTL ? goToNextFavorite() : goToPreviousFavorite()
                 return nil
             } else {
@@ -499,12 +500,12 @@ class SlideWindowController {
         // Down arrow (same as Right) - S017
         case 125:
             if hasControl {
-                print("[SlideWindowController] → Next source (Ctrl+↓)")
+                Logger.slideWindow.debug("→ Next source (Ctrl+↓)")
                 storedOnNextSource?()
                 return nil
             } else if isFavoritesMode {
                 // #76: RTL inverts direction
-                print("[SlideWindowController] → \(isRTL ? "Previous" : "Next") favorite (↓ in Favorites Mode)")
+                Logger.slideWindow.debug("→ \(self.isRTL ? "Previous" : "Next") favorite (↓ in Favorites Mode)")
                 isRTL ? goToPreviousFavorite() : goToNextFavorite()
                 return nil
             } else {
@@ -520,12 +521,12 @@ class SlideWindowController {
                 // Ctrl+R: Toggle reading direction
                 if let source = storedImageSource {
                     let newDirection = CacheManager.shared.toggleReadingDirection(for: source.url)
-                    print("[SlideMode] Reading direction toggled to: \(newDirection.displayName)")
+                    Logger.slideWindow.debug("Reading direction toggled to: \(newDirection.displayName, privacy: .public)")
                     // Note: View will need to observe this change
                 }
                 return nil
             } else {
-                print("[SlideWindowController] → Exit to Viewer Mode (R)")
+                Logger.slideWindow.debug("→ Exit to Viewer Mode (R)")
                 if let exitToViewer = storedOnExitToViewerMode {
                     close()
                     exitToViewer()
@@ -544,17 +545,17 @@ class SlideWindowController {
                             direction: .backward, from: currentIndex,
                             sourceURL: source.url, isRTL: isRTL
                            ) {
-                            print("[SlideWindowController] → Shift+A → bookmark at \(target)")
+                            Logger.slideWindow.debug("→ Shift+A → bookmark at \(target, privacy: .public)")
                             jumpToIndex(target)
                         }
                     } else if hasControl {
                         // #72: Ctrl+A = jump to visual left (start in LTR, end in RTL)
                         let target = isRTL ? storedEntries.count - 1 : 0
-                        print("[SlideWindowController] → Jump to \(isRTL ? "end" : "start") (Ctrl+A)")
+                        Logger.slideWindow.debug("→ Jump to \(self.isRTL ? "end" : "start") (Ctrl+A)")
                         jumpToIndex(target)
                     } else if isFavoritesMode {
                         // #76: RTL inverts direction
-                        print("[SlideWindowController] → \(isRTL ? "Next" : "Previous") favorite (A in Favorites Mode)")
+                        Logger.slideWindow.debug("→ \(self.isRTL ? "Next" : "Previous") favorite (A in Favorites Mode)")
                         isRTL ? goToNextFavorite() : goToPreviousFavorite()
                     } else {
                         // #76: RTL inverts direction
@@ -570,17 +571,17 @@ class SlideWindowController {
                             direction: .forward, from: currentIndex,
                             sourceURL: source.url, isRTL: isRTL
                            ) {
-                            print("[SlideWindowController] → Shift+D → bookmark at \(target)")
+                            Logger.slideWindow.debug("→ Shift+D → bookmark at \(target, privacy: .public)")
                             jumpToIndex(target)
                         }
                     } else if hasControl {
                         // #72: Ctrl+D = jump to visual right (end in LTR, start in RTL)
                         let target = isRTL ? 0 : storedEntries.count - 1
-                        print("[SlideWindowController] → Jump to \(isRTL ? "start" : "end") (Ctrl+D)")
+                        Logger.slideWindow.debug("→ Jump to \(self.isRTL ? "start" : "end") (Ctrl+D)")
                         jumpToIndex(target)
                     } else if isFavoritesMode {
                         // #76: RTL inverts direction
-                        print("[SlideWindowController] → \(isRTL ? "Previous" : "Next") favorite (D in Favorites Mode)")
+                        Logger.slideWindow.debug("→ \(self.isRTL ? "Previous" : "Next") favorite (D in Favorites Mode)")
                         isRTL ? goToPreviousFavorite() : goToNextFavorite()
                     } else {
                         // #76: RTL inverts direction
@@ -591,11 +592,11 @@ class SlideWindowController {
                 // S017: W key (same as A for nav, Ctrl+W = previous source)
                 case "w":
                     if hasControl {
-                        print("[SlideWindowController] → Previous source (Ctrl+W)")
+                        Logger.slideWindow.debug("→ Previous source (Ctrl+W)")
                         storedOnPreviousSource?()
                     } else if isFavoritesMode {
                         // #76: RTL inverts direction
-                        print("[SlideWindowController] → \(isRTL ? "Next" : "Previous") favorite (W in Favorites Mode)")
+                        Logger.slideWindow.debug("→ \(self.isRTL ? "Next" : "Previous") favorite (W in Favorites Mode)")
                         isRTL ? goToNextFavorite() : goToPreviousFavorite()
                     } else {
                         // #76: RTL inverts direction
@@ -618,11 +619,11 @@ class SlideWindowController {
                             )
                         }
                     } else if hasControl {
-                        print("[SlideWindowController] → Next source (Ctrl+S)")
+                        Logger.slideWindow.debug("→ Next source (Ctrl+S)")
                         storedOnNextSource?()
                     } else if isFavoritesMode {
                         // #76: RTL inverts direction
-                        print("[SlideWindowController] → \(isRTL ? "Previous" : "Next") favorite (S in Favorites Mode)")
+                        Logger.slideWindow.debug("→ \(self.isRTL ? "Previous" : "Next") favorite (S in Favorites Mode)")
                         isRTL ? goToPreviousFavorite() : goToNextFavorite()
                     } else {
                         // #76: RTL inverts direction
@@ -644,7 +645,7 @@ class SlideWindowController {
                                 bookmarkListCursor = 0
                             }
                             notifyViewOfBookmarkListChange()
-                            print("[SlideWindowController] Shift+B → bookmark list (\(bookmarks.count) bookmarks)")
+                            Logger.slideWindow.debug("Shift+B → bookmark list (\(bookmarks.count, privacy: .public) bookmarks)")
                         }
                         return nil
                     }
@@ -653,58 +654,58 @@ class SlideWindowController {
                 case "1":
                     if hasCommand {
                         let percent = isRTL ? 100 : 0
-                        print("[SlideWindowController] → Jump to \(percent)% (Cmd+1)")
+                        Logger.slideWindow.debug("→ Jump to \(percent, privacy: .public)% (Cmd+1)")
                         jumpToIndex(NavigationHelper.indexForPercent(percent, totalCount: storedEntries.count))
                         return nil
                     }
                 case "2":
                     if hasCommand {
                         let percent = isRTL ? 75 : 25
-                        print("[SlideWindowController] → Jump to \(percent)% (Cmd+2)")
+                        Logger.slideWindow.debug("→ Jump to \(percent, privacy: .public)% (Cmd+2)")
                         jumpToIndex(NavigationHelper.indexForPercent(percent, totalCount: storedEntries.count))
                         return nil
                     }
                 case "3":
                     if hasCommand {
-                        print("[SlideWindowController] → Jump to 50% (Cmd+3)")
+                        Logger.slideWindow.debug("→ Jump to 50% (Cmd+3)")
                         jumpToIndex(NavigationHelper.indexForPercent(50, totalCount: storedEntries.count))
                         return nil
                     }
                 case "4":
                     if hasCommand {
                         let percent = isRTL ? 25 : 75
-                        print("[SlideWindowController] → Jump to \(percent)% (Cmd+4)")
+                        Logger.slideWindow.debug("→ Jump to \(percent, privacy: .public)% (Cmd+4)")
                         jumpToIndex(NavigationHelper.indexForPercent(percent, totalCount: storedEntries.count))
                         return nil
                     }
                 case "5":
                     if hasCommand {
                         let percent = isRTL ? 0 : 100
-                        print("[SlideWindowController] → Jump to \(percent)% (Cmd+5)")
+                        Logger.slideWindow.debug("→ Jump to \(percent, privacy: .public)% (Cmd+5)")
                         jumpToIndex(NavigationHelper.indexForPercent(percent, totalCount: storedEntries.count))
                         return nil
                     }
                     
                 case "f":
                     // S010: Toggle favorite (not exit fullscreen anymore)
-                    print("[SlideWindowController] → Toggle favorite (F)")
+                    Logger.slideWindow.debug("→ Toggle favorite (F)")
                     toggleFavorite()
                     return nil
                     
                 case "x":
                     // S010: Toggle selection
-                    print("[SlideWindowController] → Toggle selection (X)")
+                    Logger.slideWindow.debug("→ Toggle selection (X)")
                     toggleSelection()
                     return nil
                     
                 case "q":
                     // S010: Exit Favorites Mode OR close fullscreen
                     if isFavoritesMode {
-                        print("[SlideWindowController] → Exit Favorites Mode (Q)")
+                        Logger.slideWindow.debug("→ Exit Favorites Mode (Q)")
                         isFavoritesMode = false
                         notifyViewOfModeChange()
                     } else {
-                        print("[SlideWindowController] → Close fullscreen (Q)")
+                        Logger.slideWindow.debug("→ Close fullscreen (Q)")
                         triggerClose()
                     }
                     return nil
@@ -713,7 +714,7 @@ class SlideWindowController {
                     // #55: Toggle single page marker
                     if let source = storedImageSource {
                         let added = CacheManager.shared.toggleSinglePageMarker(for: source.url, at: currentIndex)
-                        print("[SlideMode] Single page marker at \(currentIndex): \(added ? "ON" : "OFF")")
+                        Logger.slideWindow.debug("Single page marker at \(self.currentIndex, privacy: .public): \(added ? "ON" : "OFF")")
                         notifyViewOfSpreadChange()
                     }
                     return nil
@@ -724,11 +725,11 @@ class SlideWindowController {
                         // Ctrl+Z = jump to visual left favorite (first in LTR, last in RTL)
                         let targetFav = isRTL ? storedFavoriteIndices.max() : storedFavoriteIndices.min()
                         if let fav = targetFav {
-                            print("[SlideWindowController] → \(isRTL ? "Last" : "First") favorite (Ctrl+Z) at \(fav)")
+                            Logger.slideWindow.debug("→ \(self.isRTL ? "Last" : "First") favorite (Ctrl+Z) at \(fav)")
                             jumpToIndex(fav)
                         }
                     } else {
-                        print("[SlideWindowController] → \(isRTL ? "Next" : "Previous") favorite (Z)")
+                        Logger.slideWindow.debug("→ \(self.isRTL ? "Next" : "Previous") favorite (Z)")
                         isRTL ? goToNextFavorite() : goToPreviousFavorite()
                     }
                     return nil
@@ -739,11 +740,11 @@ class SlideWindowController {
                         // Ctrl+C = jump to visual right favorite (last in LTR, first in RTL)
                         let targetFav = isRTL ? storedFavoriteIndices.min() : storedFavoriteIndices.max()
                         if let fav = targetFav {
-                            print("[SlideWindowController] → \(isRTL ? "First" : "Last") favorite (Ctrl+C) at \(fav)")
+                            Logger.slideWindow.debug("→ \(self.isRTL ? "First" : "Last") favorite (Ctrl+C) at \(fav)")
                             jumpToIndex(fav)
                         }
                     } else {
-                        print("[SlideWindowController] → \(isRTL ? "Previous" : "Next") favorite (C)")
+                        Logger.slideWindow.debug("→ \(self.isRTL ? "Previous" : "Next") favorite (C)")
                         isRTL ? goToPreviousFavorite() : goToNextFavorite()
                     }
                     return nil
@@ -768,7 +769,7 @@ class SlideWindowController {
     
     private func goToPrevious() {
         guard !storedEntries.isEmpty else { return }
-        print("[SlideWindowController] goToPrevious called, current: \(currentIndex)")
+        Logger.slideWindow.debug("goToPrevious called, current: \(self.currentIndex, privacy: .public)")
         
         guard currentIndex > 0 || AppSettings.shared.loopWithinSource else { return }
         
@@ -783,7 +784,7 @@ class SlideWindowController {
             )
             
             if !wouldBeSingle {
-                print("[SlideWindowController] goToPrevious: cached spread at \(prevIndex), stepping -2")
+                Logger.slideWindow.debug("goToPrevious: cached spread at \(prevIndex, privacy: .public), stepping -2")
                 currentIndex = prevIndex
                 storedOnIndexChange?(currentIndex)
                 notifyViewOfIndexChange()
@@ -794,12 +795,12 @@ class SlideWindowController {
         // Fallback: step -1
         if currentIndex > 0 {
             currentIndex -= 1
-            print("[SlideWindowController] → new index: \(currentIndex)")
+            Logger.slideWindow.debug("→ new index: \(self.currentIndex, privacy: .public)")
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
         } else if AppSettings.shared.loopWithinSource {
             currentIndex = storedEntries.count - 1
-            print("[SlideWindowController] → looped to: \(currentIndex)")
+            Logger.slideWindow.debug("→ looped to: \(self.currentIndex, privacy: .public)")
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
         }
@@ -808,7 +809,7 @@ class SlideWindowController {
     
     private func goToNext() {
         guard !storedEntries.isEmpty else { return }
-        print("[SlideWindowController] goToNext called, current: \(currentIndex)")
+        Logger.slideWindow.debug("goToNext called, current: \(self.currentIndex, privacy: .public)")
         
         // #67: Calculate step using cached aspect ratios
         var step = 1
@@ -820,24 +821,24 @@ class SlideWindowController {
                 entries: storedEntries
             )
             step = isSingle ? 1 : 2
-            print("[SlideWindowController] goToNext: step = \(step) (single: \(isSingle))")
+            Logger.slideWindow.debug("goToNext: step = \(step, privacy: .public) (single: \(isSingle, privacy: .public))")
         }
         
         let nextIndex = currentIndex + step
         if nextIndex < storedEntries.count {
             currentIndex = nextIndex
-            print("[SlideWindowController] → new index: \(currentIndex)")
+            Logger.slideWindow.debug("→ new index: \(self.currentIndex, privacy: .public)")
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
         } else if currentIndex < storedEntries.count - 1 {
             // Step would overshoot but there's still a page - go to last
             currentIndex = storedEntries.count - 1
-            print("[SlideWindowController] → last page: \(currentIndex)")
+            Logger.slideWindow.debug("→ last page: \(self.currentIndex, privacy: .public)")
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
         } else if AppSettings.shared.loopWithinSource {
             currentIndex = 0
-            print("[SlideWindowController] → looped to: \(currentIndex)")
+            Logger.slideWindow.debug("→ looped to: \(self.currentIndex, privacy: .public)")
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
         }
@@ -876,7 +877,7 @@ class SlideWindowController {
         guard targetIndex != currentIndex else { return }
         
         currentIndex = targetIndex
-        print("[SlideWindowController] → jumped to: \(currentIndex)")
+        Logger.slideWindow.debug("→ jumped to: \(self.currentIndex, privacy: .public)")
         storedOnIndexChange?(currentIndex)
         notifyViewOfIndexChange()
     }
@@ -1090,7 +1091,7 @@ struct SlideWindowView: View {
                         // Close overlay and jump (controller handles via notification)
                         showBookmarkList = false
                         currentIndex = min(imageIndex, entries.count - 1)
-                        print("[SlideWindowView] Bookmark list click → jump to \(imageIndex)")
+                        Logger.slideWindow.debug("Bookmark list click → jump to \(imageIndex, privacy: .public)")
                     },
                     onClose: { showBookmarkList = false }
                 )
@@ -1434,7 +1435,7 @@ struct SlideKeyHandler: NSViewRepresentable {
             // S008: Only handle Space for toggle controls
             // Other keys are handled by SlideWindowController's event monitor
             if event.keyCode == 49 {  // Space
-                print("[SlideKeyView] → Toggle controls (Space)")
+                Logger.slideWindow.debug("→ Toggle controls (Space)")
                 onToggleControls?()
             } else {
                 // Pass through - already handled by event monitor

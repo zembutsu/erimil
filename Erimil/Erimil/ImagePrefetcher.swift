@@ -14,6 +14,7 @@
 
 import Foundation
 import AppKit
+import os
 
 /// Prefetches and caches full-size images for smooth viewer navigation
 class ImagePrefetcher {
@@ -138,7 +139,7 @@ class ImagePrefetcher {
             for targetIndex in uncachedIndices {
                 // Check cancellation
                 if self.currentPrefetchTask?.isCancelled == true {
-                    print("[Prefetcher] Prefetch cancelled")
+                    Logger.prefetcher.debug("Prefetch cancelled")
                     return
                 }
                 
@@ -152,7 +153,7 @@ class ImagePrefetcher {
                 // Load image
                 if let image = imageSource.fullImage(for: entry) {
                     self.addToCache(path: entry.path, image: image)
-                    print("[Prefetcher] Prefetched: \(entry.name) (index \(targetIndex))")
+                    Logger.prefetcher.debug("Prefetched: \(entry.name, privacy: .public) (index \(targetIndex, privacy: .public))")
                 }
             }
         }
@@ -169,7 +170,7 @@ class ImagePrefetcher {
         cacheQueue.async { [weak self] in
             self?.cache.removeAll()
             self?.accessOrder.removeAll()
-            print("[Prefetcher] Cache cleared")
+            Logger.prefetcher.debug("Cache cleared")
         }
     }
     
@@ -216,7 +217,7 @@ class ImagePrefetcher {
         while cache.count > maxCacheSize && !accessOrder.isEmpty {
             let oldestPath = accessOrder.removeFirst()
             cache.removeValue(forKey: oldestPath)
-            print("[Prefetcher] Evicted: \(oldestPath)")
+            Logger.prefetcher.debug("Evicted: \(oldestPath, privacy: .public)")
         }
     }
 }

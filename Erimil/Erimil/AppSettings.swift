@@ -9,6 +9,7 @@
 import Foundation
 import Combine
 import SwiftUI  // For LayoutDirection
+import os
 
 /// Selection mode for image marking
 enum SelectionMode: String, CaseIterable {
@@ -235,7 +236,7 @@ class AppSettings: ObservableObject {
     @Published var defaultReadingDirection: ReadingDirection {
         didSet {
             defaults.set(defaultReadingDirection.rawValue, forKey: Keys.defaultReadingDirection)
-            print("[AppSettings] Default reading direction changed to: \(defaultReadingDirection.displayName)")
+            Logger.appSettings.debug("Default reading direction changed to: \(self.defaultReadingDirection.displayName, privacy: .public)")
         }
     }
     
@@ -243,7 +244,7 @@ class AppSettings: ObservableObject {
     @Published var isSpreadModeEnabled: Bool {
         didSet {
             defaults.set(isSpreadModeEnabled, forKey: Keys.isSpreadModeEnabled)
-            print("[AppSettings] Spread mode: \(isSpreadModeEnabled ? "ON" : "OFF")")
+            Logger.appSettings.debug("Spread mode: \(self.isSpreadModeEnabled ? "ON" : "OFF")")
         }
     }
     
@@ -252,7 +253,7 @@ class AppSettings: ObservableObject {
     @Published var spreadThreshold: Double {
         didSet {
             defaults.set(spreadThreshold, forKey: Keys.spreadThreshold)
-            print("[AppSettings] Spread threshold: \(spreadThreshold)")
+            Logger.appSettings.debug("Spread threshold: \(self.spreadThreshold, privacy: .public)")
         }
     }
     
@@ -283,8 +284,8 @@ class AppSettings: ObservableObject {
     
     /// Save URL as security-scoped bookmark to file
     private func saveSecurityScopedBookmark(for url: URL) {
-        print("[AppSettings] saveSecurityScopedBookmark called for: \(url.path)")
-        print("[AppSettings] Saving to file: \(bookmarkFileURL.path)")
+        Logger.appSettings.debug("saveSecurityScopedBookmark called for: \(url.path, privacy: .public)")
+        Logger.appSettings.debug("Saving to file: \(self.bookmarkFileURL.path, privacy: .public)")
         
         do {
             let bookmarkData = try url.bookmarkData(
@@ -292,38 +293,38 @@ class AppSettings: ObservableObject {
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
             )
-            print("[AppSettings] Created bookmark data, size: \(bookmarkData.count) bytes")
+            Logger.appSettings.info("Created bookmark data, size: \(bookmarkData.count, privacy: .public) bytes")
             
             // Save to file instead of UserDefaults
             try bookmarkData.write(to: bookmarkFileURL)
             
             // Verify save
             let verifyExists = FileManager.default.fileExists(atPath: bookmarkFileURL.path)
-            print("[AppSettings] Verify after save - file exists: \(verifyExists)")
+            Logger.appSettings.debug("Verify after save - file exists: \(verifyExists, privacy: .public)")
             
-            print("[AppSettings] Saved security-scoped bookmark for: \(url.path)")
+            Logger.appSettings.info("Saved security-scoped bookmark for: \(url.path, privacy: .public)")
         } catch {
-            print("[AppSettings] Failed to save bookmark: \(error)")
+            Logger.appSettings.error("Failed to save bookmark: \(error, privacy: .public)")
         }
     }
     
     /// Restore URL from security-scoped bookmark file and start accessing
     func restoreAndAccessLastOpenedFolder() -> URL? {
-        print("[AppSettings] Attempting to restore last opened folder...")
-        print("[AppSettings] Looking for file: \(bookmarkFileURL.path)")
+        Logger.appSettings.info("Attempting to restore last opened folder...")
+        Logger.appSettings.debug("Looking for file: \(self.bookmarkFileURL.path, privacy: .public)")
         
         // Check if file exists
         let fileExists = FileManager.default.fileExists(atPath: bookmarkFileURL.path)
-        print("[AppSettings] Bookmark file exists: \(fileExists)")
+        Logger.appSettings.debug("Bookmark file exists: \(fileExists, privacy: .public)")
         
         guard fileExists else {
-            print("[AppSettings] No bookmark file found")
+            Logger.appSettings.debug("No bookmark file found")
             return nil
         }
         
         do {
             let bookmarkData = try Data(contentsOf: bookmarkFileURL)
-            print("[AppSettings] Loaded bookmark data, size: \(bookmarkData.count) bytes")
+            Logger.appSettings.info("Loaded bookmark data, size: \(bookmarkData.count, privacy: .public) bytes")
             
             var isStale = false
             let url = try URL(
@@ -333,24 +334,24 @@ class AppSettings: ObservableObject {
                 bookmarkDataIsStale: &isStale
             )
             
-            print("[AppSettings] Resolved bookmark to: \(url.path), isStale: \(isStale)")
+            Logger.appSettings.info("Resolved bookmark to: \(url.path, privacy: .public), isStale: \(isStale, privacy: .public)")
             
             if isStale {
-                print("[AppSettings] Bookmark is stale, will re-save")
+                Logger.appSettings.debug("Bookmark is stale, will re-save")
                 saveSecurityScopedBookmark(for: url)
             }
             
             // Start accessing the security-scoped resource
             if url.startAccessingSecurityScopedResource() {
-                print("[AppSettings] Started accessing security-scoped resource: \(url.path)")
+                Logger.appSettings.info("Started accessing security-scoped resource: \(url.path, privacy: .public)")
                 securityScopedURL = url
                 isAccessingSecurityScopedResource = true
                 return url
             } else {
-                print("[AppSettings] Failed to start accessing security-scoped resource")
+                Logger.appSettings.error("Failed to start accessing security-scoped resource")
             }
         } catch {
-            print("[AppSettings] Failed to restore bookmark: \(error)")
+            Logger.appSettings.error("Failed to restore bookmark: \(error, privacy: .public)")
         }
         
         return nil
@@ -360,7 +361,7 @@ class AppSettings: ObservableObject {
     func stopAccessingLastOpenedFolder() {
         if isAccessingSecurityScopedResource, let url = securityScopedURL {
             url.stopAccessingSecurityScopedResource()
-            print("[AppSettings] Stopped accessing security-scoped resource")
+            Logger.appSettings.info("Stopped accessing security-scoped resource")
             isAccessingSecurityScopedResource = false
             securityScopedURL = nil
         }

@@ -12,6 +12,7 @@
 //
 
 import Foundation
+import os
 
 struct ZIPEncodingDetector {
     
@@ -48,18 +49,18 @@ struct ZIPEncodingDetector {
     /// - Returns: Detected encoding type
     static func detect(for url: URL) -> DetectedEncoding {
         guard let fileHandle = try? FileHandle(forReadingFrom: url) else {
-            print("[ZIPEncodingDetector] Cannot open file: \(url.lastPathComponent)")
+            Logger.zipEncoding.error("Cannot open file: \(url.lastPathComponent, privacy: .public)")
             return .unknown
         }
         defer { try? fileHandle.close() }
         
         // Step 1: Find EOCD and get Central Directory offset
         guard let (centralDirOffset, entryCount) = findCentralDirectory(fileHandle: fileHandle) else {
-            print("[ZIPEncodingDetector] Cannot locate Central Directory")
+            Logger.zipEncoding.error("Cannot locate Central Directory")
             return .unknown
         }
         
-        print("[ZIPEncodingDetector] Central Directory at offset \(centralDirOffset), \(entryCount) entries")
+        Logger.zipEncoding.debug("Central Directory at offset \(centralDirOffset, privacy: .public), \(entryCount, privacy: .public) entries")
         
         // Step 2: Read first few entries from Central Directory
         let samplesToCheck = min(entryCount, 10)  // Check up to 10 entries
@@ -68,7 +69,7 @@ struct ZIPEncodingDetector {
             centralDirOffset: centralDirOffset,
             maxEntries: samplesToCheck
         ) else {
-            print("[ZIPEncodingDetector] Cannot read file names from Central Directory")
+            Logger.zipEncoding.error("Cannot read file names from Central Directory")
             return .unknown
         }
         
@@ -173,7 +174,7 @@ struct ZIPEncodingDetector {
     private static func analyzeEncoding(fileNameBytes: [(bytes: Data, hasEFS: Bool)]) -> DetectedEncoding {
         // If any entry has EFS flag set, it's UTF-8
         if fileNameBytes.contains(where: { $0.hasEFS }) {
-            print("[ZIPEncodingDetector] EFS flag detected → UTF-8")
+            Logger.zipEncoding.debug("EFS flag detected → UTF-8")
             return .utf8
         }
         
@@ -198,17 +199,17 @@ struct ZIPEncodingDetector {
         // Decision logic
         if !hasHighBytes {
             // Pure ASCII - either encoding works
-            print("[ZIPEncodingDetector] ASCII only → UTF-8 (default)")
+            Logger.zipEncoding.debug("ASCII only → UTF-8 (default)")
             return .utf8
         }
         
         if looksLikeUTF8 && !looksLikeShiftJIS {
-            print("[ZIPEncodingDetector] Byte pattern → UTF-8")
+            Logger.zipEncoding.debug("Byte pattern → UTF-8")
             return .utf8
         }
         
         if looksLikeShiftJIS && !looksLikeUTF8 {
-            print("[ZIPEncodingDetector] Byte pattern → Shift_JIS")
+            Logger.zipEncoding.debug("Byte pattern → Shift_JIS")
             return .shiftJIS
         }
         
@@ -217,11 +218,11 @@ struct ZIPEncodingDetector {
         // Shift_JIS is primarily for legacy Windows archives
         // Future: could use statistical frequency analysis for better detection
         if looksLikeUTF8 {
-            print("[ZIPEncodingDetector] Ambiguous, defaulting to UTF-8 (modern default)")
+            Logger.zipEncoding.debug("Ambiguous, defaulting to UTF-8 (modern default)")
             return .utf8
         }
         
-        print("[ZIPEncodingDetector] Cannot determine encoding → unknown")
+        Logger.zipEncoding.error("Cannot determine encoding → unknown")
         return .unknown
     }
     

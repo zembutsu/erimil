@@ -8,6 +8,7 @@
 import Foundation
 import AppKit
 import ZIPFoundation
+import os
 
 class FolderManager: ImageSource {
     let url: URL
@@ -26,7 +27,7 @@ class FolderManager: ImageSource {
             includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else {
-            print("Failed to read folder: \(url)")
+            Logger.folder.error("Failed to read folder: \(self.url, privacy: .public)")
             return []
         }
         
@@ -64,22 +65,22 @@ class FolderManager: ImageSource {
         if let contentHash = cache.getContentHash(for: pathHash) {
             // Try to get cached thumbnail
             if let cached = cache.getThumbnail(for: contentHash) {
-                print("[FolderManager] Cache HIT for \(entry.name)")
+                Logger.folder.debug("Cache HIT for \(entry.name, privacy: .public)")
                 return cached
             }
         }
         
         // Cache miss - load file and generate
-        print("[FolderManager] Cache MISS for \(entry.name), loading...")
+        Logger.folder.debug("Cache MISS for \(entry.name, privacy: .public), loading...")
         let fileURL = URL(fileURLWithPath: entry.path)
         
         guard let imageData = try? Data(contentsOf: fileURL) else {
-            print("[FolderManager] Failed to read file: \(entry.path)")
+            Logger.folder.error("Failed to read file: \(entry.path, privacy: .public)")
             return nil
         }
         
         guard let image = NSImage(data: imageData) else {
-            print("[FolderManager] Invalid image data: \(entry.path)")
+            Logger.folder.error("Invalid image data: \(entry.path, privacy: .public)")
             return nil
         }
         
@@ -101,10 +102,10 @@ class FolderManager: ImageSource {
     /// Get full-size image - direct file access
     func fullImage(for entry: ImageEntry) -> NSImage? {
         let fileURL = URL(fileURLWithPath: entry.path)
-        print("[FolderManager] Loading image: \(fileURL.lastPathComponent)")
+        Logger.folder.debug("Loading image: \(fileURL.lastPathComponent, privacy: .public)")
         
         guard let image = NSImage(contentsOf: fileURL) else {
-            print("[FolderManager] Failed to load: \(entry.path)")
+            Logger.folder.error("Failed to load: \(entry.path, privacy: .public)")
             return nil
         }
         return image
@@ -139,8 +140,8 @@ class FolderManager: ImageSource {
     
     /// Create ZIP from selected images (excluding excludedPaths)
     func createZip(excluding excludedPaths: Set<String>, to destinationURL: URL) throws {
-        print("createZip called")
-        print("Excluded paths: \(excludedPaths)")
+        Logger.folder.info("createZip called")
+        Logger.folder.debug("Excluded paths: \(excludedPaths, privacy: .public)")
         
         guard let archive = Archive(url: destinationURL, accessMode: .create) else {
             throw FolderError.cannotCreateZip
@@ -150,7 +151,7 @@ class FolderManager: ImageSource {
         
         for entry in entries {
             if excludedPaths.contains(entry.path) {
-                print("Excluding: \(entry.name)")
+                Logger.folder.debug("Excluding: \(entry.name, privacy: .public)")
                 continue
             }
             
@@ -158,13 +159,13 @@ class FolderManager: ImageSource {
             
             do {
                 try archive.addEntry(with: entry.name, relativeTo: fileURL.deletingLastPathComponent())
-                print("Added: \(entry.name)")
+                Logger.folder.debug("Added: \(entry.name, privacy: .public)")
             } catch {
-                print("Failed to add \(entry.name): \(error)")
+                Logger.folder.error("Failed to add \(entry.name, privacy: .public): \(error, privacy: .public)")
             }
         }
         
-        print("ZIP creation completed")
+        Logger.folder.info("ZIP creation completed")
     }
     
     /// Move selected images to Trash
@@ -176,10 +177,10 @@ class FolderManager: ImageSource {
             
             do {
                 try FileManager.default.trashItem(at: fileURL, resultingItemURL: nil)
-                print("Trashed: \(fileURL.lastPathComponent)")
+                Logger.folder.info("Trashed: \(fileURL.lastPathComponent, privacy: .public)")
                 trashedCount += 1
             } catch {
-                print("Failed to trash \(fileURL.lastPathComponent): \(error)")
+                Logger.folder.error("Failed to trash \(fileURL.lastPathComponent, privacy: .public): \(error, privacy: .public)")
             }
         }
         

@@ -18,6 +18,7 @@
 
 import SwiftUI
 import AppKit
+import os
 
 // MARK: - Spread Navigation Helper
 
@@ -440,7 +441,7 @@ struct SpreadImageViewer: View {
                         isLoading = false
                         isShowingSpread = false
                         couldBeSpreadWithPrevious = canSpreadWithPrev
-                        print("[SpreadImageViewer] Single display at \(capturedIndex), couldBeSpreadWithPrevious: \(canSpreadWithPrev)")
+                        Logger.spread.debug("Single display at \(capturedIndex, privacy: .public), couldBeSpreadWithPrevious: \(canSpreadWithPrev, privacy: .public)")
                     }
                     return
                 }
@@ -474,7 +475,7 @@ struct SpreadImageViewer: View {
                                 isLoading = false
                                 isShowingSpread = false
                                 couldBeSpreadWithPrevious = canSpreadWithPrev
-                                print("[SpreadImageViewer] Single (right wide) at \(capturedIndex), couldBeSpreadWithPrevious: \(canSpreadWithPrev)")
+                                Logger.spread.debug("Single (right wide) at \(capturedIndex, privacy: .public), couldBeSpreadWithPrevious: \(canSpreadWithPrev, privacy: .public)")
                             }
                         } else {
                             // Both are portrait - show spread
@@ -489,7 +490,7 @@ struct SpreadImageViewer: View {
                                 isLoading = false
                                 isShowingSpread = true
                                 couldBeSpreadWithPrevious = false  // Already in spread
-                                print("[SpreadImageViewer] Spread display at \(capturedIndex)|\(capturedIndex+1)")
+                                Logger.spread.debug("Spread display at \(capturedIndex, privacy: .public)|\(capturedIndex+1, privacy: .public)")
                             }
                         }
                     }
