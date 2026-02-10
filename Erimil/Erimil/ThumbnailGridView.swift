@@ -133,6 +133,7 @@ struct ThumbnailGridView: View {
 
     // #54: Reading direction change trigger
     @State private var readingDirectionVersion: Int = 0
+    @State private var isLoadingSource: Bool = false
     
     /// Dynamic columns based on thumbnail size
     private var columns: [GridItem] {
@@ -256,7 +257,23 @@ struct ThumbnailGridView: View {
             Divider()
             
             // サムネイルグリッド
-            if entries.isEmpty {
+            if isLoadingSource {
+                ZStack {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("読み込み中…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Key event handler for source navigation during loading
+                    KeyEventHandlerView { event in
+                        handleKeyEvent(event)
+                    }
+                    .allowsHitTesting(false)
+                }
+            } else if entries.isEmpty {
                 ZStack {
                     ContentUnavailableView(
                         "画像がありません",
@@ -369,7 +386,6 @@ struct ThumbnailGridView: View {
             }
         }
         .onChange(of: imageSource.url) { oldURL, newURL in
-            print("[ThumbnailGridView] onChange(url): \(oldURL.lastPathComponent) → \(newURL.lastPathComponent)")
             if currentSourceURL != newURL {
                 loadSource()
             }
@@ -389,9 +405,6 @@ struct ThumbnailGridView: View {
             }
         }
         .onAppear {
-            print("[ThumbnailGridView] onAppear: \(imageSource.url.lastPathComponent)")
-            print("[ThumbnailGridView] currentSourceURL: \(currentSourceURL?.lastPathComponent ?? "nil")")
-            // Always load if URL changed or first appearance
             if currentSourceURL != imageSource.url {
                 loadSource()
             }
@@ -707,89 +720,93 @@ struct ThumbnailGridView: View {
         loadID = newLoadID
         currentSourceURL = imageSource.url
         
-        print("[ThumbnailGridView] loadSource called for: \(imageSource.url.lastPathComponent)")
-        print("[ThumbnailGridView] imageSource type: \(type(of: imageSource))")
-        print("[ThumbnailGridView] imageSource.url: \(imageSource.url.path)")
-        print("[ThumbnailGridView] New loadID: \(newLoadID)")
-        
+        // Clear UI state immediately on main thread
         thumbnails = [:]
-        contentHashes = [:]  // Clear content hashes when source changes
-        selectedPaths = []  // Clear selections when source changes
-        focusedIndex = nil  // Reset focus when source changes
-        previewMode = .none  // Close preview when source changes
-        entries = imageSource.listImageEntries()
+        contentHashes = [:]
+        selectedPaths = []
+        focusedIndex = nil
+        previewMode = .none
+        entries = []
+        isLoadingSource = true
         
-        // #52: Filer does not restore last position
-        // Last position is restored when entering Viewer/Slide Mode
-        if !entries.isEmpty {
-            focusedIndex = 0
-        }
+        // Capture source reference for background work
+        let source = imageSource
         
-        print("[ThumbnailGridView] Loaded \(entries.count) entries:")
-        for (index, entry) in entries.prefix(10).enumerated() {
-            print("  [\(index)] \(entry.name) - path: \(entry.path)")
-        }
-        if entries.count > 10 {
-            print("  ... and \(entries.count - 10) more")
-        }
-        
-        // S005: Reopen Slide Mode if flag is set (after source navigation)
-        if shouldReopenSlideMode && !entries.isEmpty {
-            print("[ThumbnailGridView] Reopening Slide Mode after source switch")
-            shouldReopenSlideMode = false
+        // Run listImageEntries off main thread (#91)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let loadedEntries = source.listImageEntries()
             
-            // Delay slightly to ensure view is ready
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                let favIndices = favoriteIndices
+            DispatchQueue.main.async {
+                // Stale check: discard if source changed during loading
+                guard loadID == newLoadID else { return }
                 
-                // S010: Get source position info
-                let positionInfo = SourceNavigator.positionInfo(for: imageSource.url)
-                let sourceName = imageSource.url.lastPathComponent
+                entries = loadedEntries
+                isLoadingSource = false
+                
+                // #52: Filer does not restore last position
+                // Last position is restored when entering Viewer/Slide Mode
+                if !entries.isEmpty {
+                    focusedIndex = 0
+                }
+                
+                // S005: Reopen Slide Mode if flag is set (after source navigation)
+                if shouldReopenSlideMode && !entries.isEmpty {
+                    shouldReopenSlideMode = false
+                    
+                    // Delay slightly to ensure view is ready
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        let favIndices = favoriteIndices
+                        
+                        // S010: Get source position info
+                        let positionInfo = SourceNavigator.positionInfo(for: imageSource.url)
+                        let sourceName = imageSource.url.lastPathComponent
 
-                // S010: Convert selectedPaths to indices (empty for new source)
-                let selectedIndices: Set<Int> = []
+                        // S010: Convert selectedPaths to indices (empty for new source)
+                        let selectedIndices: Set<Int> = []
 
-                // Use updateSource to maintain fullscreen state
-                SlideWindowController.shared.updateSource(
-                    imageSource: imageSource,
-                    entries: entries,
-                    favoriteIndices: favIndices,
-                    selectedIndices: selectedIndices,
-                    sourceName: sourceName,
-                    sourcePosition: positionInfo?.position ?? 0,
-                    totalSources: positionInfo?.total ?? 0,
-                    onClose: {
-                        print("[ThumbnailGridView] SlideWindowController closed (after source switch)")
-                    },
-                    onIndexChange: { newIndex in
-                        focusedIndex = newIndex
-                        // #52: Save last position
-                        CacheManager.shared.setLastPosition(for: imageSource.url, index: newIndex)
-                    },
-                    onNextSource: onRequestNextSource,
-                    onPreviousSource: onRequestPreviousSource,
-                    onToggleFavorite: { [self] index in
-                        guard index >= 0, index < entries.count else { return }
-                        let entry = entries[index]
-                        let hash = contentHashes[entry.path]
-                        _ = CacheManager.shared.toggleFavorite(
-                            sourceURL: imageSource.url,
-                            entryPath: entry.path,
-                            contentHash: hash
+                        // Use updateSource to maintain fullscreen state
+                        SlideWindowController.shared.updateSource(
+                            imageSource: imageSource,
+                            entries: entries,
+                            favoriteIndices: favIndices,
+                            selectedIndices: selectedIndices,
+                            sourceName: sourceName,
+                            sourcePosition: positionInfo?.position ?? 0,
+                            totalSources: positionInfo?.total ?? 0,
+                            onClose: {
+                                print("[ThumbnailGridView] SlideWindowController closed (after source switch)")
+                            },
+                            onIndexChange: { newIndex in
+                                focusedIndex = newIndex
+                                // #52: Save last position
+                                CacheManager.shared.setLastPosition(for: imageSource.url, index: newIndex)
+                            },
+                            onNextSource: onRequestNextSource,
+                            onPreviousSource: onRequestPreviousSource,
+                            onToggleFavorite: { [self] index in
+                                guard index >= 0, index < entries.count else { return }
+                                let entry = entries[index]
+                                let hash = contentHashes[entry.path]
+                                _ = CacheManager.shared.toggleFavorite(
+                                    sourceURL: imageSource.url,
+                                    entryPath: entry.path,
+                                    contentHash: hash
+                                )
+                                favoritesVersion += 1
+                            },
+                            onToggleSelection: { [self] index in
+                                guard index >= 0, index < entries.count else { return }
+                                let entry = entries[index]
+                                if selectedPaths.contains(entry.path) {
+                                    selectedPaths.remove(entry.path)
+                                } else {
+                                    selectedPaths.insert(entry.path)
+                                }
+                            }
                         )
-                        favoritesVersion += 1
-                    },
-                    onToggleSelection: { [self] index in
-                        guard index >= 0, index < entries.count else { return }
-                        let entry = entries[index]
-                        if selectedPaths.contains(entry.path) {
-                            selectedPaths.remove(entry.path)
-                        } else {
-                            selectedPaths.insert(entry.path)
-                        }
-                    }
-                )
 
+                    }
+                }
             }
         }
     }

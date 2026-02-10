@@ -69,7 +69,7 @@ struct ContentView: View {
                     shouldReopenSlideMode: $shouldReopenSlideMode,
                     shouldReopenViewerMode: $shouldReopenViewerMode
                 )
-                .id(imageSource.url)  // Force View recreation when source changes
+                // NOTE: .id() removed (S036) — loadSource() handles full state reset via onChange(imageSource.url)
                 // S010: Trigger Slide Mode open from sidebar
                 .onChange(of: shouldOpenSlideMode) { _, newValue in
                     if newValue {
@@ -86,18 +86,14 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 600)
-        .onChange(of: selectedSourceURL) { oldURL, newURL in
-            print("[ContentView] onChange(URL): \(oldURL?.lastPathComponent ?? "nil") → \(newURL?.lastPathComponent ?? "nil")")
-            // Debounce: only update if both URL and Type are set
+        .onChange(of: selectedSourceURL) { _, newURL in
             if let _ = newURL, let _ = selectedSourceType {
                 updateImageSource()
             } else if newURL == nil {
                 currentImageSource = nil
             }
         }
-        .onChange(of: selectedSourceType) { oldType, newType in
-            print("[ContentView] onChange(Type): \(String(describing: oldType)) → \(String(describing: newType))")
-            // Debounce: only update if both URL and Type are set
+        .onChange(of: selectedSourceType) { _, newType in
             if let _ = selectedSourceURL, let _ = newType {
                 updateImageSource()
             } else if newType == nil {
@@ -139,18 +135,14 @@ struct ContentView: View {
     
     private func updateImageSource() {
         guard let url = selectedSourceURL, let type = selectedSourceType else {
-            print("[ContentView] updateImageSource: no source selected")
             currentImageSource = nil
             return
         }
         
         // Check if already loaded same source
         if let current = currentImageSource, current.url == url {
-            print("[ContentView] updateImageSource: same source already loaded, skipping")
             return
         }
-        
-        print("[ContentView] updateImageSource: creating new source for \(url.lastPathComponent) (type: \(type))")
         
         // Clear selections when switching sources to prevent stale paths
         selectedPaths.removeAll()
@@ -166,11 +158,8 @@ struct ContentView: View {
     }
     
     private func handleSourceSelectionAttempt(url: URL, type: ImageSourceType) {
-        print("[ContentView] handleSourceSelectionAttempt: \(url.lastPathComponent) (type: \(type))")
-        
         // 同じソースを選択した場合は何もしない
         if url == selectedSourceURL && type == selectedSourceType {
-            print("[ContentView] Same source, ignoring")
             return
         }
         

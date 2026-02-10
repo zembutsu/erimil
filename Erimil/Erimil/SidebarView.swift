@@ -235,11 +235,44 @@ struct NodeTreeView: View {
             isSelected: selectedSourceURL == node.url
         )
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            onDoubleTap(node)
-        }
-        .onTapGesture(count: 1) {
-            onTap(node)
+        .overlay(
+            InstantClickHandler(
+                onSingleClick: { onTap(node) },
+                onDoubleClick: { onDoubleTap(node) }
+            )
+        )
+    }
+}
+
+// MARK: - Instant Click Handler (S036: eliminate tap gesture delay)
+// macOS mouseDown fires immediately with clickCount, no disambiguation delay.
+
+struct InstantClickHandler: NSViewRepresentable {
+    let onSingleClick: () -> Void
+    let onDoubleClick: () -> Void
+    
+    func makeNSView(context: Context) -> ClickView {
+        let view = ClickView()
+        view.onSingleClick = onSingleClick
+        view.onDoubleClick = onDoubleClick
+        return view
+    }
+    
+    func updateNSView(_ nsView: ClickView, context: Context) {
+        nsView.onSingleClick = onSingleClick
+        nsView.onDoubleClick = onDoubleClick
+    }
+    
+    class ClickView: NSView {
+        var onSingleClick: (() -> Void)?
+        var onDoubleClick: (() -> Void)?
+        
+        override func mouseDown(with event: NSEvent) {
+            if event.clickCount == 2 {
+                onDoubleClick?()
+            } else if event.clickCount == 1 {
+                onSingleClick?()
+            }
         }
     }
 }
