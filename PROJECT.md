@@ -15,32 +15,49 @@ This document is the entry point for developers and automated systems working on
 
 ## Project Vision
 
-**Erimil** (選り見る) is a macOS application that provides visual preview and selective extraction/deletion of images within ZIP archives.
+**Erimil** (選り見る) is a macOS image curation tool. Browse, evaluate, mark, and export — across ZIP archives, folders, and PDFs. Keyboard-driven, lightweight, focused.
 
 Part of the **DDL (Do Different Lab)** tool family, designed to work alongside [kurumil](https://github.com/zembutsu/kurumil) for image processing workflows.
+
+### Core Principle
+
+**「選り見る」= selectively view and curate.**
+
+Erimil is not a viewer, not a manager, not an editor. It is a tool for **deciding what's worth keeping** — then getting out of your way.
 
 ### Problems Solved
 
 - **Pre-processing bottleneck**: Before upscaling with kurumil, users need to filter out unnecessary images to save processing time and storage
 - **Blind archive management**: Standard tools require full extraction to preview contents
 - **Tedious selection**: No visual way to mark multiple files for removal across archives
+- **Fragmented workflows**: ZIP, folder, and PDF images require different apps to browse and curate
 
 ### Design Philosophy
 
 - **Safety First**: Non-destructive by default, explicit confirmation for all changes
 - **Visual Workflow**: See what you're selecting, not just filenames  
+- **Keyboard-Driven**: Every action reachable without a mouse
 - **Unix Philosophy**: Do one thing well, integrate with other tools (kurumil)
 - **Minimal Friction**: Drag & drop, keyboard shortcuts, no unnecessary dialogs
+
+### What Erimil Does NOT Do
+
+- Edit images (hand off to external editors)
+- Manage a library or database
+- Sync to the cloud
+- Replace Lightroom, Photos, or any DAM
+
+These boundaries are intentional. Features that don't serve "browse → evaluate → mark → export" don't belong here.
 
 ## Current Status
 
 - **Version**: 0.3.3 (released)
-- **Phase**: Phase 2.3 Development
+- **Phase**: Phase 2.3 (nearing completion)
 - **Phase 1**: ✅ Completed (2025-12-13)
 - **Phase 2**: ✅ Completed (2025-12-14)
 - **Phase 2.1**: ✅ Completed (2025-12-16)
 - **Phase 2.2**: ✅ Completed (2025-12-17)
-- **Phase 2.3**: 🔄 In Progress
+- **Phase 2.3**: 🔄 In Progress — core features done, refinements ongoing
 
 ## Development Principles
 
@@ -108,16 +125,41 @@ This project uses AI-assisted development following the WORKFLOW.md guidelines:
 - ✅ Image prefetching for smooth navigation
 - ✅ Single page markers (V key)
 - ✅ Per-source settings (position, direction, markers)
+- ✅ Bookmark (栞) system with named sections
+- ✅ os.Logger migration (structured logging)
+- 🔄 Logger privacy hardening
 - 🔄 Bug fixes and refinements
 
-### Phase 2.4 (Planned) - Customization
-- Key shortcut customization
-- Real-time folder monitoring
+### Phase 3 (Next) - Curation Quality
+- Grid filtering (filename search) and sorting (name, size, date, ★)
+- ★ auto-protect toggle (configurable favorite behavior in export)
+- Metadata carry-over on export (★, 栞, RTL, single page markers)
+- `.erimil.dat` sidecar for portable metadata
+- kurumil CLI integration (post-export optimization)
 
-### Phase 3 (Planned)
+### Phase 4 (Planned) - Broader Format & Display
+- RAW format support (via ImageIO: CR2/CR3, NEF, ARW, DNG, etc.)
+- EXIF metadata overlay
+- GPU-accelerated display (Core Image pipeline)
 - Additional archive formats (tar.gz, 7z, rar)
-- kurumil direct integration
-- Batch processing multiple ZIPs
+
+### Phase 5 (Planned) - Release Readiness
+- i18n (English / Japanese)
+- Accessibility (VoiceOver basic support)
+- App Store preparation
+
+### v1.0 Release Criteria
+- All Phase 3-5 features complete
+- i18n (en/ja)
+- RAW format support for major cameras
+- Accessibility baseline
+- Privacy policy and support URL
+
+### Future Direction
+
+Erimil aims to become a **professional-grade image curation tool** — a lightweight, keyboard-driven alternative for the "browse → evaluate → mark → export" workflow. Potential areas include star rating (0-5), color labels, comparison mode, and XMP sidecar output for interoperability with professional tools.
+
+All future additions must pass the test: **does this make "選り見る" faster or better?** If not, it doesn't belong here. See GitHub Issues for detailed proposals and discussion.
 
 ## For Automated Systems
 
