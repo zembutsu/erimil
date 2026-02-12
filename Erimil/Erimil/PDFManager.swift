@@ -35,10 +35,10 @@ class PDFManager: ImageSource {
     /// List all pages as image entries
     func listImageEntries() -> [ImageEntry] {
         return accessQueue.sync {
-            Logger.pdf.debug("listImageEntries called for: \(self.url.lastPathComponent, privacy: .public)")
+            Logger.pdf.debug("listImageEntries called for: \(self.url.lastPathComponent)")
             
             guard let doc = openDocument() else {
-                Logger.pdf.error("Failed to open PDF: \(self.url, privacy: .public)")
+                Logger.pdf.error("Failed to open PDF: \(self.url)")
                 return []
             }
             
@@ -83,17 +83,17 @@ class PDFManager: ImageSource {
         // Check if we have cached thumbnail
         if let contentHash = cache.getContentHash(for: pathHash),
            let cached = cache.getThumbnail(for: contentHash) {
-            Logger.pdf.debug("Cache HIT for \(entry.name, privacy: .public)")
+            Logger.pdf.debug("Cache HIT for \(entry.name)")
             return cached
         }
         
         // Cache miss - render thumbnail
-        Logger.pdf.debug("Cache MISS for \(entry.name, privacy: .public), rendering...")
+        Logger.pdf.debug("Cache MISS for \(entry.name), rendering...")
         
         guard let pageIndex = pageIndex(from: entry.path),
               let doc = openDocument(),
               let page = doc.page(at: pageIndex) else {
-            Logger.pdf.error("Failed to get page for \(entry.path, privacy: .public)")
+            Logger.pdf.error("Failed to get page for \(entry.path)")
             return nil
         }
         
@@ -115,7 +115,7 @@ class PDFManager: ImageSource {
         cache.registerMapping(pathHash: pathHash, contentHash: contentHash)
         cache.saveThumbnail(thumbnail, for: contentHash)
         
-        Logger.pdf.debug("Generated and cached thumbnail for \(entry.name, privacy: .public)")
+        Logger.pdf.debug("Generated and cached thumbnail for \(entry.name)")
         return thumbnail
     }
     
@@ -125,7 +125,7 @@ class PDFManager: ImageSource {
             guard let pageIndex = pageIndex(from: entry.path),
                   let doc = openDocument(),
                   let page = doc.page(at: pageIndex) else {
-                Logger.pdf.error("fullImage: Failed to get page for \(entry.path, privacy: .public)")
+                Logger.pdf.error("fullImage: Failed to get page for \(entry.path)")
                 return nil
             }
             
@@ -156,7 +156,7 @@ class PDFManager: ImageSource {
             
             image.unlockFocus()
             
-            Logger.pdf.debug("Rendered full image for \(entry.name, privacy: .public): \(renderSize.debugDescription, privacy: .public)")
+            Logger.pdf.debug("Rendered full image for \(entry.name): \(renderSize.debugDescription, privacy: .public)")
             return image
         }
     }
@@ -168,7 +168,7 @@ class PDFManager: ImageSource {
         if document == nil {
             document = PDFDocument(url: url)
             if document == nil {
-                Logger.pdf.error("Failed to create PDFDocument for: \(self.url.path, privacy: .public)")
+                Logger.pdf.error("Failed to create PDFDocument for: \(self.url.path)")
             }
         }
         return document
@@ -181,7 +181,7 @@ class PDFManager: ImageSource {
         guard path.hasPrefix("page_"),
               let numberString = path.split(separator: "_").last,
               let pageNumber = Int(numberString) else {
-            Logger.pdf.error("Invalid path format: \(path, privacy: .public)")
+            Logger.pdf.error("Invalid path format: \(path)")
             return nil
         }
         

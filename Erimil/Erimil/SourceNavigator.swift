@@ -69,7 +69,7 @@ struct SourceNavigator {
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         ) else {
-            Logger.sourceNav.error("Failed to list contents of \(parentURL.path, privacy: .public)")
+            Logger.sourceNav.error("Failed to list contents of \(parentURL.path)")
             return []
         }
         
@@ -86,7 +86,7 @@ struct SourceNavigator {
             $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
         }
         
-        Logger.sourceNav.debug("Found \(sorted.count, privacy: .public) siblings in \(parentURL.lastPathComponent, privacy: .public)")
+        Logger.sourceNav.debug("Found \(sorted.count, privacy: .public) siblings in \(parentURL.lastPathComponent)")
         return sorted
     }
 }

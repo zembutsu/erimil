@@ -552,7 +552,7 @@ struct BookmarkDialogHelper {
             showDeleteDialog(bookmarkName: existing.name, window: window) { confirmed in
                 if confirmed {
                     CacheManager.shared.removeBookmark(for: sourceURL, id: existing.id)
-                    Logger.bookmark.debug("Deleted '\(existing.name, privacy: .public)' at index \(imageIndex, privacy: .public)")
+                    Logger.bookmark.debug("Deleted '\(existing.name)' at index \(imageIndex, privacy: .public)")
                     onChanged?()
                 }
             }
@@ -561,7 +561,7 @@ struct BookmarkDialogHelper {
             showAddDialog(defaultName: defaultName, window: window) { name in
                 if let name = name {
                     CacheManager.shared.addBookmark(for: sourceURL, at: imageIndex, name: name)
-                    Logger.bookmark.debug("Added '\(name, privacy: .public)' at index \(imageIndex, privacy: .public)")
+                    Logger.bookmark.debug("Added '\(name)' at index \(imageIndex, privacy: .public)")
                     onChanged?()
                 }
             }

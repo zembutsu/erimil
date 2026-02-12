@@ -153,7 +153,7 @@ class ImagePrefetcher {
                 // Load image
                 if let image = imageSource.fullImage(for: entry) {
                     self.addToCache(path: entry.path, image: image)
-                    Logger.prefetcher.debug("Prefetched: \(entry.name, privacy: .public) (index \(targetIndex, privacy: .public))")
+                    Logger.prefetcher.debug("Prefetched: \(entry.name) (index \(targetIndex, privacy: .public))")
                 }
             }
         }
@@ -217,7 +217,7 @@ class ImagePrefetcher {
         while cache.count > maxCacheSize && !accessOrder.isEmpty {
             let oldestPath = accessOrder.removeFirst()
             cache.removeValue(forKey: oldestPath)
-            Logger.prefetcher.debug("Evicted: \(oldestPath, privacy: .public)")
+            Logger.prefetcher.debug("Evicted: \(oldestPath)")
         }
     }
 }

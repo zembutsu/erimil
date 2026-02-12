@@ -27,7 +27,7 @@ class FolderManager: ImageSource {
             includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else {
-            Logger.folder.error("Failed to read folder: \(self.url, privacy: .public)")
+            Logger.folder.error("Failed to read folder: \(self.url)")
             return []
         }
         
@@ -65,22 +65,22 @@ class FolderManager: ImageSource {
         if let contentHash = cache.getContentHash(for: pathHash) {
             // Try to get cached thumbnail
             if let cached = cache.getThumbnail(for: contentHash) {
-                Logger.folder.debug("Cache HIT for \(entry.name, privacy: .public)")
+                Logger.folder.debug("Cache HIT for \(entry.name)")
                 return cached
             }
         }
         
         // Cache miss - load file and generate
-        Logger.folder.debug("Cache MISS for \(entry.name, privacy: .public), loading...")
+        Logger.folder.debug("Cache MISS for \(entry.name), loading...")
         let fileURL = URL(fileURLWithPath: entry.path)
         
         guard let imageData = try? Data(contentsOf: fileURL) else {
-            Logger.folder.error("Failed to read file: \(entry.path, privacy: .public)")
+            Logger.folder.error("Failed to read file: \(entry.path)")
             return nil
         }
         
         guard let image = NSImage(data: imageData) else {
-            Logger.folder.error("Invalid image data: \(entry.path, privacy: .public)")
+            Logger.folder.error("Invalid image data: \(entry.path)")
             return nil
         }
         
@@ -102,10 +102,10 @@ class FolderManager: ImageSource {
     /// Get full-size image - direct file access
     func fullImage(for entry: ImageEntry) -> NSImage? {
         let fileURL = URL(fileURLWithPath: entry.path)
-        Logger.folder.debug("Loading image: \(fileURL.lastPathComponent, privacy: .public)")
+        Logger.folder.debug("Loading image: \(fileURL.lastPathComponent)")
         
         guard let image = NSImage(contentsOf: fileURL) else {
-            Logger.folder.error("Failed to load: \(entry.path, privacy: .public)")
+            Logger.folder.error("Failed to load: \(entry.path)")
             return nil
         }
         return image
@@ -141,7 +141,7 @@ class FolderManager: ImageSource {
     /// Create ZIP from selected images (excluding excludedPaths)
     func createZip(excluding excludedPaths: Set<String>, to destinationURL: URL) throws {
         Logger.folder.info("createZip called")
-        Logger.folder.debug("Excluded paths: \(excludedPaths, privacy: .public)")
+        Logger.folder.debug("Excluded paths: \(excludedPaths)")
         
         guard let archive = Archive(url: destinationURL, accessMode: .create) else {
             throw FolderError.cannotCreateZip
@@ -151,7 +151,7 @@ class FolderManager: ImageSource {
         
         for entry in entries {
             if excludedPaths.contains(entry.path) {
-                Logger.folder.debug("Excluding: \(entry.name, privacy: .public)")
+                Logger.folder.debug("Excluding: \(entry.name)")
                 continue
             }
             
@@ -159,9 +159,9 @@ class FolderManager: ImageSource {
             
             do {
                 try archive.addEntry(with: entry.name, relativeTo: fileURL.deletingLastPathComponent())
-                Logger.folder.debug("Added: \(entry.name, privacy: .public)")
+                Logger.folder.debug("Added: \(entry.name)")
             } catch {
-                Logger.folder.error("Failed to add \(entry.name, privacy: .public): \(error, privacy: .public)")
+                Logger.folder.error("Failed to add \(entry.name): \(error, privacy: .public)")
             }
         }
         
@@ -177,10 +177,10 @@ class FolderManager: ImageSource {
             
             do {
                 try FileManager.default.trashItem(at: fileURL, resultingItemURL: nil)
-                Logger.folder.info("Trashed: \(fileURL.lastPathComponent, privacy: .public)")
+                Logger.folder.info("Trashed: \(fileURL.lastPathComponent)")
                 trashedCount += 1
             } catch {
-                Logger.folder.error("Failed to trash \(fileURL.lastPathComponent, privacy: .public): \(error, privacy: .public)")
+                Logger.folder.error("Failed to trash \(fileURL.lastPathComponent): \(error, privacy: .public)")
             }
         }
         
