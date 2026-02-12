@@ -125,7 +125,7 @@ struct ContentView: View {
         
         // Use security-scoped bookmark restoration
         if let restoredFolder = AppSettings.shared.restoreAndAccessLastOpenedFolder() {
-            Logger.content.info("Restored folder with security scope: \(restoredFolder.path, privacy: .public)")
+            Logger.content.info("Restored folder with security scope: \(restoredFolder.path)")
             selectedFolderURL = restoredFolder
             // Update the published property (without triggering didSet bookmark save)
             AppSettings.shared.lastOpenedFolderURL = restoredFolder
@@ -193,7 +193,7 @@ struct ContentView: View {
     // MARK: - S010: Open Slide Mode from Sidebar
     
     private func openSlideModeForSource(_ url: URL) {
-        Logger.content.debug("openSlideModeForSource: \(url.lastPathComponent, privacy: .public)")
+        Logger.content.debug("openSlideModeForSource: \(url.lastPathComponent)")
         
         // S010: Always set the flag - ThumbnailGridView will handle it via onChange
         shouldReopenSlideMode = true
@@ -208,7 +208,7 @@ struct ContentView: View {
         }
         
         if let nextURL = SourceNavigator.nextSource(from: currentURL) {
-            Logger.content.debug("navigateToNextSource: \(currentURL.lastPathComponent, privacy: .public) → \(nextURL.lastPathComponent, privacy: .public)")
+            Logger.content.debug("navigateToNextSource: \(currentURL.lastPathComponent) → \(nextURL.lastPathComponent)")
             let type = inferSourceType(nextURL)
             
             // S005: Set flag to reopen mode after source switch
@@ -232,7 +232,7 @@ struct ContentView: View {
         }
         
         if let prevURL = SourceNavigator.previousSource(from: currentURL) {
-            Logger.content.debug("navigateToPreviousSource: \(currentURL.lastPathComponent, privacy: .public) → \(prevURL.lastPathComponent, privacy: .public)")
+            Logger.content.debug("navigateToPreviousSource: \(currentURL.lastPathComponent) → \(prevURL.lastPathComponent)")
             let type = inferSourceType(prevURL)
             
             // S005: Set flag to reopen mode after source switch

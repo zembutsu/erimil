@@ -113,14 +113,14 @@ struct ImageViewerCore: View {
                 imageSource: imageSource,
                 previousIndex: previousIndex
             )
-            Logger.viewer.debug("Cache HIT for \(entry.name, privacy: .public)")
+            Logger.viewer.debug("Cache HIT for \(entry.name)")
             return
         }
         
         // Cache miss - load normally
         isLoading = true
         loadedImage = nil
-        Logger.viewer.debug("Cache MISS for \(entry.name, privacy: .public), loading...")
+        Logger.viewer.debug("Cache MISS for \(entry.name), loading...")
         
         // Capture for async
         let capturedSource = imageSource

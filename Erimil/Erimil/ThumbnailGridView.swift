@@ -841,7 +841,7 @@ struct ThumbnailGridView: View {
         // CRITICAL: Check if this call is from a stale View instance
         // SwiftUI may trigger onAppear from old View instances with old imageSource
         guard imageSource.url == currentSourceURL else {
-            Logger.thumbnailGrid.debug("SKIP stale View call: \(entry.name, privacy: .public) (imageSource: \(imageSource.url.lastPathComponent, privacy: .public), current: \(currentSourceURL?.lastPathComponent ?? "nil"))")
+            Logger.thumbnailGrid.debug("SKIP stale View call: \(entry.name) (imageSource: \(imageSource.url.lastPathComponent), current: \(currentSourceURL?.lastPathComponent ?? "nil"))")
             return
         }
         
@@ -864,7 +864,7 @@ struct ThumbnailGridView: View {
             fullPath = entry.path  // FolderManager already has full path
         }
         
-        Logger.thumbnailGrid.debug("Starting for \(entryName, privacy: .public) from \(capturedSourceURL.lastPathComponent, privacy: .public), loadID: \(capturedLoadID, privacy: .public)")
+        Logger.thumbnailGrid.debug("Starting for \(entryName) from \(capturedSourceURL.lastPathComponent), loadID: \(capturedLoadID, privacy: .public)")
         
         DispatchQueue.global(qos: .userInitiated).async { [self] in
             // FIRST: Check validity on main thread BEFORE expensive operation
@@ -872,7 +872,7 @@ struct ThumbnailGridView: View {
             DispatchQueue.main.sync {
                 stillValid = (capturedLoadID == loadID && capturedSourceURL == currentSourceURL)
                 if !stillValid {
-                    Logger.thumbnailGrid.debug("SKIP async stale: \(entryName, privacy: .public)")
+                    Logger.thumbnailGrid.debug("SKIP async stale: \(entryName)")
                 }
             }
             
@@ -880,7 +880,7 @@ struct ThumbnailGridView: View {
             
             // Now generate thumbnail
             guard let thumbnail = currentSource.thumbnail(for: entry, maxSize: maxSize) else {
-                Logger.thumbnailGrid.error("Failed for: \(entryName, privacy: .public) from \(capturedSourceURL.lastPathComponent, privacy: .public)")
+                Logger.thumbnailGrid.error("Failed for: \(entryName) from \(capturedSourceURL.lastPathComponent)")
                 return
             }
             
@@ -890,17 +890,17 @@ struct ThumbnailGridView: View {
             DispatchQueue.main.async {
                 // Re-check validity after thumbnail generated
                 guard capturedLoadID == loadID else {
-                    Logger.thumbnailGrid.debug("Discarding stale thumbnail: \(entryName, privacy: .public) (loadID mismatch)")
+                    Logger.thumbnailGrid.debug("Discarding stale thumbnail: \(entryName) (loadID mismatch)")
                     return
                 }
                 
                 guard capturedSourceURL == currentSourceURL else {
-                    Logger.thumbnailGrid.debug("Discarding stale thumbnail: \(entryName, privacy: .public) (URL mismatch)")
+                    Logger.thumbnailGrid.debug("Discarding stale thumbnail: \(entryName) (URL mismatch)")
                     return
                 }
                 
                 guard entries.contains(where: { $0.path == entryPath }) else {
-                    Logger.thumbnailGrid.debug("Discarding thumbnail for removed entry: \(entryName, privacy: .public)")
+                    Logger.thumbnailGrid.debug("Discarding thumbnail for removed entry: \(entryName)")
                     return
                 }
                 
@@ -911,7 +911,7 @@ struct ThumbnailGridView: View {
                     contentHashes[entryPath] = hash
                 }
                 
-                Logger.thumbnailGrid.info("Success: \(entryName, privacy: .public)")
+                Logger.thumbnailGrid.info("Success: \(entryName)")
             }
         }
     }
@@ -1253,7 +1253,7 @@ struct ThumbnailGridView: View {
                 let targetFav = isRTL ? favoriteIndices.max() : favoriteIndices.min()
                 if let fav = targetFav {
                     focusedIndex = fav
-                    Logger.folder.debug("Ctrl+Z → \(isRTL ? "last" : "firs, privacy: .public)") favorite at \(fav)")
+                    Logger.folder.debug("Ctrl+Z → \(isRTL ? "last" : "first", privacy: .public) favorite at \(fav, privacy: .public)")
                 }
             } else {
                 let targetIndex = isRTL
@@ -1273,7 +1273,7 @@ struct ThumbnailGridView: View {
                 let targetFav = isRTL ? favoriteIndices.min() : favoriteIndices.max()
                 if let fav = targetFav {
                     focusedIndex = fav
-                    Logger.folder.debug("Ctrl+C → \(isRTL ? "first" : "las, privacy: .public)") favorite at \(fav)")
+                    Logger.folder.debug("Ctrl+C → \(isRTL ? "first" : "last", privacy: .public) favorite at \(fav, privacy: .public)")
                 }
             } else {
                 let targetIndex = isRTL
@@ -1316,7 +1316,7 @@ struct ThumbnailGridView: View {
     private func toggleSelection(_ entry: ImageEntry) {
         // In exclude mode, prevent selecting direct favorites (they're protected)
         if settings.selectionMode == .exclude && isDirectFavorite(entry) {
-            Logger.thumbnailGrid.debug("Blocked: \(entry.name, privacy: .public) is direct favorited (protected)")
+            Logger.thumbnailGrid.debug("Blocked: \(entry.name) is direct favorited (protected)")
             showProtectedFeedback(for: entry)
             return
         }
@@ -1448,7 +1448,7 @@ struct ThumbnailGridView: View {
     
     private func openPreview(at index: Int) {
         guard index >= 0 && index < entries.count else { return }
-        Logger.preview.debug("Opening preview at index: \(index, privacy: .public) - \(entries[index].name, privacy: .public)")
+        Logger.preview.debug("Opening preview at index: \(index, privacy: .public) - \(entries[index].name)")
         previewMode = .quickLook(index: index)
     }
     
@@ -1628,7 +1628,7 @@ struct BookmarkDividerView: View {
         let trimmed = editingName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty && trimmed != bookmark.name {
             CacheManager.shared.updateBookmarkName(for: sourceURL, id: bookmark.id, name: trimmed)
-            Logger.bookmark.debug("Renamed '\(bookmark.name, privacy: .public)' → '\(trimmed, privacy: .public)'")
+            Logger.bookmark.debug("Renamed '\(bookmark.name)' → '\(trimmed)'")
             onNameChanged?()
         }
         isEditing = false
@@ -2989,7 +2989,7 @@ struct ViewerView: View {
                 let targetFav = isRTL ? favoriteIndices.max() : favoriteIndices.min()
                 if let fav = targetFav {
                     navigateTo(fav)
-                    Logger.viewer.debug("Ctrl+Z → \(isRTL ? "last" : "firs, privacy: .public)") favorite at \(fav)")
+                    Logger.viewer.debug("Ctrl+Z → \(isRTL ? "last" : "first", privacy: .public) favorite at \(fav, privacy: .public)")
                 }
             } else {
                 isRTL ? goToNextFavorite() : goToPreviousFavorite()
@@ -3003,7 +3003,7 @@ struct ViewerView: View {
                 let targetFav = isRTL ? favoriteIndices.min() : favoriteIndices.max()
                 if let fav = targetFav {
                     navigateTo(fav)
-                    Logger.viewer.debug("Ctrl+C → \(isRTL ? "first" : "las, privacy: .public)") favorite at \(fav)")
+                    Logger.viewer.debug("Ctrl+C → \(isRTL ? "first" : "last", privacy: .public) favorite at \(fav, privacy: .public)")
                 }
             } else {
                 isRTL ? goToPreviousFavorite() : goToNextFavorite()

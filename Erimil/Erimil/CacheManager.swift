@@ -138,12 +138,12 @@ class CacheManager {
         do {
             if !fm.fileExists(atPath: baseDirectory.path) {
                 try fm.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
-                Logger.cache.info("Created base directory: \(self.baseDirectory.path, privacy: .public)")
+                Logger.cache.info("Created base directory: \(self.baseDirectory.path)")
             }
             
             if !fm.fileExists(atPath: cacheDirectory.path) {
                 try fm.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
-                Logger.cache.info("Created cache directory: \(self.cacheDirectory.path, privacy: .public)")
+                Logger.cache.info("Created cache directory: \(self.cacheDirectory.path)")
             }
         } catch {
             Logger.cache.error("Failed to create directories: \(error, privacy: .public)")
@@ -801,7 +801,7 @@ class CacheManager {
         updateSourceSettings(for: sourceURL) { settings in
             settings.readingDirection = direction
         }
-        Logger.cache.debug("Set reading direction for \(sourceURL.lastPathComponent, privacy: .public): \(direction?.displayName ?? "global default")")
+        Logger.cache.debug("Set reading direction for \(sourceURL.lastPathComponent): \(direction?.displayName ?? "global default")")
     }
     
     /// Toggle reading direction for a source
@@ -986,7 +986,7 @@ class CacheManager {
         bookmarksLock.unlock()
         
         saveBookmarks()
-        Logger.cache.debug("Added bookmark '\(name, privacy: .public)' at index \(imageIndex, privacy: .public)")
+        Logger.cache.debug("Added bookmark '\(name)' at index \(imageIndex, privacy: .public)")
         return bookmark
     }
     
@@ -1036,7 +1036,7 @@ class CacheManager {
         bookmarksLock.unlock()
         
         saveBookmarks()
-        Logger.cache.debug("Updated bookmark name to '\(name, privacy: .public)'")
+        Logger.cache.debug("Updated bookmark name to '\(name)'")
     }
     
     /// Get sorted bookmark indices for a source (for navigation)

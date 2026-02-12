@@ -284,8 +284,8 @@ class AppSettings: ObservableObject {
     
     /// Save URL as security-scoped bookmark to file
     private func saveSecurityScopedBookmark(for url: URL) {
-        Logger.appSettings.debug("saveSecurityScopedBookmark called for: \(url.path, privacy: .public)")
-        Logger.appSettings.debug("Saving to file: \(self.bookmarkFileURL.path, privacy: .public)")
+        Logger.appSettings.debug("saveSecurityScopedBookmark called for: \(url.path)")
+        Logger.appSettings.debug("Saving to file: \(self.bookmarkFileURL.path)")
         
         do {
             let bookmarkData = try url.bookmarkData(
@@ -302,7 +302,7 @@ class AppSettings: ObservableObject {
             let verifyExists = FileManager.default.fileExists(atPath: bookmarkFileURL.path)
             Logger.appSettings.debug("Verify after save - file exists: \(verifyExists, privacy: .public)")
             
-            Logger.appSettings.info("Saved security-scoped bookmark for: \(url.path, privacy: .public)")
+            Logger.appSettings.info("Saved security-scoped bookmark for: \(url.path)")
         } catch {
             Logger.appSettings.error("Failed to save bookmark: \(error, privacy: .public)")
         }
@@ -311,7 +311,7 @@ class AppSettings: ObservableObject {
     /// Restore URL from security-scoped bookmark file and start accessing
     func restoreAndAccessLastOpenedFolder() -> URL? {
         Logger.appSettings.info("Attempting to restore last opened folder...")
-        Logger.appSettings.debug("Looking for file: \(self.bookmarkFileURL.path, privacy: .public)")
+        Logger.appSettings.debug("Looking for file: \(self.bookmarkFileURL.path)")
         
         // Check if file exists
         let fileExists = FileManager.default.fileExists(atPath: bookmarkFileURL.path)
@@ -334,7 +334,7 @@ class AppSettings: ObservableObject {
                 bookmarkDataIsStale: &isStale
             )
             
-            Logger.appSettings.info("Resolved bookmark to: \(url.path, privacy: .public), isStale: \(isStale, privacy: .public)")
+            Logger.appSettings.info("Resolved bookmark to: \(url.path), isStale: \(isStale, privacy: .public)")
             
             if isStale {
                 Logger.appSettings.debug("Bookmark is stale, will re-save")
@@ -343,7 +343,7 @@ class AppSettings: ObservableObject {
             
             // Start accessing the security-scoped resource
             if url.startAccessingSecurityScopedResource() {
-                Logger.appSettings.info("Started accessing security-scoped resource: \(url.path, privacy: .public)")
+                Logger.appSettings.info("Started accessing security-scoped resource: \(url.path)")
                 securityScopedURL = url
                 isAccessingSecurityScopedResource = true
                 return url

@@ -91,7 +91,7 @@ class SlideWindowController {
     ) {
         Logger.slideWindow.debug("open() called")
         Logger.slideWindow.debug("entries.count: \(entries.count, privacy: .public), initialIndex: \(initialIndex, privacy: .public), favorites: \(favoriteIndices.count, privacy: .public)")
-        Logger.slideWindow.debug("source: \(sourceName, privacy: .public) (\(sourcePosition, privacy: .public)/\(totalSources, privacy: .public))")
+        Logger.slideWindow.debug("source: \(sourceName) (\(sourcePosition, privacy: .public)/\(totalSources, privacy: .public))")
         
         // Close existing window if any
         close()
@@ -286,7 +286,7 @@ class SlideWindowController {
         
         Logger.slideWindow.debug("updateSource: updating content in-place")
         Logger.slideWindow.debug("new entries.count: \(entries.count, privacy: .public), favorites: \(favoriteIndices.count, privacy: .public)")
-        Logger.slideWindow.debug("source: \(sourceName, privacy: .public) (\(sourcePosition, privacy: .public)/\(totalSources, privacy: .public))")
+        Logger.slideWindow.debug("source: \(sourceName) (\(sourcePosition, privacy: .public)/\(totalSources, privacy: .public))")
         
         // #52: Restore last position for new source
         let startIndex: Int

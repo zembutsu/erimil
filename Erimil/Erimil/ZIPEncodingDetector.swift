@@ -49,7 +49,7 @@ struct ZIPEncodingDetector {
     /// - Returns: Detected encoding type
     static func detect(for url: URL) -> DetectedEncoding {
         guard let fileHandle = try? FileHandle(forReadingFrom: url) else {
-            Logger.zipEncoding.error("Cannot open file: \(url.lastPathComponent, privacy: .public)")
+            Logger.zipEncoding.error("Cannot open file: \(url.lastPathComponent)")
             return .unknown
         }
         defer { try? fileHandle.close() }

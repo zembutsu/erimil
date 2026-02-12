@@ -70,10 +70,10 @@ class ArchiveManager: ImageSource {
     /// List all image entries in the ZIP
     func listImageEntries() -> [ImageEntry] {
         return accessQueue.sync {
-            Logger.archive.debug("listImageEntries called for: \(self.url.lastPathComponent, privacy: .public)")
+            Logger.archive.debug("listImageEntries called for: \(self.url.lastPathComponent)")
             
             guard let archive = openArchive() else {
-                Logger.archive.error("Failed to open archive: \(self.url, privacy: .public)")
+                Logger.archive.error("Failed to open archive: \(self.url)")
                 return []
             }
             
@@ -101,7 +101,7 @@ class ArchiveManager: ImageSource {
             Logger.archive.debug("Archive contains \(allEntries.count, privacy: .public) total entries")
             Logger.archive.debug("Found \(results.count, privacy: .public) image entries:")
             for (index, entry) in results.prefix(10).enumerated() {
-                Logger.archive.debug("  [\(index, privacy: .public)] \(entry.name, privacy: .public) - \(entry.path, privacy: .public)")
+                Logger.archive.debug("  [\(index, privacy: .public)] \(entry.name) - \(entry.path)")
             }
             if results.count > 10 {
                 Logger.archive.debug("  ... and \(results.count - 10, privacy: .public) more")
@@ -123,13 +123,13 @@ class ArchiveManager: ImageSource {
         if let contentHash = cache.getContentHash(for: pathHash) {
             // Try to get cached thumbnail
             if let cached = cache.getThumbnail(for: contentHash) {
-                Logger.thumbnailGrid.debug("Cache HIT for \(entry.name, privacy: .public)")
+                Logger.thumbnailGrid.debug("Cache HIT for \(entry.name)")
                 return cached
             }
         }
         
         // Cache miss - extract and generate
-        Logger.thumbnailGrid.debug("Cache MISS for \(entry.name, privacy: .public), extracting...")
+        Logger.thumbnailGrid.debug("Cache MISS for \(entry.name), extracting...")
         guard let (image, imageData) = extractImageWithData(for: entry) else { return nil }
         
         // Calculate content hash
@@ -157,10 +157,10 @@ class ArchiveManager: ImageSource {
     /// Extract image and raw data from ZIP
     private func extractImageWithData(for imageEntry: ImageEntry) -> (NSImage, Data)? {
         return accessQueue.sync {
-            Logger.archive.debug("Looking for '\(imageEntry.path, privacy: .public)' in '\(self.url.lastPathComponent, privacy: .public)'")
+            Logger.archive.debug("Looking for '\(imageEntry.path)' in '\(self.url.lastPathComponent)'")
             
             guard let archive = openArchive() else {
-                Logger.archive.error("Failed to open archive: \(self.url.path, privacy: .public)")
+                Logger.archive.error("Failed to open archive: \(self.url.path)")
                 return nil
             }
             
@@ -179,10 +179,10 @@ class ArchiveManager: ImageSource {
             }
             
             guard let entry = foundEntry else {
-                Logger.archive.debug("Entry not found: \(imageEntry.path, privacy: .public)")
-                Logger.archive.debug("ZIP '\(self.url.lastPathComponent, privacy: .public)' contains \(availablePaths.count, privacy: .public) entries:")
+                Logger.archive.debug("Entry not found: \(imageEntry.path)")
+                Logger.archive.debug("ZIP '\(self.url.lastPathComponent)' contains \(availablePaths.count, privacy: .public) entries:")
                 for path in availablePaths.prefix(10) {
-                    Logger.archive.debug("  - \(path, privacy: .public)")
+                    Logger.archive.debug("  - \(path)")
                 }
                 if availablePaths.count > 10 {
                     Logger.archive.debug("  ... and \(availablePaths.count - 10, privacy: .public) more")
@@ -196,12 +196,12 @@ class ArchiveManager: ImageSource {
                     imageData.append(data)
                 }
             } catch {
-                Logger.archive.error("Extract failed for \(imageEntry.name, privacy: .public): \(error, privacy: .public)")
+                Logger.archive.error("Extract failed for \(imageEntry.name): \(error, privacy: .public)")
                 return nil
             }
             
             guard let image = NSImage(data: imageData) else {
-                Logger.archive.error("Invalid image data for: \(imageEntry.name, privacy: .public), size: \(imageData.count, privacy: .public) bytes")
+                Logger.archive.error("Invalid image data for: \(imageEntry.name), size: \(imageData.count, privacy: .public) bytes")
                 return nil
             }
             
@@ -240,7 +240,7 @@ class ArchiveManager: ImageSource {
     /// Reference: https://github.com/weichsel/ZIPFoundation#adding-and-removing-entries
     func exportOptimized(excluding excludedPaths: Set<String>, to destinationURL: URL) throws {
         Logger.archive.info("exportOptimized called")
-        Logger.archive.debug("Excluded paths: \(excludedPaths, privacy: .public)")
+        Logger.archive.debug("Excluded paths: \(excludedPaths)")
         
         guard let sourceArchive = openArchive() else {
             Logger.archive.error("Failed to open source archive")
@@ -249,7 +249,7 @@ class ArchiveManager: ImageSource {
         Logger.archive.debug("Source archive opened")
         
         guard let destinationArchive = try? Archive(url: destinationURL, accessMode: .create) else {
-            Logger.archive.error("Failed to create destination archive at: \(destinationURL.path, privacy: .public)")
+            Logger.archive.error("Failed to create destination archive at: \(destinationURL.path)")
             throw ArchiveError.cannotCreateDestination
         }
         Logger.archive.debug("Destination archive created")
@@ -260,21 +260,21 @@ class ArchiveManager: ImageSource {
             let path = encoding != nil ? entry.path(using: encoding!) : entry.path
             
             if excludedPaths.contains(path) {
-                Logger.archive.debug("Excluding: \(path, privacy: .public)")
+                Logger.archive.debug("Excluding: \(path)")
                 continue
             }
             
             if path.contains("__MACOSX/") {
-                Logger.archive.debug("Skipping __MACOSX: \(path, privacy: .public)")
+                Logger.archive.debug("Skipping __MACOSX: \(path)")
                 continue
             }
             
             if entry.type == .directory {
-                Logger.archive.debug("Skipping directory: \(path, privacy: .public)")
+                Logger.archive.debug("Skipping directory: \(path)")
                 continue
             }
             
-            Logger.archive.debug("Copying: \(path, privacy: .public)")
+            Logger.archive.debug("Copying: \(path)")
             
             var entryData = Data()
             do {

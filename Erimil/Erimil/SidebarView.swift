@@ -125,7 +125,7 @@ struct SidebarView: View {
                 rootNode = FolderNode(url: url)
                 Logger.sidebar.info("rootNode created, children count: \(rootNode?.children?.count ?? 0, privacy: .public)")
             } else {
-                Logger.sidebar.error("ERROR: Folder does not exist: \(url.path, privacy: .public)")
+                Logger.sidebar.error("ERROR: Folder does not exist: \(url.path)")
                 // Fallback to Desktop
                 fallbackToDesktop()
             }
@@ -157,7 +157,7 @@ struct SidebarView: View {
         Logger.sidebar.debug("Folder picker response: \(response == .OK ? "OK" : "Cancel")")
         
         if response == .OK, let url = panel.url {
-            Logger.sidebar.debug("Selected folder: \(url.path, privacy: .public)")
+            Logger.sidebar.debug("Selected folder: \(url.path)")
             
             // Force update even if same folder (by clearing first)
             if selectedFolderURL == url {
