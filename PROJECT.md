@@ -127,7 +127,9 @@ This project uses AI-assisted development following the WORKFLOW.md guidelines:
 - ✅ Per-source settings (position, direction, markers)
 - ✅ Bookmark (栞) system with named sections
 - ✅ os.Logger migration (structured logging)
-- 🔄 Logger privacy hardening
+- ✅ Logger privacy hardening
+- 🔄 PDF page export — PDF/PNG (#100)
+- 🔄 Deskew display correction for scanned PDFs (#101)
 - 🔄 Bug fixes and refinements
 
 ### Phase 3 (Next) - Curation Quality
@@ -171,6 +173,31 @@ When working on this project:
 4. Check **GitHub Issues** for current tasks and plans
 5. Use SwiftUI + ZIPFoundation as primary technologies
 6. Follow safety-first principle: never implement destructive operations without explicit confirmation
+
+### Agent Rules (Bebop Style Development)
+
+This project follows **Bebop Style Development** — a methodology where human and AI collaborate as equal "Voices" in a session.
+
+**Session Awareness**:
+- Development happens in numbered sessions (S001, S002, ...). Each session has a log under `docs/sessions/`
+- Always check the latest session log's **Handoff Bridge** for carry-forward items and warnings
+- Do not assume context from prior sessions without reading the relevant log
+
+**Coding Constraints**:
+- Propose implementation approach before large changes; small fixes can be applied directly
+- Never modify files outside the Erimil Xcode project without explicit approval
+- Test builds must pass (`xcodebuild` or Xcode) before considering a task complete
+- Commit messages follow: `type: description` (feat, fix, refactor, docs, chore)
+
+**Scope Discipline**:
+- Erimil is "選り見る" (view & select), not an editor. Do not add features outside browse → evaluate → mark → export
+- Respect the **Parked** items in session logs — deferred topics are deferred for a reason
+- When in doubt about scope, ask rather than implement
+
+**Documentation**:
+- Design decisions go in DESIGN.md, not in code comments
+- Architecture changes require ARCHITECTURE.md updates in the same commit
+- CHANGELOG.md is updated per release, not per commit
 
 ## Technical Overview
 
