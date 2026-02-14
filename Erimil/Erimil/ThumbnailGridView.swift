@@ -668,7 +668,16 @@ struct ThumbnailGridView: View {
                 .buttonStyle(.borderedProminent)
             
             case .pdf:
-                EmptyView()
+                Menu {
+                    Button("PNGとして出力...") {
+                        confirmExportPNG()
+                    }
+                } label: {
+                    Text("確定 → _opt.pdf")
+                } primaryAction: {
+                    confirmExportPDF()
+                }
+                .buttonStyle(.borderedProminent)
             }
         }
         .padding()
@@ -1529,6 +1538,67 @@ struct ThumbnailGridView: View {
             onExportSuccess?()
         } catch {
             Logger.thumbnailGrid.error("Delete error: \(error, privacy: .public)")
+            exportMessage = error.localizedDescription
+            showExportError = true
+        }
+    }
+    
+    // MARK: - PDF Export (#100)
+    
+    private func confirmExportPDF() {
+        guard let pdfManager = imageSource as? PDFManager else { return }
+        
+        let originalName = pdfManager.url.deletingPathExtension().lastPathComponent
+        let outputName = "\(originalName)_opt.pdf"
+        
+        let savePanel = NSSavePanel()
+        savePanel.title = "最適化PDFの保存先"
+        savePanel.nameFieldStringValue = outputName
+        savePanel.allowedContentTypes = [.pdf]
+        savePanel.directoryURL = settings.outputDirectory(for: pdfManager.url)
+        
+        guard savePanel.runModal() == .OK, let outputURL = savePanel.url else {
+            return
+        }
+        
+        try? FileManager.default.removeItem(at: outputURL)
+        
+        do {
+            try pdfManager.exportOptimizedPDF(excluding: pathsToRemove, to: outputURL)
+            exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(pathsToKeep.count) ページ / 除外: \(pathsToRemove.count) ページ"
+            showExportSuccess = true
+            selectedPaths.removeAll()
+            onExportSuccess?()
+        } catch {
+            Logger.thumbnailGrid.error("PDF export error: \(error, privacy: .public)")
+            exportMessage = error.localizedDescription
+            showExportError = true
+        }
+    }
+    
+    private func confirmExportPNG() {
+        guard let pdfManager = imageSource as? PDFManager else { return }
+        
+        let openPanel = NSOpenPanel()
+        openPanel.title = "PNG出力先フォルダを選択"
+        openPanel.canChooseDirectories = true
+        openPanel.canChooseFiles = false
+        openPanel.canCreateDirectories = true
+        openPanel.directoryURL = settings.outputDirectory(for: pdfManager.url)
+        
+        guard openPanel.runModal() == .OK, let outputDir = openPanel.url else {
+            return
+        }
+        
+        do {
+            let count = try pdfManager.exportPagesAsPNG(excluding: pathsToRemove, to: outputDir)
+            let folderName = "\(pdfManager.url.deletingPathExtension().lastPathComponent)_pages"
+            exportMessage = "\(folderName)/ に \(count) ページを出力しました"
+            showExportSuccess = true
+            selectedPaths.removeAll()
+            onExportSuccess?()
+        } catch {
+            Logger.thumbnailGrid.error("PNG export error: \(error, privacy: .public)")
             exportMessage = error.localizedDescription
             showExportError = true
         }
