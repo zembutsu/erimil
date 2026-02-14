@@ -188,4 +188,155 @@ class PDFManager: ImageSource {
         // Convert 1-based page number to 0-based index
         return pageNumber - 1
     }
+    
+    // MARK: - Export Operations (#100)
+    
+    /// Export PDF excluding specified pages, creating an optimized PDF
+    /// - Parameters:
+    ///   - pathsToRemove: Set of page paths to exclude (e.g., "page_001", "page_003")
+    ///   - outputURL: Destination URL for the optimized PDF
+    func exportOptimizedPDF(excluding pathsToRemove: Set<String>, to outputURL: URL) throws {
+        let sourceDoc: PDFDocument? = accessQueue.sync { openDocument() }
+        
+        guard let sourceDoc else {
+            throw PDFExportError.cannotOpenDocument
+        }
+        
+        let newDoc = PDFDocument()
+        var insertIndex = 0
+        
+        for i in 0..<sourceDoc.pageCount {
+            let pagePath = String(format: "page_%03d", i + 1)
+            if pathsToRemove.contains(pagePath) {
+                Logger.pdf.debug("Excluding page \(i + 1, privacy: .public)")
+                continue
+            }
+            
+            guard let page = sourceDoc.page(at: i) else {
+                Logger.pdf.error("Failed to get page at index \(i, privacy: .public)")
+                continue
+            }
+            
+            newDoc.insert(page, at: insertIndex)
+            insertIndex += 1
+        }
+        
+        guard insertIndex > 0 else {
+            throw PDFExportError.noRemainingPages
+        }
+        
+        guard newDoc.write(to: outputURL) else {
+            throw PDFExportError.writeFailed(outputURL)
+        }
+        
+        Logger.pdf.info("Exported _opt.pdf: \(insertIndex, privacy: .public) pages to \(outputURL.lastPathComponent)")
+    }
+    
+    /// Export PDF pages as individual PNG images at 300dpi
+    /// - Parameters:
+    ///   - pathsToRemove: Set of page paths to exclude
+    ///   - outputDirectory: Directory where subfolder will be created
+    ///   - subfolder: Name of the subfolder (default: "{pdfName}_pages")
+    /// - Returns: Number of exported pages
+    @discardableResult
+    func exportPagesAsPNG(excluding pathsToRemove: Set<String>, to outputDirectory: URL, subfolder: String? = nil) throws -> Int {
+        let sourceDoc: PDFDocument? = accessQueue.sync { openDocument() }
+        
+        guard let sourceDoc else {
+            throw PDFExportError.cannotOpenDocument
+        }
+        
+        // Create subfolder
+        let folderName = subfolder ?? "\(url.deletingPathExtension().lastPathComponent)_pages"
+        let pagesDir = outputDirectory.appendingPathComponent(folderName)
+        try FileManager.default.createDirectory(at: pagesDir, withIntermediateDirectories: true)
+        
+        let dpi: CGFloat = 300.0
+        let scaleFactor = dpi / 72.0  // 4.1667
+        var exportedCount = 0
+        
+        for i in 0..<sourceDoc.pageCount {
+            let pagePath = String(format: "page_%03d", i + 1)
+            if pathsToRemove.contains(pagePath) {
+                continue
+            }
+            
+            guard let page = sourceDoc.page(at: i) else {
+                Logger.pdf.error("PNG export: failed to get page \(i + 1, privacy: .public)")
+                continue
+            }
+            
+            let mediaBox = page.bounds(for: .mediaBox)
+            let renderWidth = Int(mediaBox.width * scaleFactor)
+            let renderHeight = Int(mediaBox.height * scaleFactor)
+            
+            guard let bitmapRep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: renderWidth,
+                pixelsHigh: renderHeight,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            ) else {
+                Logger.pdf.error("PNG export: failed to create bitmap for page \(i + 1, privacy: .public)")
+                continue
+            }
+            
+            NSGraphicsContext.saveGraphicsState()
+            let context = NSGraphicsContext(bitmapImageRep: bitmapRep)
+            NSGraphicsContext.current = context
+            
+            if let cgContext = context?.cgContext {
+                // White background
+                cgContext.setFillColor(NSColor.white.cgColor)
+                cgContext.fill(CGRect(x: 0, y: 0, width: renderWidth, height: renderHeight))
+                
+                // Scale and render
+                cgContext.scaleBy(x: scaleFactor, y: scaleFactor)
+                page.draw(with: .mediaBox, to: cgContext)
+            }
+            
+            NSGraphicsContext.restoreGraphicsState()
+            
+            guard let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
+                Logger.pdf.error("PNG export: failed to create PNG data for page \(i + 1, privacy: .public)")
+                continue
+            }
+            
+            let fileName = String(format: "page_%03d.png", i + 1)
+            let fileURL = pagesDir.appendingPathComponent(fileName)
+            try pngData.write(to: fileURL)
+            exportedCount += 1
+        }
+        
+        guard exportedCount > 0 else {
+            throw PDFExportError.noRemainingPages
+        }
+        
+        Logger.pdf.info("Exported \(exportedCount, privacy: .public) PNG pages to \(pagesDir.lastPathComponent)")
+        return exportedCount
+    }
+}
+
+// MARK: - PDF Export Errors (#100)
+
+enum PDFExportError: LocalizedError {
+    case cannotOpenDocument
+    case noRemainingPages
+    case writeFailed(URL)
+    
+    var errorDescription: String? {
+        switch self {
+        case .cannotOpenDocument:
+            return "PDFファイルを開けませんでした"
+        case .noRemainingPages:
+            return "出力するページがありません（すべて除外されています）"
+        case .writeFailed(let url):
+            return "PDFの書き込みに失敗しました: \(url.lastPathComponent)"
+        }
+    }
 }

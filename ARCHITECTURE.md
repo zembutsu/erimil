@@ -64,6 +64,9 @@ Manages PDF document viewing as image sequences.
   - Each PDF page treated as an ImageEntry
   - Lazy page rendering for performance
   - Uses system PDFKit (no external dependencies)
+  - Export: optimized PDF (_opt.pdf) with page exclusion (#100)
+  - Export: individual PNG pages at 300dpi (#100)
+  - PDFExportError for structured error handling
 
 ### 5. Navigation Layer
 
@@ -297,6 +300,8 @@ Perform operation:
   - ZIP: exportOptimized(excluding: pathsToRemove)
   - Folder ZIP: createZip(excluding: pathsToRemove)
   - Folder Delete: moveToTrash(paths: pathsToRemove)
+  - PDF: exportOptimizedPDF(excluding: pathsToRemove)
+  - PDF PNG: exportPagesAsPNG(excluding: pathsToRemove)
     ↓
 selectedPaths.removeAll()
     ↓
