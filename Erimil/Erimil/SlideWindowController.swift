@@ -846,11 +846,21 @@ class SlideWindowController {
     
     private func goToPreviousFavorite() {
         // #72: Use NavigationHelper for unified favorite navigation
-        guard let targetIndex = NavigationHelper.previousFavoriteIndex(
+        guard var targetIndex = NavigationHelper.previousFavoriteIndex(
             from: currentIndex,
             favoriteIndices: storedFavoriteIndices,
             wrap: AppSettings.shared.loopWithinSource
         ) else { return }
+        
+        // #104: If target is partner of a spread, adjust to leading page
+        if let source = storedImageSource,
+           AppSettings.shared.isSpreadModeEnabled,
+           targetIndex > 0,
+           !SpreadNavigationHelper.shouldShowSinglePage(
+               for: source.url, at: targetIndex - 1,
+               totalCount: storedEntries.count, entries: storedEntries) {
+            targetIndex = targetIndex - 1
+        }
         
         currentIndex = targetIndex
         storedOnIndexChange?(currentIndex)
@@ -859,11 +869,26 @@ class SlideWindowController {
     
     private func goToNextFavorite() {
         // #72: Use NavigationHelper for unified favorite navigation
-        guard let targetIndex = NavigationHelper.nextFavoriteIndex(
+        guard var targetIndex = NavigationHelper.nextFavoriteIndex(
             from: currentIndex,
             favoriteIndices: storedFavoriteIndices,
             wrap: AppSettings.shared.loopWithinSource
         ) else { return }
+        
+        // #104: Skip if target is partner of current spread (no double-stop)
+        if let source = storedImageSource,
+           AppSettings.shared.isSpreadModeEnabled,
+           targetIndex == currentIndex + 1,
+           !SpreadNavigationHelper.shouldShowSinglePage(
+               for: source.url, at: currentIndex,
+               totalCount: storedEntries.count, entries: storedEntries) {
+            guard let nextTarget = NavigationHelper.nextFavoriteIndex(
+                from: targetIndex,
+                favoriteIndices: storedFavoriteIndices,
+                wrap: AppSettings.shared.loopWithinSource
+            ) else { return }
+            targetIndex = nextTarget
+        }
         
         currentIndex = targetIndex
         storedOnIndexChange?(currentIndex)
@@ -887,15 +912,45 @@ class SlideWindowController {
     private func toggleFavorite() {
         guard !storedEntries.isEmpty, currentIndex >= 0, currentIndex < storedEntries.count else { return }
         
-        // Toggle in local state
-        if storedFavoriteIndices.contains(currentIndex) {
-            storedFavoriteIndices.remove(currentIndex)
-        } else {
-            storedFavoriteIndices.insert(currentIndex)
-        }
+        // #104: Determine if currently showing spread
+        let partnerIndex: Int? = {
+            guard AppSettings.shared.isSpreadModeEnabled,
+                  let source = storedImageSource else { return nil }
+            let isSingle = SpreadNavigationHelper.shouldShowSinglePage(
+                for: source.url,
+                at: currentIndex,
+                totalCount: storedEntries.count,
+                entries: storedEntries
+            )
+            if !isSingle, currentIndex + 1 < storedEntries.count {
+                return currentIndex + 1
+            }
+            return nil
+        }()
         
-        // Notify ThumbnailGrid via callback
+        // Determine direction based on leading page
+        let isAdding = !storedFavoriteIndices.contains(currentIndex)
+        
+        // Toggle leading page in local state
+        if isAdding {
+            storedFavoriteIndices.insert(currentIndex)
+        } else {
+            storedFavoriteIndices.remove(currentIndex)
+        }
         storedOnToggleFavorite?(currentIndex)
+        
+        // #104: Toggle partner if spread (only if state needs to change)
+        if let partner = partnerIndex {
+            let partnerHasFavorite = storedFavoriteIndices.contains(partner)
+            if isAdding != partnerHasFavorite {
+                if isAdding {
+                    storedFavoriteIndices.insert(partner)
+                } else {
+                    storedFavoriteIndices.remove(partner)
+                }
+                storedOnToggleFavorite?(partner)
+            }
+        }
         
         // Update view
         notifyViewOfStateChange()
