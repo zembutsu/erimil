@@ -33,6 +33,17 @@ struct Bookmark: Codable, Identifiable {
     var createdAt: Date
 }
 
+/// Options for metadata carry-over on export (#105)
+struct MetadataCarryOverOptions {
+    var favorites: Bool = true
+    var bookmarks: Bool = true
+    var readingDirection: Bool = true
+    var singlePageMarkers: Bool = true
+    
+    static let all = MetadataCarryOverOptions()
+    static let none = MetadataCarryOverOptions(favorites: false, bookmarks: false, readingDirection: false, singlePageMarkers: false)
+}
+
 /// Manages thumbnail cache and metadata with privacy-first hash-based storage
 class CacheManager {
     static let shared = CacheManager()
@@ -530,6 +541,128 @@ class CacheManager {
             return false
         }
         return isFavorite(cHash)
+    }
+    
+    // MARK: - Metadata Carry-Over (#105)
+    
+    /// Add a direct favorite without toggling (idempotent)
+    func setDirectFavorite(sourceURL: URL, entryPath: String, contentHash: String?) {
+        let sKey = sourceKey(sourceURL: sourceURL, entryPath: entryPath)
+        favoritesLock.lock()
+        let alreadySet = favoritesBySource.contains(sKey)
+        if !alreadySet {
+            favoritesBySource.insert(sKey)
+            if let cHash = contentHash {
+                sourceToContent[sKey] = cHash
+                favoritesByContent.insert(cHash)
+            }
+        }
+        favoritesLock.unlock()
+        if !alreadySet {
+            saveFavorites()
+        }
+    }
+    
+    /// Copy metadata from source to destination with index remapping (#105)
+    ///
+    /// - Parameters:
+    ///   - sourceURL: Original source URL
+    ///   - destinationURL: Exported file URL
+    ///   - entries: Original entries list
+    ///   - pathsToRemove: Paths excluded from export
+    ///   - contentHashes: Path → contentHash mapping
+    ///   - newPathForSurvivingIndex: Closure to generate new entry path for PDF (nil = keep original path)
+    ///   - options: Which metadata types to carry over
+    func copyMetadata(
+        from sourceURL: URL,
+        to destinationURL: URL,
+        entries: [ImageEntry],
+        pathsToRemove: Set<String>,
+        contentHashes: [String: String],
+        newPathForSurvivingIndex: ((_ newIndex: Int, _ originalPath: String) -> String)? = nil,
+        options: MetadataCarryOverOptions = .all
+    ) {
+        // 1. Build index mapping: originalIndex → newIndex
+        var indexMapping: [Int: Int] = [:]
+        var survivingEntries: [(originalIndex: Int, entry: ImageEntry, newIndex: Int)] = []
+        var newIdx = 0
+        for (originalIdx, entry) in entries.enumerated() {
+            if !pathsToRemove.contains(entry.path) {
+                indexMapping[originalIdx] = newIdx
+                survivingEntries.append((originalIdx, entry, newIdx))
+                newIdx += 1
+            }
+        }
+        
+        // 2. Copy favorites
+        var favCount = 0
+        if options.favorites {
+            for item in survivingEntries {
+                if isDirectFavorite(sourceURL: sourceURL, entryPath: item.entry.path) {
+                    let newPath = newPathForSurvivingIndex?(item.newIndex, item.entry.path) ?? item.entry.path
+                    let cHash = contentHashes[item.entry.path]
+                    setDirectFavorite(sourceURL: destinationURL, entryPath: newPath, contentHash: cHash)
+                    favCount += 1
+                    Logger.cache.debug("★ copied: \(item.entry.path) → \(newPath)")
+                }
+            }
+        }
+        
+        // 3. Copy bookmarks (remap indices, drop bookmarks on excluded pages)
+        var bookmarkCount = 0
+        if options.bookmarks {
+            let oldBookmarks = getBookmarks(for: sourceURL)
+            for bookmark in oldBookmarks {
+                if let newIndex = indexMapping[bookmark.imageIndex] {
+                    addBookmark(for: destinationURL, at: newIndex, name: bookmark.name)
+                    bookmarkCount += 1
+                    Logger.cache.debug("栞 copied: \(bookmark.name) index \(bookmark.imageIndex) → \(newIndex)")
+                }
+            }
+        }
+        
+        // 4. Copy reading direction
+        if options.readingDirection {
+            if let direction = getReadingDirection(for: sourceURL) {
+                setReadingDirection(for: destinationURL, direction: direction)
+            }
+        }
+        
+        // 5. Copy single page markers (remap indices, drop markers on excluded pages)
+        if options.singlePageMarkers {
+            let oldMarkers = getSinglePageIndices(for: sourceURL)
+            if !oldMarkers.isEmpty {
+                var newMarkers: Set<Int> = []
+                for oldIndex in oldMarkers {
+                    if let newIndex = indexMapping[oldIndex] {
+                        newMarkers.insert(newIndex)
+                    }
+                }
+                if !newMarkers.isEmpty {
+                    updateSourceSettings(for: destinationURL) { settings in
+                        settings.singlePageIndices = newMarkers
+                    }
+                }
+            }
+        }
+        
+        Logger.cache.info("Metadata copied: \(sourceURL.lastPathComponent) → \(destinationURL.lastPathComponent) (★:\(favCount) 栞:\(bookmarkCount) dir:\(options.readingDirection) V:\(options.singlePageMarkers)) surviving:\(survivingEntries.count)/\(entries.count)")
+    }
+    
+    /// Detect PDF entry path format and generate new path for remapped index (#105)
+    /// Note: newIndex is 0-based (from copyMetadata), but PDF paths are 1-based
+    static func pdfEntryPathRemapper(samplePath: String) -> (_ newIndex: Int, _ originalPath: String) -> String {
+        // Detect pattern: "page_003" → prefix "page_", padding 3
+        if let range = samplePath.range(of: "\\d+$", options: .regularExpression) {
+            let prefix = String(samplePath[samplePath.startIndex..<range.lowerBound])
+            let digitStr = String(samplePath[range])
+            let padding = digitStr.count
+            return { newIndex, _ in
+                prefix + String(format: "%0\(padding)d", newIndex + 1)  // 0-based → 1-based
+            }
+        }
+        // Fallback
+        return { newIndex, _ in "page_\(newIndex + 1)" }
     }
     
     private func saveThumbnailToDisk(_ image: NSImage, for contentHash: String) {

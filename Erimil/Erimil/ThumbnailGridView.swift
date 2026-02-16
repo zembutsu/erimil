@@ -1531,6 +1531,12 @@ struct ThumbnailGridView: View {
         
         do {
             try archiveManager.exportOptimized(excluding: pathsToRemove, to: outputURL)
+            // #105: Copy metadata to exported file
+            CacheManager.shared.copyMetadata(
+                from: archiveManager.url, to: outputURL,
+                entries: entries, pathsToRemove: pathsToRemove,
+                contentHashes: contentHashes
+            )
             exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(pathsToKeep.count) ファイル / 除外: \(pathsToRemove.count) ファイル"
             showExportSuccess = true
             selectedPaths.removeAll()  // Clear selections after success
@@ -1573,6 +1579,12 @@ struct ThumbnailGridView: View {
         
         do {
             try folderManager.createZip(excluding: pathsToRemove, to: outputURL)
+            // #105: Copy metadata to exported file
+            CacheManager.shared.copyMetadata(
+                from: folderManager.url, to: outputURL,
+                entries: entries, pathsToRemove: pathsToRemove,
+                contentHashes: contentHashes
+            )
             exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(pathsToKeep.count) ファイル"
             showExportSuccess = true
             selectedPaths.removeAll()  // Clear selections after success
@@ -1633,6 +1645,14 @@ struct ThumbnailGridView: View {
         
         do {
             try pdfManager.exportOptimizedPDF(excluding: pathsToRemove, to: outputURL)
+            // #105: Copy metadata with PDF page index remapping
+            let pathRemapper = entries.first.map { CacheManager.pdfEntryPathRemapper(samplePath: $0.path) }
+            CacheManager.shared.copyMetadata(
+                from: pdfManager.url, to: outputURL,
+                entries: entries, pathsToRemove: pathsToRemove,
+                contentHashes: contentHashes,
+                newPathForSurvivingIndex: pathRemapper
+            )
             exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(pathsToKeep.count) ページ / 除外: \(pathsToRemove.count) ページ"
             showExportSuccess = true
             selectedPaths.removeAll()
