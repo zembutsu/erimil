@@ -601,7 +601,7 @@ class CacheManager {
                 if isDirectFavorite(sourceURL: sourceURL, entryPath: item.entry.path) {
                     let newPath = newPathForSurvivingIndex?(item.newIndex, item.entry.path) ?? item.entry.path
                     let cHash = contentHashes[item.entry.path]
-                    setDirectFavorite(sourceURL: destinationURL, entryPath: newPath, contentHash: cHash)
+                    setDirectFavorite(sourceURL: destinationURL, entryPath: newPath, contentHash: nil)
                     favCount += 1
                     Logger.cache.debug("★ copied: \(item.entry.path) → \(newPath)")
                 }
