@@ -2807,20 +2807,36 @@ struct ViewerView: View {
     
     // #72: Favorite navigation (unified from Slide Mode)
     private func goToPreviousFavorite() {
-        guard let targetIndex = NavigationHelper.previousFavoriteIndex(
+        guard var targetIndex = NavigationHelper.previousFavoriteIndex(
             from: viewerIndex,
             favoriteIndices: favoriteIndices
         ) else { return }
+        
+        // #104: If target is partner of a spread, adjust to leading page
+        if targetIndex > 0,
+           !SpreadNavigationHelper.shouldShowSinglePage(
+               for: imageSource.url, at: targetIndex - 1,
+               totalCount: entries.count, entries: entries) {
+            targetIndex = targetIndex - 1
+        }
         
         Logger.viewer.debug("goToPreviousFavorite: \(viewerIndex, privacy: .public) → \(targetIndex, privacy: .public)")
         navigateTo(targetIndex)
     }
     
     private func goToNextFavorite() {
-        guard let targetIndex = NavigationHelper.nextFavoriteIndex(
+        guard var targetIndex = NavigationHelper.nextFavoriteIndex(
             from: viewerIndex,
             favoriteIndices: favoriteIndices
         ) else { return }
+        
+        // #104: Skip if target is partner of current spread (no double-stop)
+        if isShowingSpread && targetIndex == viewerIndex + 1 {
+            guard let nextTarget = NavigationHelper.nextFavoriteIndex(
+                from: targetIndex, favoriteIndices: favoriteIndices
+            ) else { return }
+            targetIndex = nextTarget
+        }
         
         Logger.viewer.debug("goToNextFavorite: \(viewerIndex, privacy: .public) → \(targetIndex, privacy: .public)")
         navigateTo(targetIndex)
@@ -3097,11 +3113,35 @@ struct ViewerView: View {
             } else {
                 guard let entry = currentEntry else { return true }
                 let hash = contentHashes[entry.path]
+                
+                // #104: Determine direction based on leading page
+                let currentStatus = CacheManager.shared.getFavoriteStatus(
+                    sourceURL: imageSource.url, entryPath: entry.path, contentHash: hash
+                )
+                let isAdding = currentStatus != .direct
+                
                 _ = CacheManager.shared.toggleFavorite(
                     sourceURL: imageSource.url,
                     entryPath: entry.path,
                     contentHash: hash
                 )
+                
+                // #104: Toggle partner if spread (only if state needs to change)
+                if isShowingSpread, viewerIndex + 1 < entries.count {
+                    let partnerEntry = entries[viewerIndex + 1]
+                    let partnerHash = contentHashes[partnerEntry.path]
+                    let partnerIsDirect = CacheManager.shared.isDirectFavorite(
+                        sourceURL: imageSource.url, entryPath: partnerEntry.path
+                    )
+                    if isAdding != partnerIsDirect {
+                        _ = CacheManager.shared.toggleFavorite(
+                            sourceURL: imageSource.url,
+                            entryPath: partnerEntry.path,
+                            contentHash: partnerHash
+                        )
+                    }
+                }
+                
                 favoritesVersion += 1
             }
             return true
