@@ -93,6 +93,12 @@ enum PreviewMode: Equatable {
     }
 }
 
+// MARK: - Export Type (#103: deferred export after favorite confirmation)
+
+private enum ExportType {
+    case archive, folderZip, pdf, png
+}
+
 struct ThumbnailGridView: View {
     let imageSource: any ImageSource
     @Binding var selectedPaths: Set<String>  // Changed: Binding from parent
@@ -110,6 +116,8 @@ struct ThumbnailGridView: View {
     @State private var showExportSuccess = false
     @State private var showExportError = false
     @State private var showDeleteConfirm = false
+    @State private var showFavoriteExportConfirm = false  // #103
+    @State private var pendingExportType: ExportType? = nil  // #103
     @State private var exportMessage = ""
     
     // Keyboard navigation
@@ -323,7 +331,26 @@ struct ThumbnailGridView: View {
                     performDelete()
                 }
             } message: {
-                Text("\(pathsToRemove.count) 件のファイルをゴミ箱に移動しますか？")
+                if affectedFavoriteCount > 0 {
+                    Text("\(pathsToRemoveForDelete.count) 件のファイルをゴミ箱に移動しますか？\n（⭐\(affectedFavoriteCount)件は保護されます）")
+                } else {
+                    Text("\(pathsToRemoveForDelete.count) 件のファイルをゴミ箱に移動しますか？")
+                }
+            }
+            .alert("★付きアイテムの確認", isPresented: $showFavoriteExportConfirm) {
+                Button("キャンセル", role: .cancel) {
+                    pendingExportType = nil
+                }
+                Button(settings.selectionMode == .exclude ? "除外する" : "続行",
+                       role: .destructive) {
+                    executePendingExport()
+                }
+            } message: {
+                if settings.selectionMode == .exclude {
+                    Text("★付き \(affectedFavoriteCount) 件が除外されます。除外しますか？")
+                } else {
+                    Text("★付き \(affectedFavoriteCount) 件が出力に含まれません。続行しますか？")
+                }
             }
     }
 
@@ -588,6 +615,30 @@ struct ThumbnailGridView: View {
                 .buttonStyle(.plain)
                 .help("クリックでモード切替")
                 
+                // #103: Select all favorites in keep mode
+                if settings.selectionMode == .keep && !directFavoritePaths.isEmpty {
+                    Button {
+                        if directFavoritePaths.isSubset(of: selectedPaths) {
+                            selectedPaths.subtract(directFavoritePaths)
+                        } else {
+                            selectedPaths.formUnion(directFavoritePaths)
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: directFavoritePaths.isSubset(of: selectedPaths) ? "checkmark.square.fill" : "square")
+                            Text("★をすべて選出")
+                        }
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.yellow.opacity(0.1))
+                        .foregroundStyle(.orange)
+                        .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+                    .help("★付きアイテムをすべて選出に追加")
+                }
+                
                 Text("\(entries.count) 画像")
                     .foregroundStyle(.secondary)
                 
@@ -686,11 +737,11 @@ struct ThumbnailGridView: View {
     private var footerSummary: String {
         let keepCount = pathsToKeep.count
         let removeCount = pathsToRemove.count
-        let protectedCount = protectedFavoriteCount
+        let favoriteCount = affectedFavoriteCount
         
         var summary = "出力: \(keepCount)件 / 除外: \(removeCount)件"
-        if protectedCount > 0 {
-            summary += " (⭐\(protectedCount)件保護)"
+        if favoriteCount > 0 {
+            summary += " (含★\(favoriteCount)件)"
         }
         return summary
     }
@@ -706,18 +757,15 @@ struct ThumbnailGridView: View {
         }
     }
     
-    /// Paths that will be excluded/removed (favorites are excluded from removal)
+    /// Paths that will be excluded/removed (#103: no favorite auto-protection for export)
     private var pathsToRemove: Set<String> {
         let allPaths = Set(entries.map { $0.path })
-        var toRemove: Set<String>
         switch settings.selectionMode {
         case .exclude:
-            toRemove = selectedPaths
+            return selectedPaths
         case .keep:
-            toRemove = allPaths.subtracting(selectedPaths)
+            return allPaths.subtracting(selectedPaths)
         }
-        // Remove direct favorites from the removal set
-        return toRemove.subtracting(directFavoritePaths)
     }
     
     /// Paths that are directly favorited in this source (for delete protection)
@@ -725,17 +773,14 @@ struct ThumbnailGridView: View {
         Set(entries.filter { isDirectFavorite($0) }.map { $0.path })
     }
     
-    /// Count of direct favorites that would be removed (for warning)
-    private var protectedFavoriteCount: Int {
-        let allPaths = Set(entries.map { $0.path })
-        var wouldRemove: Set<String>
-        switch settings.selectionMode {
-        case .exclude:
-            wouldRemove = selectedPaths
-        case .keep:
-            wouldRemove = allPaths.subtracting(selectedPaths)
-        }
-        return wouldRemove.intersection(directFavoritePaths).count
+    /// Paths to remove for delete operations (favorites protected) (#103)
+    private var pathsToRemoveForDelete: Set<String> {
+        pathsToRemove.subtracting(directFavoritePaths)
+    }
+    
+    /// Count of direct favorites in the removal set (#103)
+    private var affectedFavoriteCount: Int {
+        pathsToRemove.intersection(directFavoritePaths).count
     }
     
     // MARK: - Data Loading
@@ -1323,13 +1368,6 @@ struct ThumbnailGridView: View {
     // MARK: - User Actions
     
     private func toggleSelection(_ entry: ImageEntry) {
-        // In exclude mode, prevent selecting direct favorites (they're protected)
-        if settings.selectionMode == .exclude && isDirectFavorite(entry) {
-            Logger.thumbnailGrid.debug("Blocked: \(entry.name) is direct favorited (protected)")
-            showProtectedFeedback(for: entry)
-            return
-        }
-        
         if selectedPaths.contains(entry.path) {
             selectedPaths.remove(entry.path)
         } else {
@@ -1464,6 +1502,16 @@ struct ThumbnailGridView: View {
     // MARK: - Archive Export
     
     private func confirmExportArchive() {
+        // #103: Show confirmation if favorites would be excluded
+        if affectedFavoriteCount > 0 {
+            pendingExportType = .archive
+            showFavoriteExportConfirm = true
+            return
+        }
+        executeExportArchive()
+    }
+    
+    private func executeExportArchive() {
         guard let archiveManager = imageSource as? ArchiveManager else { return }
         
         let originalName = archiveManager.url.deletingPathExtension().lastPathComponent
@@ -1497,6 +1545,16 @@ struct ThumbnailGridView: View {
     // MARK: - Folder Operations
     
     private func confirmCreateZip() {
+        // #103: Show confirmation if favorites would be excluded
+        if affectedFavoriteCount > 0 {
+            pendingExportType = .folderZip
+            showFavoriteExportConfirm = true
+            return
+        }
+        executeCreateZip()
+    }
+    
+    private func executeCreateZip() {
         guard let folderManager = imageSource as? FolderManager else { return }
         
         let outputName = "\(folderManager.displayName).zip"
@@ -1530,7 +1588,7 @@ struct ThumbnailGridView: View {
         guard let folderManager = imageSource as? FolderManager else { return }
         
         do {
-            let count = try folderManager.moveToTrash(paths: pathsToRemove)
+            let count = try folderManager.moveToTrash(paths: pathsToRemoveForDelete)
             exportMessage = "\(count) 件のファイルをゴミ箱に移動しました"
             showExportSuccess = true
             selectedPaths.removeAll()  // Clear selections after success
@@ -1546,6 +1604,16 @@ struct ThumbnailGridView: View {
     // MARK: - PDF Export (#100)
     
     private func confirmExportPDF() {
+        // #103: Show confirmation if favorites would be excluded
+        if affectedFavoriteCount > 0 {
+            pendingExportType = .pdf
+            showFavoriteExportConfirm = true
+            return
+        }
+        executeExportPDF()
+    }
+    
+    private func executeExportPDF() {
         guard let pdfManager = imageSource as? PDFManager else { return }
         
         let originalName = pdfManager.url.deletingPathExtension().lastPathComponent
@@ -1577,6 +1645,16 @@ struct ThumbnailGridView: View {
     }
     
     private func confirmExportPNG() {
+        // #103: Show confirmation if favorites would be excluded
+        if affectedFavoriteCount > 0 {
+            pendingExportType = .png
+            showFavoriteExportConfirm = true
+            return
+        }
+        executeExportPNG()
+    }
+    
+    private func executeExportPNG() {
         guard let pdfManager = imageSource as? PDFManager else { return }
         
         let openPanel = NSOpenPanel()
@@ -1601,6 +1679,19 @@ struct ThumbnailGridView: View {
             Logger.thumbnailGrid.error("PNG export error: \(error, privacy: .public)")
             exportMessage = error.localizedDescription
             showExportError = true
+        }
+    }
+    
+    // MARK: - Deferred Export Execution (#103)
+    
+    private func executePendingExport() {
+        guard let exportType = pendingExportType else { return }
+        pendingExportType = nil
+        switch exportType {
+        case .archive: executeExportArchive()
+        case .folderZip: executeCreateZip()
+        case .pdf: executeExportPDF()
+        case .png: executeExportPNG()
         }
     }
 }
