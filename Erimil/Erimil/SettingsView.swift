@@ -148,6 +148,19 @@ struct SettingsView: View {
                 .font(.caption)
             }
             
+            // MARK: - Metadata Carry-Over (#105)
+            Section {
+                Toggle("★ お気に入り", isOn: $settings.metadataCarryOverFavorites)
+                Toggle("栞 ブックマーク", isOn: $settings.metadataCarryOverBookmarks)
+                Toggle("読み取り方向", isOn: $settings.metadataCarryOverDirection)
+                Toggle("単独表示マーカー", isOn: $settings.metadataCarryOverMarkers)
+            } header: {
+                Text("エクスポート時のメタデータ引き継ぎ")
+            } footer: {
+                Text("エクスポート先にコピーするメタデータの種類")
+                    .font(.caption)
+            }
+            
             // MARK: - Output Folder
             Section {
                 Toggle("デフォルトの出力先を使用", isOn: $settings.useDefaultOutputFolder)
@@ -187,7 +200,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 680)
+        .frame(width: 450, height: 780)
         .navigationTitle("設定")
         .onAppear {
             updateCacheInfo()

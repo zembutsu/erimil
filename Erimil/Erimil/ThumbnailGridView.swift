@@ -118,6 +118,7 @@ struct ThumbnailGridView: View {
     @State private var showDeleteConfirm = false
     @State private var showFavoriteExportConfirm = false  // #103
     @State private var pendingExportType: ExportType? = nil  // #103
+    @State private var exportMetadataOptions = MetadataCarryOverOptions()  // #105
     @State private var exportMessage = ""
     
     // Keyboard navigation
@@ -337,20 +338,20 @@ struct ThumbnailGridView: View {
                     Text("\(pathsToRemoveForDelete.count) 件のファイルをゴミ箱に移動しますか？")
                 }
             }
-            .alert("★付きアイテムの確認", isPresented: $showFavoriteExportConfirm) {
-                Button("キャンセル", role: .cancel) {
-                    pendingExportType = nil
-                }
-                Button(settings.selectionMode == .exclude ? "除外する" : "続行",
-                       role: .destructive) {
-                    executePendingExport()
-                }
-            } message: {
-                if settings.selectionMode == .exclude {
-                    Text("★付き \(affectedFavoriteCount) 件が除外されます。除外しますか？")
-                } else {
-                    Text("★付き \(affectedFavoriteCount) 件が出力に含まれません。続行しますか？")
-                }
+            .sheet(isPresented: $showFavoriteExportConfirm) {
+                ExportConfirmationView(
+                    affectedFavoriteCount: affectedFavoriteCount,
+                    selectionMode: settings.selectionMode,
+                    options: $exportMetadataOptions,
+                    onCancel: {
+                        pendingExportType = nil
+                        showFavoriteExportConfirm = false
+                    },
+                    onExport: {
+                        showFavoriteExportConfirm = false
+                        executePendingExport()
+                    }
+                )
             }
     }
 
@@ -1502,6 +1503,8 @@ struct ThumbnailGridView: View {
     // MARK: - Archive Export
     
     private func confirmExportArchive() {
+        // #105: Initialize metadata options from settings
+        exportMetadataOptions = settings.defaultMetadataOptions
         // #103: Show confirmation if favorites would be excluded
         if affectedFavoriteCount > 0 {
             pendingExportType = .archive
@@ -1535,7 +1538,8 @@ struct ThumbnailGridView: View {
             CacheManager.shared.copyMetadata(
                 from: archiveManager.url, to: outputURL,
                 entries: entries, pathsToRemove: pathsToRemove,
-                contentHashes: contentHashes
+                contentHashes: contentHashes,
+                options: exportMetadataOptions
             )
             exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(pathsToKeep.count) ファイル / 除外: \(pathsToRemove.count) ファイル"
             showExportSuccess = true
@@ -1551,6 +1555,8 @@ struct ThumbnailGridView: View {
     // MARK: - Folder Operations
     
     private func confirmCreateZip() {
+        // #105: Initialize metadata options from settings
+        exportMetadataOptions = settings.defaultMetadataOptions
         // #103: Show confirmation if favorites would be excluded
         if affectedFavoriteCount > 0 {
             pendingExportType = .folderZip
@@ -1583,7 +1589,8 @@ struct ThumbnailGridView: View {
             CacheManager.shared.copyMetadata(
                 from: folderManager.url, to: outputURL,
                 entries: entries, pathsToRemove: pathsToRemove,
-                contentHashes: contentHashes
+                contentHashes: contentHashes,
+                options: exportMetadataOptions
             )
             exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(pathsToKeep.count) ファイル"
             showExportSuccess = true
@@ -1616,6 +1623,8 @@ struct ThumbnailGridView: View {
     // MARK: - PDF Export (#100)
     
     private func confirmExportPDF() {
+        // #105: Initialize metadata options from settings
+        exportMetadataOptions = settings.defaultMetadataOptions
         // #103: Show confirmation if favorites would be excluded
         if affectedFavoriteCount > 0 {
             pendingExportType = .pdf
@@ -1651,7 +1660,8 @@ struct ThumbnailGridView: View {
                 from: pdfManager.url, to: outputURL,
                 entries: entries, pathsToRemove: pathsToRemove,
                 contentHashes: contentHashes,
-                newPathForSurvivingIndex: pathRemapper
+                newPathForSurvivingIndex: pathRemapper,
+                options: exportMetadataOptions
             )
             exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(pathsToKeep.count) ページ / 除外: \(pathsToRemove.count) ページ"
             showExportSuccess = true
@@ -1665,6 +1675,8 @@ struct ThumbnailGridView: View {
     }
     
     private func confirmExportPNG() {
+        // #105: Initialize metadata options from settings
+        exportMetadataOptions = settings.defaultMetadataOptions
         // #103: Show confirmation if favorites would be excluded
         if affectedFavoriteCount > 0 {
             pendingExportType = .png
@@ -3272,6 +3284,64 @@ struct ViewerKeyEventHandler: NSViewRepresentable {
                 super.keyDown(with: event)
             }
         }
+    }
+}
+
+// MARK: - Export Confirmation View (#105)
+
+/// Sheet dialog for export confirmation with metadata carry-over options
+struct ExportConfirmationView: View {
+    let affectedFavoriteCount: Int
+    let selectionMode: SelectionMode
+    @Binding var options: MetadataCarryOverOptions
+    let onCancel: () -> Void
+    let onExport: () -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Title
+            Text("エクスポートの確認")
+                .font(.headline)
+            
+            // ★ warning
+            if selectionMode == .exclude {
+                Label("★付き \(affectedFavoriteCount) 件が除外されます", systemImage: "star.fill")
+                    .foregroundStyle(.orange)
+            } else {
+                Label("★付き \(affectedFavoriteCount) 件が出力に含まれません", systemImage: "star.fill")
+                    .foregroundStyle(.orange)
+            }
+            
+            Divider()
+            
+            // Metadata options
+            Text("メタデータの引き継ぎ")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            
+            Toggle("★ お気に入り", isOn: $options.favorites)
+            Toggle("栞 ブックマーク", isOn: $options.bookmarks)
+            Toggle("読み取り方向", isOn: $options.readingDirection)
+            Toggle("単独表示マーカー", isOn: $options.singlePageMarkers)
+            
+            Divider()
+            
+            // Buttons
+            HStack {
+                Spacer()
+                Button("キャンセル", role: .cancel) {
+                    onCancel()
+                }
+                .keyboardShortcut(.escape, modifiers: [])
+                Button(selectionMode == .exclude ? "除外する" : "続行") {
+                    onExport()
+                }
+                .keyboardShortcut(.return, modifiers: [])
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .frame(width: 320)
     }
 }
 
