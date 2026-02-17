@@ -128,14 +128,15 @@ This project uses AI-assisted development following the WORKFLOW.md guidelines:
 - ✅ Bookmark (栞) system with named sections
 - ✅ os.Logger migration (structured logging)
 - ✅ Logger privacy hardening
+- ✅ Hybrid ★ auto-protect behavior for export vs delete (#103)
+- ✅ Record ★ on both pages in spread view (#104)
+- ✅ Metadata carry-over on export with per-export selection (#105)
 - 🔄 PDF page export — PDF/PNG (#100)
 - 🔄 Deskew display correction for scanned PDFs (#101)
 - 🔄 Bug fixes and refinements
 
 ### Phase 3 (Next) - Curation Quality
 - Grid filtering (filename search) and sorting (name, size, date, ★)
-- ★ auto-protect toggle (configurable favorite behavior in export)
-- Metadata carry-over on export (★, 栞, RTL, single page markers)
 - `.erimil.dat` sidecar for portable metadata
 - kurumil CLI integration (post-export optimization)
 

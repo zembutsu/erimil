@@ -158,6 +158,10 @@ class AppSettings: ObservableObject {
         static let defaultReadingDirection = "defaultReadingDirection"  // #54
         static let isSpreadModeEnabled = "isSpreadModeEnabled"      // #55
         static let spreadThreshold = "spreadThreshold"              // #55
+        static let metadataFavorites = "metadataCarryOverFavorites"          // #105
+        static let metadataBookmarks = "metadataCarryOverBookmarks"          // #105
+        static let metadataReadingDirection = "metadataCarryOverDirection"   // #105
+        static let metadataSinglePageMarkers = "metadataCarryOverMarkers"   // #105
     }
     
     // MARK: - Published Properties
@@ -255,6 +259,38 @@ class AppSettings: ObservableObject {
             defaults.set(spreadThreshold, forKey: Keys.spreadThreshold)
             Logger.appSettings.debug("Spread threshold: \(self.spreadThreshold, privacy: .public)")
         }
+    }
+    
+    // MARK: - Metadata Carry-Over Defaults (#105)
+    
+    /// Copy ★ favorites on export
+    @Published var metadataCarryOverFavorites: Bool {
+        didSet { defaults.set(metadataCarryOverFavorites, forKey: Keys.metadataFavorites) }
+    }
+    
+    /// Copy 栞 bookmarks on export
+    @Published var metadataCarryOverBookmarks: Bool {
+        didSet { defaults.set(metadataCarryOverBookmarks, forKey: Keys.metadataBookmarks) }
+    }
+    
+    /// Copy reading direction on export
+    @Published var metadataCarryOverDirection: Bool {
+        didSet { defaults.set(metadataCarryOverDirection, forKey: Keys.metadataReadingDirection) }
+    }
+    
+    /// Copy single page markers on export
+    @Published var metadataCarryOverMarkers: Bool {
+        didSet { defaults.set(metadataCarryOverMarkers, forKey: Keys.metadataSinglePageMarkers) }
+    }
+    
+    /// Build MetadataCarryOverOptions from current settings
+    var defaultMetadataOptions: MetadataCarryOverOptions {
+        MetadataCarryOverOptions(
+            favorites: metadataCarryOverFavorites,
+            bookmarks: metadataCarryOverBookmarks,
+            readingDirection: metadataCarryOverDirection,
+            singlePageMarkers: metadataCarryOverMarkers
+        )
     }
     
     /// Last opened folder URL (for restoration on launch)
@@ -444,6 +480,12 @@ class AppSettings: ObservableObject {
         
         // loopWithinSource: default is ON
         self.loopWithinSource = defaults.object(forKey: Keys.loopWithinSource) == nil ? true : defaults.bool(forKey: Keys.loopWithinSource)
+        
+        // #105: Metadata carry-over defaults (all ON by default)
+        self.metadataCarryOverFavorites = defaults.object(forKey: Keys.metadataFavorites) == nil ? true : defaults.bool(forKey: Keys.metadataFavorites)
+        self.metadataCarryOverBookmarks = defaults.object(forKey: Keys.metadataBookmarks) == nil ? true : defaults.bool(forKey: Keys.metadataBookmarks)
+        self.metadataCarryOverDirection = defaults.object(forKey: Keys.metadataReadingDirection) == nil ? true : defaults.bool(forKey: Keys.metadataReadingDirection)
+        self.metadataCarryOverMarkers = defaults.object(forKey: Keys.metadataSinglePageMarkers) == nil ? true : defaults.bool(forKey: Keys.metadataSinglePageMarkers)
     }
     
     // MARK: - Helper Methods
@@ -471,5 +513,9 @@ class AppSettings: ObservableObject {
         defaultReadingDirection = .ltr  // #54
         isSpreadModeEnabled = true      // #55
         spreadThreshold = 1.2           // #55
+        metadataCarryOverFavorites = true    // #105
+        metadataCarryOverBookmarks = true    // #105
+        metadataCarryOverDirection = true    // #105
+        metadataCarryOverMarkers = true      // #105
     }
 }

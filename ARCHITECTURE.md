@@ -296,12 +296,26 @@ Calculate based on selectionMode:
   - exclude: pathsToRemove = selectedPaths
   - keep: pathsToRemove = allPaths - selectedPaths
     ↓
+Initialize exportMetadataOptions from AppSettings defaults (#105)
+    ↓
+Check affectedFavoriteCount (#103):
+  - > 0: Show ExportConfirmationView sheet
+    │     ├── ★ warning message (mode-aware)
+    │     ├── Metadata checkboxes (★, 栞, 方向, マーカー)
+    │     └── User confirms → executePendingExport()
+  - = 0: Execute immediately with default options
+    ↓
 Perform operation:
   - ZIP: exportOptimized(excluding: pathsToRemove)
   - Folder ZIP: createZip(excluding: pathsToRemove)
-  - Folder Delete: moveToTrash(paths: pathsToRemove)
+  - Folder Delete: moveToTrash(paths: pathsToRemoveForDelete)
   - PDF: exportOptimizedPDF(excluding: pathsToRemove)
   - PDF PNG: exportPagesAsPNG(excluding: pathsToRemove)
+    ↓
+CacheManager.copyMetadata(options: exportMetadataOptions) (#105)
+  - Index remapping for surviving entries
+  - PDF path remapping (0-based → 1-based)
+  - Per-option: ★, 栞, direction, markers
     ↓
 selectedPaths.removeAll()
     ↓
@@ -453,6 +467,7 @@ Erimil/
 │   ├── ThumbnailSidebarView     # Thumbnail strip (S014)
 │   ├── SpreadThumbnailPairView  # Paired thumbnails (#69)
 │   ├── ViewerView               # In-grid viewer with thumbnail sidebar
+│   ├── ExportConfirmationView   # Export sheet with metadata options (#105)
 │   └── ThumbnailCell            # Individual thumbnail
 ├── ImagePreviewView.swift       # Quick Look preview modal
 ├── SettingsView.swift           # Settings panel
@@ -471,7 +486,7 @@ Erimil/
 ├── FolderManager.swift          # Folder ImageSource implementation
 ├── PDFManager.swift             # PDF ImageSource implementation (S024)
 ├── FolderNote.swift             # FolderNode tree node model
-├── CacheManager.swift           # Thumbnail cache, favorites, aspect ratio cache
+├── CacheManager.swift           # Thumbnail cache, favorites, metadata copy (#105)
 ├── ZIPEncodingDetector.swift    # ZIP filename encoding detection
 └── AppSettings.swift            # UserDefaults wrapper, settings enums
 ```
@@ -538,10 +553,26 @@ CacheManager.shared
     │       └── singlePageIndices: Set<Int>?  ← V key markers (#56)
     ├── aspectRatioCache: [String: CGFloat]   ← In-memory only (#67)
     │
+    Methods:
+    ├── copyMetadata()             ← Export metadata carry-over (#105)
+    │       Index remapping, path remapping (PDF), per-option control
+    ├── setDirectFavorite()        ← Idempotent favorite registration
+    └── pdfEntryPathRemapper()     ← Auto-detect PDF path format
+    │
     Persisted:
     ├── index.json                 ← pathIndex
     ├── favorites.json             ← Favorites data
     └── source_settings.json       ← sourceSettings
+```
+
+#### MetadataCarryOverOptions (#105)
+
+```
+MetadataCarryOverOptions
+    ├── favorites: Bool            ← ★ お気に入り
+    ├── bookmarks: Bool            ← 栞 ブックマーク
+    ├── readingDirection: Bool     ← 読み取り方向
+    └── singlePageMarkers: Bool   ← 単独表示マーカー
 ```
 
 ### AppSettings (Singleton)
@@ -561,6 +592,11 @@ AppSettings.shared
     ├── @Published isSpreadModeEnabled: Bool          ← Spread view toggle
     ├── @Published spreadThreshold: Double            ← Wide image threshold
     ├── @Published lastOpenedFolderURL: URL?          ← Restore on launch
+    ├── @Published metadataCarryOverFavorites: Bool   ← Export ★ (#105)
+    ├── @Published metadataCarryOverBookmarks: Bool   ← Export 栞 (#105)
+    ├── @Published metadataCarryOverDirection: Bool   ← Export direction (#105)
+    ├── @Published metadataCarryOverMarkers: Bool     ← Export markers (#105)
+    ├── defaultMetadataOptions: MetadataCarryOverOptions  ← Computed (#105)
     
     Persisted via UserDefaults
 ```
@@ -709,7 +745,7 @@ Logger categories are defined in `Logger.swift` as static extensions.
 |----------|-----------|
 | `AppSettings` | Settings, Bookmarks |
 | `ArchiveManager` | ZIP archive operations |
-| `CacheManager` | Cache, Favorites, Aspect Ratio |
+| `CacheManager` | Cache, Favorites, Metadata Copy |
 | `Bookmark` | Bookmark operations (#62) |
 | `SidebarView` | Folder tree |
 | `ContentView` | Main view |
