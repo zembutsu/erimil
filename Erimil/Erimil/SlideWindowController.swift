@@ -752,6 +752,18 @@ class SlideWindowController {
                     }
                     return nil
                     
+                // #101: Cmd+[ = nudge deskew angle -0.1°, Cmd+] = nudge +0.1°
+                case "[":
+                    if hasCommand {
+                        nudgeDeskewAngle(by: -0.1)
+                    }
+                    return nil
+                case "]":
+                    if hasCommand {
+                        nudgeDeskewAngle(by: 0.1)
+                    }
+                    return nil
+                    
                 default:
                     return event  // Pass through unhandled
                 }
@@ -1000,6 +1012,28 @@ class SlideWindowController {
             object: nil,
             userInfo: ["deskewEnabled": enabled]
         )
+    }
+    
+    /// Nudge the deskew angle for the current page by a given degree offset (#101)
+    private func nudgeDeskewAngle(by degrees: CGFloat) {
+        guard let source = storedImageSource, source.sourceType == .pdf else { return }
+        guard currentIndex < storedEntries.count else { return }
+        let entryPath = storedEntries[currentIndex].path
+        
+        // Auto-enable deskew if not already on
+        if !CacheManager.shared.isDeskewEnabled(for: source.url) {
+            _ = CacheManager.shared.toggleDeskew(for: source.url)
+            notifyViewOfDeskewChange(enabled: true)
+        }
+        
+        let step = degrees * CGFloat.pi / 180.0
+        let currentAngle = CacheManager.shared.getDeskewAngle(for: source.url, entryPath: entryPath) ?? 0.0
+        let newAngle = currentAngle + step
+        CacheManager.shared.setDeskewAngle(for: source.url, entryPath: entryPath, angle: newAngle)
+        
+        // Force reload via spread change notification (triggers SpreadImageViewer loadImages)
+        notifyViewOfSpreadChange()
+        Logger.slideWindow.debug("Deskew nudge \(degrees > 0 ? "+" : "")\(degrees, privacy: .public)° → \(newAngle * 180 / CGFloat.pi, privacy: .public)°")
     }
     
     // MARK: - Notifications
@@ -1483,6 +1517,13 @@ struct SlideWindowView: View {
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.5))
                         Text("deskew")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.3))
+                        
+                        Text("⌘[/]")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.5))
+                        Text("adjust")
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.3))
                     }

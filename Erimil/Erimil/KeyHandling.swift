@@ -55,6 +55,7 @@ enum KeyAction {
     case toggleThumbnailPosition
     case toggleControls
     case toggleDeskew               // #101: Cmd+D
+    case adjustDeskew(CGFloat)      // #101: Cmd+[/] (degrees)
     
     // Bookmarks (#62)
     case addOrDeleteBookmark       // Shift+S
