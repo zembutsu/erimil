@@ -3000,9 +3000,24 @@ struct ViewerView: View {
     
     // MARK: - #101: Deskew Angle Adjustment
     
-    /// Nudge the deskew angle for the current page by a given degree offset
-    private func nudgeDeskewAngle(by degrees: CGFloat) {
-        guard let entry = currentEntry else { return }
+    /// Nudge the deskew angle for a page by a given degree offset
+    /// - Parameters:
+    ///   - degrees: Angle adjustment in degrees (+/-)
+    ///   - targetRight: If true, targets the visual RIGHT page in spread mode
+    ///     Without shift = visual left page, with shift = visual right page
+    ///     RTL-aware: visual left/right maps to correct entry index via XOR
+    private func nudgeDeskewAngle(by degrees: CGFloat, targetRight: Bool = false) {
+        // Determine which page to adjust (RTL-aware for spread)
+        // In spread: LTR left=viewerIndex, right=viewerIndex+1
+        //            RTL left=viewerIndex+1, right=viewerIndex (HStack reverses)
+        // adjustPartner = targetRight XOR isRTL
+        let adjustPartner = (targetRight != isRTL)
+        let targetIndex = (isShowingSpread && adjustPartner && viewerIndex + 1 < entries.count)
+            ? viewerIndex + 1
+            : viewerIndex
+        
+        guard targetIndex < entries.count else { return }
+        let entry = entries[targetIndex]
         
         // Auto-enable deskew if not already on
         if !isDeskewEnabled {
@@ -3015,7 +3030,7 @@ struct ViewerView: View {
         let newAngle = currentAngle + step
         CacheManager.shared.setDeskewAngle(for: imageSource.url, entryPath: entry.path, angle: newAngle)
         spreadUpdateTrigger.toggle()
-        Logger.viewer.debug("Deskew nudge \(degrees > 0 ? "+" : "")\(degrees, privacy: .public)° → \(newAngle * 180 / CGFloat.pi, privacy: .public)°")
+        Logger.viewer.debug("Deskew nudge \(degrees > 0 ? "+" : "")\(degrees, privacy: .public)° page[\(targetIndex, privacy: .public)] → \(newAngle * 180 / CGFloat.pi, privacy: .public)°")
     }
     
     // MARK: - Key Event Handling (#67: Spread-aware navigation)
@@ -3339,14 +3354,17 @@ struct ViewerView: View {
             return true
         
         // #101: Cmd+[ = nudge deskew angle -0.1°, Cmd+] = nudge +0.1°
-        case "[":
+        //       Cmd+Shift+[/] = adjust visual RIGHT page in spread (Shift+[ produces "{")
+        case "[", "{":
             if event.modifierFlags.contains(.command), imageSource.sourceType == .pdf {
-                nudgeDeskewAngle(by: -0.1)
+                let targetRight = event.modifierFlags.contains(.shift)
+                nudgeDeskewAngle(by: -0.1, targetRight: targetRight)
             }
             return true
-        case "]":
+        case "]", "}":
             if event.modifierFlags.contains(.command), imageSource.sourceType == .pdf {
-                nudgeDeskewAngle(by: 0.1)
+                let targetRight = event.modifierFlags.contains(.shift)
+                nudgeDeskewAngle(by: 0.1, targetRight: targetRight)
             }
             return true
         

@@ -753,14 +753,15 @@ class SlideWindowController {
                     return nil
                     
                 // #101: Cmd+[ = nudge deskew angle -0.1°, Cmd+] = nudge +0.1°
-                case "[":
+                //       Cmd+Shift+[/] = adjust visual RIGHT page in spread
+                case "[", "{":
                     if hasCommand {
-                        nudgeDeskewAngle(by: -0.1)
+                        nudgeDeskewAngle(by: -0.1, targetRight: hasShift)
                     }
                     return nil
-                case "]":
+                case "]", "}":
                     if hasCommand {
-                        nudgeDeskewAngle(by: 0.1)
+                        nudgeDeskewAngle(by: 0.1, targetRight: hasShift)
                     }
                     return nil
                     
@@ -1014,11 +1015,34 @@ class SlideWindowController {
         )
     }
     
-    /// Nudge the deskew angle for the current page by a given degree offset (#101)
-    private func nudgeDeskewAngle(by degrees: CGFloat) {
+    /// Nudge the deskew angle for a page by a given degree offset (#101)
+    /// - Parameters:
+    ///   - degrees: Angle adjustment in degrees (+/-)
+    ///   - targetRight: If true, targets the visual RIGHT page in spread mode
+    private func nudgeDeskewAngle(by degrees: CGFloat, targetRight: Bool = false) {
         guard let source = storedImageSource, source.sourceType == .pdf else { return }
         guard currentIndex < storedEntries.count else { return }
-        let entryPath = storedEntries[currentIndex].path
+        
+        // Determine if currently showing spread
+        let isCurrentSpread: Bool = {
+            guard AppSettings.shared.isSpreadModeEnabled,
+                  currentIndex + 1 < storedEntries.count else { return false }
+            return !SpreadNavigationHelper.shouldShowSinglePage(
+                for: source.url, at: currentIndex,
+                totalCount: storedEntries.count, entries: storedEntries
+            )
+        }()
+        
+        // RTL-aware page targeting for spread
+        // In spread: LTR left=currentIndex, right=currentIndex+1
+        //            RTL left=currentIndex+1, right=currentIndex (HStack reverses)
+        // adjustPartner = targetRight XOR isRTL
+        let adjustPartner = (targetRight != isRTL)
+        let targetIndex = (isCurrentSpread && adjustPartner && currentIndex + 1 < storedEntries.count)
+            ? currentIndex + 1
+            : currentIndex
+        
+        let entryPath = storedEntries[targetIndex].path
         
         // Auto-enable deskew if not already on
         if !CacheManager.shared.isDeskewEnabled(for: source.url) {
@@ -1031,9 +1055,9 @@ class SlideWindowController {
         let newAngle = currentAngle + step
         CacheManager.shared.setDeskewAngle(for: source.url, entryPath: entryPath, angle: newAngle)
         
-        // Force reload via spread change notification (triggers SpreadImageViewer loadImages)
+        // Force reload via spread change notification
         notifyViewOfSpreadChange()
-        Logger.slideWindow.debug("Deskew nudge \(degrees > 0 ? "+" : "")\(degrees, privacy: .public)° → \(newAngle * 180 / CGFloat.pi, privacy: .public)°")
+        Logger.slideWindow.debug("Deskew nudge \(degrees > 0 ? "+" : "")\(degrees, privacy: .public)° page[\(targetIndex, privacy: .public)] → \(newAngle * 180 / CGFloat.pi, privacy: .public)°")
     }
     
     // MARK: - Notifications
