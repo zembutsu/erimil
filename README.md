@@ -13,6 +13,7 @@ A macOS application for visual preview and selective extraction of images from Z
 - **Slide Mode**: Fullscreen viewing with Favorites Mode for quick navigation
 - **Spread View**: Two-page display for books with RTL support
 - **PDF Support**: View PDF documents page by page
+- **PDF Page Export**: Export selected pages as optimized PDF, PNG folder, or PNG ZIP
 
 ## Requirements
 
@@ -30,6 +31,18 @@ Download the latest release from [GitHub Releases](https://github.com/zembutsu/e
 2. Click a ZIP file to view thumbnails
 3. Select images to exclude (or keep, depending on mode)
 4. Click "確定 → _opt.zip" to generate optimized archive
+
+### PDF Export
+
+For PDF sources, the export button offers three formats:
+
+| Format | Output | Use Case |
+|--------|--------|----------|
+| **PDF** (primary) | `{name}_opt.pdf` | Selected pages as new PDF |
+| **PNG folder** | `{name}_pages/` | Individual PNG files (300dpi) |
+| **PNG ZIP** | `{name}_png.zip` | PNG files packaged in ZIP (300dpi) |
+
+Exported pages preserve original page numbers (e.g., `page_001.png, page_003.png` with gaps where pages were excluded). Metadata (★ favorites, 栞 bookmarks, reading direction, markers) is carried over to the new file.
 
 ### Selection Modes
 
