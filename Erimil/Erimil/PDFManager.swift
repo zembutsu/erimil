@@ -15,6 +15,7 @@ import Foundation
 import AppKit
 import PDFKit
 import os
+import ZIPFoundation
 
 class PDFManager: ImageSource {
     let url: URL
@@ -318,6 +319,98 @@ class PDFManager: ImageSource {
         }
         
         Logger.pdf.info("Exported \(exportedCount, privacy: .public) PNG pages to \(pagesDir.lastPathComponent)")
+        return exportedCount
+    }
+    
+    /// Export PDF pages as PNG images packaged in a ZIP archive
+    /// - Parameters:
+    ///   - pathsToRemove: Set of page paths to exclude
+    ///   - outputURL: Destination URL for the ZIP file (e.g., "sample_png.zip")
+    /// - Returns: Number of exported pages
+    @discardableResult
+    func exportPagesAsPNGZip(excluding pathsToRemove: Set<String>, to outputURL: URL) throws -> Int {
+        let sourceDoc: PDFDocument? = accessQueue.sync { openDocument() }
+        
+        guard let sourceDoc else {
+            throw PDFExportError.cannotOpenDocument
+        }
+        
+        // Create ZIP archive
+        guard let archive = Archive(url: outputURL, accessMode: .create) else {
+            throw PDFExportError.writeFailed(outputURL)
+        }
+        
+        let dpi: CGFloat = 300.0
+        let scaleFactor = dpi / 72.0
+        var exportedCount = 0
+        
+        for i in 0..<sourceDoc.pageCount {
+            let pagePath = String(format: "page_%03d", i + 1)
+            if pathsToRemove.contains(pagePath) {
+                continue
+            }
+            
+            guard let page = sourceDoc.page(at: i) else {
+                Logger.pdf.error("PNG ZIP export: failed to get page \(i + 1, privacy: .public)")
+                continue
+            }
+            
+            let mediaBox = page.bounds(for: .mediaBox)
+            let renderWidth = Int(mediaBox.width * scaleFactor)
+            let renderHeight = Int(mediaBox.height * scaleFactor)
+            
+            guard let bitmapRep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: renderWidth,
+                pixelsHigh: renderHeight,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            ) else {
+                Logger.pdf.error("PNG ZIP export: failed to create bitmap for page \(i + 1, privacy: .public)")
+                continue
+            }
+            
+            NSGraphicsContext.saveGraphicsState()
+            let context = NSGraphicsContext(bitmapImageRep: bitmapRep)
+            NSGraphicsContext.current = context
+            
+            if let cgContext = context?.cgContext {
+                cgContext.setFillColor(NSColor.white.cgColor)
+                cgContext.fill(CGRect(x: 0, y: 0, width: renderWidth, height: renderHeight))
+                cgContext.scaleBy(x: scaleFactor, y: scaleFactor)
+                page.draw(with: .mediaBox, to: cgContext)
+            }
+            
+            NSGraphicsContext.restoreGraphicsState()
+            
+            guard let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
+                Logger.pdf.error("PNG ZIP export: failed to create PNG data for page \(i + 1, privacy: .public)")
+                continue
+            }
+            
+            // Original page number preserved (飛び番)
+            let fileName = String(format: "page_%03d.png", i + 1)
+            try archive.addEntry(
+                with: fileName,
+                type: .file,
+                uncompressedSize: Int64(pngData.count),
+                provider: { position, size in
+                    pngData.subdata(in: Int(position)..<Int(position) + size)
+                }
+            )
+            exportedCount += 1
+        }
+        
+        guard exportedCount > 0 else {
+            throw PDFExportError.noRemainingPages
+        }
+        
+        Logger.pdf.info("Exported \(exportedCount, privacy: .public) PNG pages to ZIP: \(outputURL.lastPathComponent)")
         return exportedCount
     }
 }
