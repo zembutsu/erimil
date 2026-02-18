@@ -403,12 +403,17 @@ struct SpreadImageViewer: View {
         
         // #67 Fix: Load left image first, then decide if we need spread
         DispatchQueue.global(qos: .userInitiated).async {
-            let loadedLeft = capturedSource.fullImage(for: leftEntry)
+            let rawLeft = capturedSource.fullImage(for: leftEntry)
             
-            // #67 Phase 3: Record aspect ratio for future navigation decisions
-            if let image = loadedLeft, image.size.height > 0 {
+            // #67 Phase 3: Record aspect ratio for future navigation decisions (use raw image for accuracy)
+            if let image = rawLeft, image.size.height > 0 {
                 let ratio = image.size.width / image.size.height
                 CacheManager.shared.setAspectRatio(for: capturedSource.url, path: leftEntry.path, ratio: ratio)
+            }
+            
+            // #101: Apply deskew correction if enabled
+            let loadedLeft = rawLeft.map {
+                DeskewService.processIfEnabled(image: $0, sourceURL: capturedSource.url, entryPath: leftEntry.path)
             }
             
             DispatchQueue.main.async {
@@ -450,12 +455,17 @@ struct SpreadImageViewer: View {
                 let rightEntry = entries[capturedIndex + 1]
                 
                 DispatchQueue.global(qos: .userInitiated).async {
-                    let loadedRight = capturedSource.fullImage(for: rightEntry)
+                    let rawRight = capturedSource.fullImage(for: rightEntry)
                     
-                    // #67 Phase 3: Record aspect ratio for future navigation decisions
-                    if let image = loadedRight, image.size.height > 0 {
+                    // #67 Phase 3: Record aspect ratio for future navigation decisions (use raw image for accuracy)
+                    if let image = rawRight, image.size.height > 0 {
                         let ratio = image.size.width / image.size.height
                         CacheManager.shared.setAspectRatio(for: capturedSource.url, path: rightEntry.path, ratio: ratio)
+                    }
+                    
+                    // #101: Apply deskew correction if enabled
+                    let loadedRight = rawRight.map {
+                        DeskewService.processIfEnabled(image: $0, sourceURL: capturedSource.url, entryPath: rightEntry.path)
                     }
                     
                     DispatchQueue.main.async {

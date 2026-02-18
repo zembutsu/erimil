@@ -574,6 +574,9 @@ class SlideWindowController {
                             Logger.slideWindow.debug("→ Shift+D → bookmark at \(target, privacy: .public)")
                             jumpToIndex(target)
                         }
+                    } else if hasCommand {
+                        // #101: Cmd+D = toggle deskew
+                        toggleDeskew()
                     } else if hasControl {
                         // #72: Ctrl+D = jump to visual right (end in LTR, start in RTL)
                         let target = isRTL ? 0 : storedEntries.count - 1
@@ -746,6 +749,19 @@ class SlideWindowController {
                     } else {
                         Logger.slideWindow.debug("→ \(self.isRTL ? "Previous" : "Next") favorite (C)")
                         isRTL ? goToPreviousFavorite() : goToNextFavorite()
+                    }
+                    return nil
+                    
+                // #101: Cmd+[ = nudge deskew angle -0.1°, Cmd+] = nudge +0.1°
+                //       Cmd+Shift+[/] = adjust visual RIGHT page in spread
+                case "[", "{":
+                    if hasCommand {
+                        nudgeDeskewAngle(by: -0.1, targetRight: hasShift)
+                    }
+                    return nil
+                case "]", "}":
+                    if hasCommand {
+                        nudgeDeskewAngle(by: 0.1, targetRight: hasShift)
                     }
                     return nil
                     
@@ -973,6 +989,77 @@ class SlideWindowController {
         notifyViewOfStateChange()
     }
     
+    // MARK: - #101: Deskew Toggle
+    
+    private func toggleDeskew() {
+        guard let source = storedImageSource else { return }
+        
+        // Only meaningful for PDF sources
+        guard source.sourceType == .pdf else {
+            Logger.slideWindow.debug("Deskew: not a PDF source, ignoring")
+            return
+        }
+        
+        let enabled = CacheManager.shared.toggleDeskew(for: source.url)
+        Logger.slideWindow.info("Deskew toggled: \(enabled ? "ON" : "OFF") for \(source.url.lastPathComponent)")
+        
+        // Notify view to refresh (re-render with or without correction)
+        notifyViewOfDeskewChange(enabled: enabled)
+    }
+    
+    private func notifyViewOfDeskewChange(enabled: Bool) {
+        NotificationCenter.default.post(
+            name: NSNotification.Name("SlideWindowDeskewChanged"),
+            object: nil,
+            userInfo: ["deskewEnabled": enabled]
+        )
+    }
+    
+    /// Nudge the deskew angle for a page by a given degree offset (#101)
+    /// - Parameters:
+    ///   - degrees: Angle adjustment in degrees (+/-)
+    ///   - targetRight: If true, targets the visual RIGHT page in spread mode
+    private func nudgeDeskewAngle(by degrees: CGFloat, targetRight: Bool = false) {
+        guard let source = storedImageSource, source.sourceType == .pdf else { return }
+        guard currentIndex < storedEntries.count else { return }
+        
+        // Determine if currently showing spread
+        let isCurrentSpread: Bool = {
+            guard AppSettings.shared.isSpreadModeEnabled,
+                  currentIndex + 1 < storedEntries.count else { return false }
+            return !SpreadNavigationHelper.shouldShowSinglePage(
+                for: source.url, at: currentIndex,
+                totalCount: storedEntries.count, entries: storedEntries
+            )
+        }()
+        
+        // RTL-aware page targeting for spread
+        // In spread: LTR left=currentIndex, right=currentIndex+1
+        //            RTL left=currentIndex+1, right=currentIndex (HStack reverses)
+        // adjustPartner = targetRight XOR isRTL
+        let adjustPartner = (targetRight != isRTL)
+        let targetIndex = (isCurrentSpread && adjustPartner && currentIndex + 1 < storedEntries.count)
+            ? currentIndex + 1
+            : currentIndex
+        
+        let entryPath = storedEntries[targetIndex].path
+        
+        // Auto-enable deskew if not already on
+        if !CacheManager.shared.isDeskewEnabled(for: source.url) {
+            _ = CacheManager.shared.toggleDeskew(for: source.url)
+            notifyViewOfDeskewChange(enabled: true)
+        }
+        
+        let step = degrees * CGFloat.pi / 180.0
+        let currentAngle = CacheManager.shared.getDeskewAngle(for: source.url, entryPath: entryPath) ?? 0.0
+        let newAngle = currentAngle + step
+        CacheManager.shared.setDeskewAngle(for: source.url, entryPath: entryPath, angle: newAngle)
+        
+        // Force reload via spread change notification
+        notifyViewOfSpreadChange()
+        Logger.slideWindow.debug("Deskew nudge \(degrees > 0 ? "+" : "")\(degrees, privacy: .public)° page[\(targetIndex, privacy: .public)] → \(newAngle * 180 / CGFloat.pi, privacy: .public)°")
+    }
+    
     // MARK: - Notifications
     
     /// Notify the view of index change via NotificationCenter
@@ -1055,6 +1142,9 @@ struct SlideWindowView: View {
     @State private var showBookmarkList: Bool = false
     @State private var bookmarkListCursor: Int = 0
     
+    // #101: Deskew state
+    @State private var isDeskewEnabled: Bool = false
+    
     // #54: Effective reading direction
     private var isRTL: Bool {
         CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url) == .rtl
@@ -1103,7 +1193,8 @@ struct SlideWindowView: View {
                     imageSource: imageSource,
                     entries: entries,
                     currentIndex: $currentIndex,
-                    favoriteIndices: favoriteIndices
+                    favoriteIndices: favoriteIndices,
+                    reloadTrigger: isDeskewEnabled  // #101: Force reload when deskew changes
                 )
             }
             
@@ -1132,6 +1223,30 @@ struct SlideWindowView: View {
                         .cornerRadius(8)
                         .padding(.trailing, 16)
                         .padding(.top, 16)
+                    }
+                    Spacer()
+                }
+            }
+            
+            // #101: Persistent deskew indicator (shown even when controls hidden, PDF only)
+            if isDeskewEnabled && !showControls && imageSource.sourceType == .pdf {
+                VStack {
+                    HStack {
+                        HStack(spacing: 3) {
+                            Image(systemName: "angle")
+                                .font(.caption)
+                            Text("DESKEW")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundStyle(.cyan)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(.black.opacity(0.6))
+                        .cornerRadius(6)
+                        .padding(.leading, 16)
+                        .padding(.top, 16)
+                        Spacer()
                     }
                     Spacer()
                 }
@@ -1173,6 +1288,7 @@ struct SlideWindowView: View {
             isFavoritesMode = initialIsFavoritesMode
             favoriteIndices = initialFavoriteIndices
             selectedIndices = initialSelectedIndices
+            isDeskewEnabled = CacheManager.shared.isDeskewEnabled(for: imageSource.url)  // #101
         }
         .onChange(of: currentIndex) { _, newIndex in
             onIndexChange?(newIndex)
@@ -1205,6 +1321,12 @@ struct SlideWindowView: View {
             }
             if let cursor = notification.userInfo?["cursor"] as? Int {
                 bookmarkListCursor = cursor
+            }
+        }
+        // #101: Listen for deskew toggle
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowDeskewChanged"))) { notification in
+            if let enabled = notification.userInfo?["deskewEnabled"] as? Bool {
+                isDeskewEnabled = enabled
             }
         }
     }
@@ -1283,6 +1405,23 @@ struct SlideWindowView: View {
                             .font(.title3)
                             .foregroundStyle(.yellow)
                             .padding(.trailing, 8)
+                    }
+                    
+                    // #101: Deskew indicator (PDF only)
+                    if isDeskewEnabled {
+                        HStack(spacing: 3) {
+                            Image(systemName: "angle")
+                                .font(.caption)
+                            Text("DESKEW")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundStyle(.cyan)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(.cyan.opacity(0.15))
+                        .cornerRadius(4)
+                        .padding(.trailing, 4)
                     }
                     
                     // S010: Favorites Mode indicator
@@ -1392,6 +1531,23 @@ struct SlideWindowView: View {
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.5))
                         Text("single")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.3))
+                    }
+                    
+                    // #101: Deskew hint (PDF only)
+                    if imageSource.sourceType == .pdf {
+                        Text("⌘D")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.5))
+                        Text("deskew")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.3))
+                        
+                        Text("⌘[/]")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.5))
+                        Text("adjust")
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.3))
                     }

@@ -21,4 +21,5 @@ extension Logger {
     static let viewer        = Logger(subsystem: subsystem, category: "Viewer")
     static let spread        = Logger(subsystem: subsystem, category: "SpreadViewer")
     static let keyHandling   = Logger(subsystem: subsystem, category: "KeyHandling")
+    static let deskew        = Logger(subsystem: subsystem, category: "Deskew")        // #101
 }

@@ -2552,6 +2552,9 @@ struct ViewerView: View {
     @State private var showBookmarkList: Bool = false
     @State private var bookmarkListCursor: Int = 0
     
+    // #101: Deskew state
+    @State private var isDeskewEnabled: Bool = false
+    
     /// #54: Effective reading direction for this source
     private var effectiveReadingDirection: ReadingDirection {
         CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
@@ -2656,6 +2659,7 @@ struct ViewerView: View {
             }
             viewerIndex = currentIndex
             previousViewerIndex = currentIndex
+            isDeskewEnabled = CacheManager.shared.isDeskewEnabled(for: imageSource.url)  // #101
         }
         .onChange(of: currentIndex) { oldValue, newValue in
             // External index change (from parent)
@@ -2774,6 +2778,22 @@ struct ViewerView: View {
                     .foregroundStyle(.yellow)
             }
             
+            // #101: Deskew indicator (PDF only)
+            if isDeskewEnabled {
+                HStack(spacing: 3) {
+                    Image(systemName: "angle")
+                        .font(.caption)
+                    Text("DESKEW")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                }
+                .foregroundStyle(.cyan)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.cyan.opacity(0.15))
+                .cornerRadius(4)
+            }
+            
             // Selection indicator
             if isCurrentSelected {
                 Image(systemName: selectionMode == .exclude ? "xmark.circle.fill" : "checkmark.circle.fill")
@@ -2831,6 +2851,11 @@ struct ViewerView: View {
             // #55: Show V key hint only when spread mode is enabled
             if AppSettings.shared.isSpreadModeEnabled {
                 Text("V: 単独")
+            }
+            // #101: Deskew hints (PDF only)
+            if imageSource.sourceType == .pdf {
+                Text("⌘D: 傾き補正")
+                Text("⌘[/]: 微調整")
             }
             Text("Enter: 全画面")
             Text("Esc: 閉じる")
@@ -2973,6 +2998,41 @@ struct ViewerView: View {
         navDirection = 0
     }
     
+    // MARK: - #101: Deskew Angle Adjustment
+    
+    /// Nudge the deskew angle for a page by a given degree offset
+    /// - Parameters:
+    ///   - degrees: Angle adjustment in degrees (+/-)
+    ///   - targetRight: If true, targets the visual RIGHT page in spread mode
+    ///     Without shift = visual left page, with shift = visual right page
+    ///     RTL-aware: visual left/right maps to correct entry index via XOR
+    private func nudgeDeskewAngle(by degrees: CGFloat, targetRight: Bool = false) {
+        // Determine which page to adjust (RTL-aware for spread)
+        // In spread: LTR left=viewerIndex, right=viewerIndex+1
+        //            RTL left=viewerIndex+1, right=viewerIndex (HStack reverses)
+        // adjustPartner = targetRight XOR isRTL
+        let adjustPartner = (targetRight != isRTL)
+        let targetIndex = (isShowingSpread && adjustPartner && viewerIndex + 1 < entries.count)
+            ? viewerIndex + 1
+            : viewerIndex
+        
+        guard targetIndex < entries.count else { return }
+        let entry = entries[targetIndex]
+        
+        // Auto-enable deskew if not already on
+        if !isDeskewEnabled {
+            _ = CacheManager.shared.toggleDeskew(for: imageSource.url)
+            isDeskewEnabled = true
+        }
+        
+        let step = degrees * CGFloat.pi / 180.0
+        let currentAngle = CacheManager.shared.getDeskewAngle(for: imageSource.url, entryPath: entry.path) ?? 0.0
+        let newAngle = currentAngle + step
+        CacheManager.shared.setDeskewAngle(for: imageSource.url, entryPath: entry.path, angle: newAngle)
+        spreadUpdateTrigger.toggle()
+        Logger.viewer.debug("Deskew nudge \(degrees > 0 ? "+" : "")\(degrees, privacy: .public)° page[\(targetIndex, privacy: .public)] → \(newAngle * 180 / CGFloat.pi, privacy: .public)°")
+    }
+    
     // MARK: - Key Event Handling (#67: Spread-aware navigation)
     
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
@@ -3096,7 +3156,7 @@ struct ViewerView: View {
             }
             return true
             
-        // D - next (Ctrl+D = jump to end/start, #62: Shift+D = next bookmark)
+        // D - next (Ctrl+D = jump to end/start, #62: Shift+D = next bookmark, #101: Cmd+D = deskew)
         case "d":
             if event.modifierFlags.contains(.shift) {
                 // #62: Shift+D = next bookmark (RTL-aware)
@@ -3106,6 +3166,14 @@ struct ViewerView: View {
                 ) {
                     navigateTo(target)
                     Logger.viewer.debug("Shift+D → bookmark at \(target, privacy: .public)")
+                }
+            } else if event.modifierFlags.contains(.command) {
+                // #101: Cmd+D = toggle deskew (PDF only)
+                if imageSource.sourceType == .pdf {
+                    let enabled = CacheManager.shared.toggleDeskew(for: imageSource.url)
+                    isDeskewEnabled = enabled
+                    spreadUpdateTrigger.toggle()
+                    Logger.viewer.info("Deskew toggled: \(enabled ? "ON" : "OFF")")
                 }
             } else if event.modifierFlags.contains(.control) {
                 // #72: Ctrl+D = jump to end (RTL: start)
@@ -3283,6 +3351,21 @@ struct ViewerView: View {
             let added = CacheManager.shared.toggleSinglePageMarker(for: imageSource.url, at: viewerIndex)
             Logger.viewer.debug("Single page marker at \(viewerIndex, privacy: .public): \(added ? "ON" : "OFF")")
             spreadUpdateTrigger.toggle()  // #67: Trigger SpreadImageViewer refresh
+            return true
+        
+        // #101: Cmd+[ = nudge deskew angle -0.1°, Cmd+] = nudge +0.1°
+        //       Cmd+Shift+[/] = adjust visual RIGHT page in spread (Shift+[ produces "{")
+        case "[", "{":
+            if event.modifierFlags.contains(.command), imageSource.sourceType == .pdf {
+                let targetRight = event.modifierFlags.contains(.shift)
+                nudgeDeskewAngle(by: -0.1, targetRight: targetRight)
+            }
+            return true
+        case "]", "}":
+            if event.modifierFlags.contains(.command), imageSource.sourceType == .pdf {
+                let targetRight = event.modifierFlags.contains(.shift)
+                nudgeDeskewAngle(by: 0.1, targetRight: targetRight)
+            }
             return true
         
         // #72: Z - previous favorite (RTL-aware), Ctrl+Z - first/last favorite (RTL-aware)
