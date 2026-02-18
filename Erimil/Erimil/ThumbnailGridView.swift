@@ -96,7 +96,7 @@ enum PreviewMode: Equatable {
 // MARK: - Export Type (#103: deferred export after favorite confirmation)
 
 private enum ExportType {
-    case archive, folderZip, pdf, png
+    case archive, folderZip, pdf, png, pngZip
 }
 
 struct ThumbnailGridView: View {
@@ -723,6 +723,9 @@ struct ThumbnailGridView: View {
                 Menu {
                     Button("PNGとして出力...") {
                         confirmExportPNG()
+                    }
+                    Button("PNGで出力（ZIP）...") {
+                        confirmExportPNGZip()
                     }
                 } label: {
                     Text("確定 → _opt.pdf")
@@ -1703,6 +1706,18 @@ struct ThumbnailGridView: View {
         do {
             let count = try pdfManager.exportPagesAsPNG(excluding: pathsToRemove, to: outputDir)
             let folderName = "\(pdfManager.url.deletingPathExtension().lastPathComponent)_pages"
+            // #100: Metadata carry-over — remap PDF page paths to PNG filenames in folder
+            let folderURL = outputDir.appendingPathComponent(folderName, isDirectory: true)
+            let pathRemapper: (Int, String) -> String = { _, originalPath in
+                originalPath + ".png"
+            }
+            CacheManager.shared.copyMetadata(
+                from: pdfManager.url, to: folderURL,
+                entries: entries, pathsToRemove: pathsToRemove,
+                contentHashes: contentHashes,
+                newPathForSurvivingIndex: pathRemapper,
+                options: exportMetadataOptions
+            )
             exportMessage = "\(folderName)/ に \(count) ページを出力しました"
             showExportSuccess = true
             selectedPaths.removeAll()
@@ -1716,6 +1731,60 @@ struct ThumbnailGridView: View {
     
     // MARK: - Deferred Export Execution (#103)
     
+    private func confirmExportPNGZip() {
+        // #105: Initialize metadata options from settings
+        exportMetadataOptions = settings.defaultMetadataOptions
+        // #103: Show confirmation if favorites would be excluded
+        if affectedFavoriteCount > 0 {
+            pendingExportType = .pngZip
+            showFavoriteExportConfirm = true
+            return
+        }
+        executeExportPNGZip()
+    }
+    
+    private func executeExportPNGZip() {
+        guard let pdfManager = imageSource as? PDFManager else { return }
+        
+        let originalName = pdfManager.url.deletingPathExtension().lastPathComponent
+        let outputName = "\(originalName)_png.zip"
+        
+        let savePanel = NSSavePanel()
+        savePanel.title = "PNG ZIP の保存先"
+        savePanel.nameFieldStringValue = outputName
+        savePanel.allowedContentTypes = [.zip]
+        savePanel.directoryURL = settings.outputDirectory(for: pdfManager.url)
+        
+        guard savePanel.runModal() == .OK, let outputURL = savePanel.url else {
+            return
+        }
+        
+        try? FileManager.default.removeItem(at: outputURL)
+        
+        do {
+            let count = try pdfManager.exportPagesAsPNGZip(excluding: pathsToRemove, to: outputURL)
+            // #100: Metadata carry-over — remap PDF page paths to PNG filenames in ZIP
+            let pathRemapper: (Int, String) -> String = { _, originalPath in
+                originalPath + ".png"
+            }
+            CacheManager.shared.copyMetadata(
+                from: pdfManager.url, to: outputURL,
+                entries: entries, pathsToRemove: pathsToRemove,
+                contentHashes: contentHashes,
+                newPathForSurvivingIndex: pathRemapper,
+                options: exportMetadataOptions
+            )
+            exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(count) ページ"
+            showExportSuccess = true
+            selectedPaths.removeAll()
+            onExportSuccess?()
+        } catch {
+            Logger.thumbnailGrid.error("PNG ZIP export error: \(error, privacy: .public)")
+            exportMessage = error.localizedDescription
+            showExportError = true
+        }
+    }
+    
     private func executePendingExport() {
         guard let exportType = pendingExportType else { return }
         pendingExportType = nil
@@ -1724,6 +1793,7 @@ struct ThumbnailGridView: View {
         case .folderZip: executeCreateZip()
         case .pdf: executeExportPDF()
         case .png: executeExportPNG()
+        case .pngZip: executeExportPNGZip()
         }
     }
 }
