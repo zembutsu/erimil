@@ -54,6 +54,7 @@ enum KeyAction {
     case toggleReadingDirection
     case toggleThumbnailPosition
     case toggleControls
+    case toggleDeskew               // #101: Cmd+D
     
     // Bookmarks (#62)
     case addOrDeleteBookmark       // Shift+S

@@ -18,10 +18,11 @@ struct SourceSettings: Codable {
     var lastPosition: Int?
     var readingDirection: ReadingDirection?  // nil = use global default
     var singlePageIndices: Set<Int>?         // #56: Manual single page markers
+    var deskewEnabled: Bool?                 // #101: nil = off (default off)
     
     /// Check if settings are empty (can be removed)
     var isEmpty: Bool {
-        lastPosition == nil && readingDirection == nil && (singlePageIndices == nil || singlePageIndices!.isEmpty)
+        lastPosition == nil && readingDirection == nil && (singlePageIndices == nil || singlePageIndices!.isEmpty) && deskewEnabled == nil
     }
 }
 
@@ -71,6 +72,9 @@ class CacheManager {
     /// ~/Library/Application Support/Erimil/bookmarks.json (#62)
     private let bookmarksFileURL: URL
     
+    /// ~/Library/Application Support/Erimil/deskew_angles.json (#101)
+    private let deskewAnglesFileURL: URL
+    
     // MARK: - In-Memory Cache
     
     /// pathHash → contentHash mapping (loaded from index.json)
@@ -98,6 +102,11 @@ class CacheManager {
     private var bookmarksBySource: [String: [Bookmark]] = [:]
     private let bookmarksLock = NSLock()
     
+    /// Deskew angles per source, per page (#101)
+    /// Key: sourceHash, Value: [pageEntryPath: angle in radians]
+    private var deskewAnglesBySource: [String: [String: CGFloat]] = [:]
+    private let deskewLock = NSLock()
+    
     // MARK: - Async Write Infrastructure (#87)
     
     /// Serial background queue for all JSON writes (prevents UI blocking)
@@ -111,6 +120,7 @@ class CacheManager {
     private var favoritesSaveWorkItem: DispatchWorkItem?
     private var settingsSaveWorkItem: DispatchWorkItem?
     private var bookmarksSaveWorkItem: DispatchWorkItem?
+    private var deskewSaveWorkItem: DispatchWorkItem?   // #101
     private let writeLock = NSLock()
     
     // MARK: - Initialization
@@ -125,6 +135,7 @@ class CacheManager {
         lastPositionFileURL = baseDirectory.appendingPathComponent("last_position.json")
         sourceSettingsFileURL = baseDirectory.appendingPathComponent("source_settings.json")
         bookmarksFileURL = baseDirectory.appendingPathComponent("bookmarks.json")
+        deskewAnglesFileURL = baseDirectory.appendingPathComponent("deskew_angles.json")  // #101
         
         // Configure cache
         thumbnailCache.countLimit = 200
@@ -141,6 +152,9 @@ class CacheManager {
         
         // Load bookmarks (#62)
         loadBookmarks()
+        
+        // Load deskew angles (#101)
+        loadDeskewAngles()
     }
     
     private func createDirectoriesIfNeeded() {
@@ -171,10 +185,12 @@ class CacheManager {
         favoritesSaveWorkItem?.cancel()
         settingsSaveWorkItem?.cancel()
         bookmarksSaveWorkItem?.cancel()
+        deskewSaveWorkItem?.cancel()         // #101
         indexSaveWorkItem = nil
         favoritesSaveWorkItem = nil
         settingsSaveWorkItem = nil
         bookmarksSaveWorkItem = nil
+        deskewSaveWorkItem = nil             // #101
         writeLock.unlock()
         
         // Perform all saves synchronously on writeQueue
@@ -183,6 +199,7 @@ class CacheManager {
             self.performSaveFavorites()
             self.performSaveSourceSettings()
             self.performSaveBookmarks()
+            self.performSaveDeskewAngles()   // #101
         }
         Logger.cache.debug("Flushed all pending writes")
     }
@@ -1201,5 +1218,126 @@ class CacheManager {
             return last
         }
         return nil
+    }
+    
+    // MARK: - Deskew Angles (#101)
+    
+    /// Load deskew angles from disk
+    private func loadDeskewAngles() {
+        guard FileManager.default.fileExists(atPath: deskewAnglesFileURL.path) else {
+            deskewAnglesBySource = [:]
+            return
+        }
+        
+        do {
+            let data = try Data(contentsOf: deskewAnglesFileURL)
+            deskewLock.lock()
+            deskewAnglesBySource = try JSONDecoder().decode([String: [String: CGFloat]].self, from: data)
+            deskewLock.unlock()
+            let total = deskewAnglesBySource.values.reduce(0) { $0 + $1.count }
+            Logger.cache.info("Loaded deskew angles: \(total, privacy: .public) pages across \(self.deskewAnglesBySource.count, privacy: .public) sources")
+        } catch {
+            Logger.cache.error("Failed to load deskew angles: \(error, privacy: .public)")
+            deskewAnglesBySource = [:]
+        }
+    }
+    
+    private func saveDeskewAngles() {
+        writeLock.lock()
+        deskewSaveWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.performSaveDeskewAngles()
+        }
+        deskewSaveWorkItem = item
+        writeQueue.asyncAfter(deadline: .now() + debounceInterval, execute: item)
+        writeLock.unlock()
+    }
+    
+    private func performSaveDeskewAngles() {
+        deskewLock.lock()
+        let current = deskewAnglesBySource
+        deskewLock.unlock()
+        
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            let data = try encoder.encode(current)
+            try data.write(to: deskewAnglesFileURL, options: .atomic)
+        } catch {
+            Logger.cache.error("Failed to save deskew angles: \(error, privacy: .public)")
+        }
+    }
+    
+    /// Get cached deskew angle for a specific page
+    /// - Returns: Angle in radians, or nil if not detected yet
+    func getDeskewAngle(for sourceURL: URL, entryPath: String) -> CGFloat? {
+        let key = hashString(sourceURL.path)
+        deskewLock.lock()
+        let result = deskewAnglesBySource[key]?[entryPath]
+        deskewLock.unlock()
+        return result
+    }
+    
+    /// Check if deskew angle has been detected (even if result was "no correction needed")
+    /// We store 0.0 to indicate "detected but no tilt" to avoid re-detection
+    func hasDeskewAngle(for sourceURL: URL, entryPath: String) -> Bool {
+        let key = hashString(sourceURL.path)
+        deskewLock.lock()
+        let result = deskewAnglesBySource[key]?[entryPath] != nil
+        deskewLock.unlock()
+        return result
+    }
+    
+    /// Store detected deskew angle for a page
+    /// Store 0.0 for "no correction needed" to prevent re-detection
+    func setDeskewAngle(for sourceURL: URL, entryPath: String, angle: CGFloat) {
+        let key = hashString(sourceURL.path)
+        deskewLock.lock()
+        if deskewAnglesBySource[key] == nil {
+            deskewAnglesBySource[key] = [:]
+        }
+        deskewAnglesBySource[key]![entryPath] = angle
+        deskewLock.unlock()
+        saveDeskewAngles()
+        Logger.cache.debug("Stored deskew angle \(angle * 180 / CGFloat.pi, privacy: .public)° for \(entryPath)")
+    }
+    
+    /// Get all cached deskew angles for a source
+    func getDeskewAngles(for sourceURL: URL) -> [String: CGFloat] {
+        let key = hashString(sourceURL.path)
+        deskewLock.lock()
+        let result = deskewAnglesBySource[key] ?? [:]
+        deskewLock.unlock()
+        return result
+    }
+    
+    /// Clear all deskew angles for a source (e.g., user wants fresh re-detection)
+    func clearDeskewAngles(for sourceURL: URL) {
+        let key = hashString(sourceURL.path)
+        deskewLock.lock()
+        deskewAnglesBySource.removeValue(forKey: key)
+        deskewLock.unlock()
+        saveDeskewAngles()
+        Logger.cache.debug("Cleared deskew angles for \(sourceURL.lastPathComponent)")
+    }
+    
+    // MARK: - Deskew Toggle (convenience, via SourceSettings) (#101)
+    
+    /// Check if deskew is enabled for a source (default: false)
+    func isDeskewEnabled(for sourceURL: URL) -> Bool {
+        return getSourceSettings(for: sourceURL)?.deskewEnabled ?? false
+    }
+    
+    /// Toggle deskew on/off for a source
+    /// Returns new state
+    @discardableResult
+    func toggleDeskew(for sourceURL: URL) -> Bool {
+        let current = isDeskewEnabled(for: sourceURL)
+        let new = !current
+        updateSourceSettings(for: sourceURL) { settings in
+            settings.deskewEnabled = new ? true : nil  // nil when off (saves space)
+        }
+        Logger.cache.debug("Deskew \(new ? "enabled" : "disabled") for \(sourceURL.lastPathComponent)")
+        return new
     }
 }

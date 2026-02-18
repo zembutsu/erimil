@@ -128,7 +128,11 @@ struct ImageViewerCore: View {
         let capturedIndex = currentIndex
         
         DispatchQueue.global(qos: .userInitiated).async {
-            let image = capturedSource.fullImage(for: capturedEntry)
+            let rawImage = capturedSource.fullImage(for: capturedEntry)
+            // #101: Apply deskew correction if enabled
+            let image = rawImage.map {
+                DeskewService.processIfEnabled(image: $0, sourceURL: capturedSource.url, entryPath: capturedEntry.path)
+            }
             
             DispatchQueue.main.async {
                 // Verify still the same index
