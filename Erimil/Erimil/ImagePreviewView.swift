@@ -291,21 +291,35 @@ struct ImagePreviewView: View {
         }
     }
     
+    // #14: Unified favorite navigation via NavigationHelper
     private func goToPreviousFavorite() {
-        // #72: Use NavigationHelper for unified favorite navigation
-        guard let targetIndex = NavigationHelper.previousFavoriteIndex(
+        guard let targetIndex = NavigationHelper.previousFavoriteIndexSpreadAware(
             from: currentIndex,
-            favoriteIndices: favoriteIndices
+            favoriteIndices: favoriteIndices,
+            sourceURL: imageSource.url,
+            entries: entries
         ) else { return }
         
         currentIndex = targetIndex
     }
     
+    // #14: Unified favorite navigation via NavigationHelper
     private func goToNextFavorite() {
-        // #72: Use NavigationHelper for unified favorite navigation
-        guard let targetIndex = NavigationHelper.nextFavoriteIndex(
+        let isShowingSpread: Bool = {
+            guard AppSettings.shared.isSpreadModeEnabled,
+                  currentIndex + 1 < entries.count else { return false }
+            return !SpreadNavigationHelper.shouldShowSinglePage(
+                for: imageSource.url, at: currentIndex,
+                totalCount: entries.count, entries: entries
+            )
+        }()
+        
+        guard let targetIndex = NavigationHelper.nextFavoriteIndexSpreadAware(
             from: currentIndex,
-            favoriteIndices: favoriteIndices
+            favoriteIndices: favoriteIndices,
+            sourceURL: imageSource.url,
+            entries: entries,
+            isShowingSpread: isShowingSpread
         ) else { return }
         
         currentIndex = targetIndex

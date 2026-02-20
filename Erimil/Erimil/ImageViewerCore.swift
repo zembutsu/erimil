@@ -176,38 +176,38 @@ struct ImageViewerCore: View {
     }
     
     /// Navigate to previous favorite (returns true if found and moved)
+    /// #14: Unified via NavigationHelper with spread-aware correction
     func goToPreviousFavorite() -> Bool {
-        guard !favoriteIndices.isEmpty else { return false }
-        
-        // Find the largest favorite index that is less than currentIndex
-        let previousFavorites = favoriteIndices.filter { $0 < currentIndex }
-        guard let targetIndex = previousFavorites.max() else {
-            // No favorite before current position - wrap to last favorite
-            if let lastFavorite = favoriteIndices.max(), lastFavorite != currentIndex {
-                currentIndex = lastFavorite
-                return true
-            }
-            return false
-        }
+        guard let targetIndex = NavigationHelper.previousFavoriteIndexSpreadAware(
+            from: currentIndex,
+            favoriteIndices: favoriteIndices,
+            sourceURL: imageSource.url,
+            entries: entries
+        ) else { return false }
         
         currentIndex = targetIndex
         return true
     }
     
     /// Navigate to next favorite (returns true if found and moved)
+    /// #14: Unified via NavigationHelper with spread-aware correction
     func goToNextFavorite() -> Bool {
-        guard !favoriteIndices.isEmpty else { return false }
+        let isShowingSpread: Bool = {
+            guard AppSettings.shared.isSpreadModeEnabled,
+                  currentIndex + 1 < entries.count else { return false }
+            return !SpreadNavigationHelper.shouldShowSinglePage(
+                for: imageSource.url, at: currentIndex,
+                totalCount: entries.count, entries: entries
+            )
+        }()
         
-        // Find the smallest favorite index that is greater than currentIndex
-        let nextFavorites = favoriteIndices.filter { $0 > currentIndex }
-        guard let targetIndex = nextFavorites.min() else {
-            // No favorite after current position - wrap to first favorite
-            if let firstFavorite = favoriteIndices.min(), firstFavorite != currentIndex {
-                currentIndex = firstFavorite
-                return true
-            }
-            return false
-        }
+        guard let targetIndex = NavigationHelper.nextFavoriteIndexSpreadAware(
+            from: currentIndex,
+            favoriteIndices: favoriteIndices,
+            sourceURL: imageSource.url,
+            entries: entries,
+            isShowingSpread: isShowingSpread
+        ) else { return false }
         
         currentIndex = targetIndex
         return true

@@ -862,22 +862,15 @@ class SlideWindowController {
     }
     
     private func goToPreviousFavorite() {
-        // #72: Use NavigationHelper for unified favorite navigation
-        guard var targetIndex = NavigationHelper.previousFavoriteIndex(
-            from: currentIndex,
-            favoriteIndices: storedFavoriteIndices,
-            wrap: AppSettings.shared.loopWithinSource
-        ) else { return }
-        
-        // #104: If target is partner of a spread, adjust to leading page
-        if let source = storedImageSource,
-           AppSettings.shared.isSpreadModeEnabled,
-           targetIndex > 0,
-           !SpreadNavigationHelper.shouldShowSinglePage(
-               for: source.url, at: targetIndex - 1,
-               totalCount: storedEntries.count, entries: storedEntries) {
-            targetIndex = targetIndex - 1
-        }
+        // #14: Unified favorite navigation via NavigationHelper
+        guard let source = storedImageSource,
+              let targetIndex = NavigationHelper.previousFavoriteIndexSpreadAware(
+                from: currentIndex,
+                favoriteIndices: storedFavoriteIndices,
+                sourceURL: source.url,
+                entries: storedEntries,
+                wrap: AppSettings.shared.loopWithinSource
+              ) else { return }
         
         currentIndex = targetIndex
         storedOnIndexChange?(currentIndex)
@@ -885,27 +878,26 @@ class SlideWindowController {
     }
     
     private func goToNextFavorite() {
-        // #72: Use NavigationHelper for unified favorite navigation
-        guard var targetIndex = NavigationHelper.nextFavoriteIndex(
+        // #14: Unified favorite navigation via NavigationHelper
+        guard let source = storedImageSource else { return }
+        
+        let isShowingSpread: Bool = {
+            guard AppSettings.shared.isSpreadModeEnabled,
+                  currentIndex + 1 < storedEntries.count else { return false }
+            return !SpreadNavigationHelper.shouldShowSinglePage(
+                for: source.url, at: currentIndex,
+                totalCount: storedEntries.count, entries: storedEntries
+            )
+        }()
+        
+        guard let targetIndex = NavigationHelper.nextFavoriteIndexSpreadAware(
             from: currentIndex,
             favoriteIndices: storedFavoriteIndices,
+            sourceURL: source.url,
+            entries: storedEntries,
+            isShowingSpread: isShowingSpread,
             wrap: AppSettings.shared.loopWithinSource
         ) else { return }
-        
-        // #104: Skip if target is partner of current spread (no double-stop)
-        if let source = storedImageSource,
-           AppSettings.shared.isSpreadModeEnabled,
-           targetIndex == currentIndex + 1,
-           !SpreadNavigationHelper.shouldShowSinglePage(
-               for: source.url, at: currentIndex,
-               totalCount: storedEntries.count, entries: storedEntries) {
-            guard let nextTarget = NavigationHelper.nextFavoriteIndex(
-                from: targetIndex,
-                favoriteIndices: storedFavoriteIndices,
-                wrap: AppSettings.shared.loopWithinSource
-            ) else { return }
-            targetIndex = nextTarget
-        }
         
         currentIndex = targetIndex
         storedOnIndexChange?(currentIndex)
