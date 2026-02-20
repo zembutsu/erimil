@@ -3087,23 +3087,21 @@ struct ViewerView: View {
             }
             return true
         
-        // Up arrow (same as Left) - S017
-        // #72: Now RTL-aware (unified with Slide Mode)
+        // Up arrow - always previous (#106: vertical = direction-independent)
         case 126:
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
-                isRTL ? goToNext() : goToPrevious()
+                goToPrevious()
             }
             return true
             
-        // Down arrow (same as Right) - S017
-        // #72: Now RTL-aware (unified with Slide Mode)
+        // Down arrow - always next (#106: vertical = direction-independent)
         case 125:
             if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
-                isRTL ? goToPrevious() : goToNext()
+                goToNext()
             }
             return true
 
@@ -3186,18 +3184,16 @@ struct ViewerView: View {
             }
             return true
         
-        // S017: W - previous (Ctrl+W = previous source)
-        // #72: Now RTL-aware (unified with Slide Mode)
+        // S017: W - previous (#106: vertical = direction-independent)
         case "w":
             if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
-                isRTL ? goToNext() : goToPrevious()
+                goToPrevious()
             }
             return true
             
-        // S017: S - next (Ctrl+S = next source)
-        // #72: Now RTL-aware (unified with Slide Mode)
+        // S017: S - next (#106: vertical = direction-independent)
         // #62: Shift+S = bookmark
         case "s":
             if event.modifierFlags.contains(.shift) {
@@ -3214,7 +3210,7 @@ struct ViewerView: View {
             } else if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
-                isRTL ? goToPrevious() : goToNext()
+                goToNext()
             }
             return true
         
@@ -3346,10 +3342,11 @@ struct ViewerView: View {
             settings.viewerThumbnailPosition = settings.viewerThumbnailPosition.next
             return true
         
-        // #55/#67: V - toggle single page marker
+        // #55/#67: V - toggle single page marker (#111: spread-aware)
         case "v":
-            let added = CacheManager.shared.toggleSinglePageMarker(for: imageSource.url, at: viewerIndex)
-            Logger.viewer.debug("Single page marker at \(viewerIndex, privacy: .public): \(added ? "ON" : "OFF")")
+            let target = CacheManager.shared.spreadAwareToggleTarget(for: imageSource.url, at: viewerIndex, isInSpread: isShowingSpread)
+            let added = CacheManager.shared.toggleSinglePageMarker(for: imageSource.url, at: target)
+            Logger.viewer.debug("Single page marker at \(target, privacy: .public) (from \(viewerIndex, privacy: .public), spread: \(isShowingSpread, privacy: .public)): \(added ? "ON" : "OFF")")
             spreadUpdateTrigger.toggle()  // #67: Trigger SpreadImageViewer refresh
             return true
         
