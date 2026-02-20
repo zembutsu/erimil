@@ -998,6 +998,20 @@ class CacheManager {
         return getSinglePageIndices(for: sourceURL).contains(index)
     }
     
+    /// #111: Resolve the effective toggle target for V key in spread context.
+    /// When a spread (N, N+1) is split, the marker lives on N (leading page).
+    /// If the user is now on standalone N+1 and presses V, we need to target N to re-combine.
+    /// But if N+1 is the leading page of a NEW spread (N+1, N+2), toggle N+1 to split it.
+    func spreadAwareToggleTarget(for sourceURL: URL, at index: Int, isInSpread: Bool) -> Int {
+        // Own marker exists → remove it
+        if hasSinglePageMarker(for: sourceURL, at: index) { return index }
+        // Currently in a spread → toggle self to split it
+        if isInSpread { return index }
+        // Standalone single page, previous has marker → re-combine
+        if index > 0 && hasSinglePageMarker(for: sourceURL, at: index - 1) { return index - 1 }
+        return index
+    }
+    
     // MARK: - Aspect Ratio Cache (#67 Phase 3)
 
     /// Make cache key for aspect ratio

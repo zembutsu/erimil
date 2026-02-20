@@ -480,37 +480,33 @@ class SlideWindowController {
                 return nil
             }
         
-        // Up arrow (same as Left) - S017
+        // Up arrow - always previous (#106: vertical = direction-independent)
         case 126:
             if hasControl {
                 Logger.slideWindow.debug("→ Previous source (Ctrl+↑)")
                 storedOnPreviousSource?()
                 return nil
             } else if isFavoritesMode {
-                // #76: RTL inverts direction
-                Logger.slideWindow.debug("→ \(self.isRTL ? "Next" : "Previous") favorite (↑ in Favorites Mode)")
-                isRTL ? goToNextFavorite() : goToPreviousFavorite()
+                Logger.slideWindow.debug("→ Previous favorite (↑ in Favorites Mode)")
+                goToPreviousFavorite()
                 return nil
             } else {
-                // #76: RTL inverts direction
-                isRTL ? goToNext() : goToPrevious()
+                goToPrevious()
                 return nil
             }
             
-        // Down arrow (same as Right) - S017
+        // Down arrow - always next (#106: vertical = direction-independent)
         case 125:
             if hasControl {
                 Logger.slideWindow.debug("→ Next source (Ctrl+↓)")
                 storedOnNextSource?()
                 return nil
             } else if isFavoritesMode {
-                // #76: RTL inverts direction
-                Logger.slideWindow.debug("→ \(self.isRTL ? "Previous" : "Next") favorite (↓ in Favorites Mode)")
-                isRTL ? goToPreviousFavorite() : goToNextFavorite()
+                Logger.slideWindow.debug("→ Next favorite (↓ in Favorites Mode)")
+                goToNextFavorite()
                 return nil
             } else {
-                // #76: RTL inverts direction
-                isRTL ? goToPrevious() : goToNext()
+                goToNext()
                 return nil
             }
         
@@ -592,22 +588,20 @@ class SlideWindowController {
                     }
                     return nil
                 
-                // S017: W key (same as A for nav, Ctrl+W = previous source)
+                // S017: W key (#106: vertical = direction-independent)
                 case "w":
                     if hasControl {
                         Logger.slideWindow.debug("→ Previous source (Ctrl+W)")
                         storedOnPreviousSource?()
                     } else if isFavoritesMode {
-                        // #76: RTL inverts direction
-                        Logger.slideWindow.debug("→ \(self.isRTL ? "Next" : "Previous") favorite (W in Favorites Mode)")
-                        isRTL ? goToNextFavorite() : goToPreviousFavorite()
+                        Logger.slideWindow.debug("→ Previous favorite (W in Favorites Mode)")
+                        goToPreviousFavorite()
                     } else {
-                        // #76: RTL inverts direction
-                        isRTL ? goToNext() : goToPrevious()
+                        goToPrevious()
                     }
                     return nil
                     
-                // S017: S key (same as D for nav, Ctrl+S = next source, #62: Shift+S = bookmark)
+                // S017: S key (#106: vertical = direction-independent, #62: Shift+S = bookmark)
                 case "s":
                     if hasShift {
                         // #62: Shift+S = add/delete bookmark at current position
@@ -625,12 +619,10 @@ class SlideWindowController {
                         Logger.slideWindow.debug("→ Next source (Ctrl+S)")
                         storedOnNextSource?()
                     } else if isFavoritesMode {
-                        // #76: RTL inverts direction
-                        Logger.slideWindow.debug("→ \(self.isRTL ? "Previous" : "Next") favorite (S in Favorites Mode)")
-                        isRTL ? goToPreviousFavorite() : goToNextFavorite()
+                        Logger.slideWindow.debug("→ Next favorite (S in Favorites Mode)")
+                        goToNextFavorite()
                     } else {
-                        // #76: RTL inverts direction
-                        isRTL ? goToPrevious() : goToNext()
+                        goToNext()
                     }
                     return nil
                 
@@ -714,10 +706,19 @@ class SlideWindowController {
                     return nil
                 
                 case "v":
-                    // #55: Toggle single page marker
+                    // #55: Toggle single page marker (#111: spread-aware)
                     if let source = storedImageSource {
-                        let added = CacheManager.shared.toggleSinglePageMarker(for: source.url, at: currentIndex)
-                        Logger.slideWindow.debug("Single page marker at \(self.currentIndex, privacy: .public): \(added ? "ON" : "OFF")")
+                        let isInSpread: Bool = {
+                            guard AppSettings.shared.isSpreadModeEnabled,
+                                  currentIndex + 1 < storedEntries.count else { return false }
+                            return !SpreadNavigationHelper.shouldShowSinglePage(
+                                for: source.url, at: currentIndex,
+                                totalCount: storedEntries.count, entries: storedEntries
+                            )
+                        }()
+                        let target = CacheManager.shared.spreadAwareToggleTarget(for: source.url, at: currentIndex, isInSpread: isInSpread)
+                        let added = CacheManager.shared.toggleSinglePageMarker(for: source.url, at: target)
+                        Logger.slideWindow.debug("Single page marker at \(target, privacy: .public) (from \(self.currentIndex, privacy: .public), spread: \(isInSpread, privacy: .public)): \(added ? "ON" : "OFF")")
                         notifyViewOfSpreadChange()
                     }
                     return nil

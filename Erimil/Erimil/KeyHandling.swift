@@ -371,8 +371,8 @@ struct CommonKeyParser {
         let hasControl = event.modifierFlags.contains(.control)
         
         switch event.keyCode {
-        // Arrow keys
-        case KeyCode.leftArrow, KeyCode.upArrow:
+        // Left arrow - horizontal, RTL-invertible
+        case KeyCode.leftArrow:
             if hasControl {
                 return .navigateSource(.backward)
             } else if isFavoritesMode {
@@ -381,13 +381,34 @@ struct CommonKeyParser {
                 return .navigate(.backward)
             }
             
-        case KeyCode.rightArrow, KeyCode.downArrow:
+        // Right arrow - horizontal, RTL-invertible
+        case KeyCode.rightArrow:
             if hasControl {
                 return .navigateSource(.forward)
             } else if isFavoritesMode {
                 return .navigateFavorite(.forward)
             } else {
                 return .navigate(.forward)
+            }
+        
+        // Up arrow - vertical, NOT RTL-invertible (#106)
+        case KeyCode.upArrow:
+            if hasControl {
+                return .navigateSource(.backward)
+            } else if isFavoritesMode {
+                return .navigateFavorite(.backward)
+            } else {
+                return .navigate(.backward)  // Note: caller must NOT apply RTL inversion
+            }
+            
+        // Down arrow - vertical, NOT RTL-invertible (#106)
+        case KeyCode.downArrow:
+            if hasControl {
+                return .navigateSource(.forward)
+            } else if isFavoritesMode {
+                return .navigateFavorite(.forward)
+            } else {
+                return .navigate(.forward)  // Note: caller must NOT apply RTL inversion
             }
             
         case KeyCode.escape:
@@ -403,7 +424,8 @@ struct CommonKeyParser {
         }
         
         switch chars {
-        case "a", "w":
+        // A - horizontal, RTL-invertible
+        case "a":
             if hasControl {
                 return .navigateSource(.backward)
             } else if isFavoritesMode {
@@ -411,14 +433,35 @@ struct CommonKeyParser {
             } else {
                 return .navigate(.backward)
             }
-            
-        case "d", "s":
+        
+        // D - horizontal, RTL-invertible
+        case "d":
             if hasControl {
                 return .navigateSource(.forward)
             } else if isFavoritesMode {
                 return .navigateFavorite(.forward)
             } else {
                 return .navigate(.forward)
+            }
+        
+        // W - vertical, NOT RTL-invertible (#106)
+        case "w":
+            if hasControl {
+                return .navigateSource(.backward)
+            } else if isFavoritesMode {
+                return .navigateFavorite(.backward)
+            } else {
+                return .navigate(.backward)  // Note: caller must NOT apply RTL inversion
+            }
+            
+        // S - vertical, NOT RTL-invertible (#106)
+        case "s":
+            if hasControl {
+                return .navigateSource(.forward)
+            } else if isFavoritesMode {
+                return .navigateFavorite(.forward)
+            } else {
+                return .navigate(.forward)  // Note: caller must NOT apply RTL inversion
             }
             
         case "z":
