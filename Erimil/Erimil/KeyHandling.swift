@@ -242,6 +242,69 @@ struct NavigationHelper {
         return nil
     }
     
+    // MARK: - Spread-Aware Favorite Navigation (#14: unified from 4 viewers)
+    
+    /// Find previous favorite index with spread leading-page correction (#104)
+    /// When a ★ is on a spread's partner page, adjusts to the leading page so
+    /// the spread pair is displayed correctly.
+    static func previousFavoriteIndexSpreadAware(
+        from currentIndex: Int,
+        favoriteIndices: Set<Int>,
+        sourceURL: URL,
+        entries: [ImageEntry],
+        wrap: Bool = true
+    ) -> Int? {
+        guard var targetIndex = previousFavoriteIndex(
+            from: currentIndex, favoriteIndices: favoriteIndices, wrap: wrap
+        ) else { return nil }
+        
+        // #104: If target is partner of a spread, adjust to leading page
+        if AppSettings.shared.isSpreadModeEnabled,
+           targetIndex > 0,
+           !SpreadNavigationHelper.shouldShowSinglePage(
+               for: sourceURL, at: targetIndex - 1,
+               totalCount: entries.count, entries: entries) {
+            targetIndex = targetIndex - 1
+        }
+        
+        return targetIndex
+    }
+    
+    /// Find next favorite index with spread skip correction (#104)
+    /// When the next ★ is on the partner page of the current spread (already visible),
+    /// skips to the following ★ instead.
+    static func nextFavoriteIndexSpreadAware(
+        from currentIndex: Int,
+        favoriteIndices: Set<Int>,
+        sourceURL: URL,
+        entries: [ImageEntry],
+        isShowingSpread: Bool,
+        wrap: Bool = true
+    ) -> Int? {
+        guard var targetIndex = nextFavoriteIndex(
+            from: currentIndex, favoriteIndices: favoriteIndices, wrap: wrap
+        ) else { return nil }
+        
+        // #104: Skip if target is partner of current spread (already visible)
+        if isShowingSpread && targetIndex == currentIndex + 1 {
+            guard let nextTarget = nextFavoriteIndex(
+                from: targetIndex, favoriteIndices: favoriteIndices, wrap: wrap
+            ) else { return nil }
+            targetIndex = nextTarget
+        }
+        
+        // #104: If target is partner of a spread, adjust to leading page
+        if AppSettings.shared.isSpreadModeEnabled,
+           targetIndex > 0,
+           !SpreadNavigationHelper.shouldShowSinglePage(
+               for: sourceURL, at: targetIndex - 1,
+               totalCount: entries.count, entries: entries) {
+            targetIndex = targetIndex - 1
+        }
+        
+        return targetIndex
+    }
+    
     /// Navigate to favorite in a direction with RTL support
     /// - Parameters:
     ///   - direction: Logical direction
