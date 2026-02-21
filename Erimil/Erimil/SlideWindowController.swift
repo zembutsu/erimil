@@ -1138,6 +1138,9 @@ struct SlideWindowView: View {
     // #101: Deskew state
     @State private var isDeskewEnabled: Bool = false
     
+    // #115: Track spread display state for position indicator
+    @State private var isShowingSpread: Bool = false
+    
     // #54: Effective reading direction
     private var isRTL: Bool {
         CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url) == .rtl
@@ -1187,7 +1190,9 @@ struct SlideWindowView: View {
                     entries: entries,
                     currentIndex: $currentIndex,
                     favoriteIndices: favoriteIndices,
-                    reloadTrigger: isDeskewEnabled  // #101: Force reload when deskew changes
+                    reloadTrigger: isDeskewEnabled,  // #101: Force reload when deskew changes
+                    isShowingSpread: $isShowingSpread,  // #115: Track for position indicator
+                    couldBeSpreadWithPrevious: .constant(false)
                 )
             }
             
@@ -1384,16 +1389,27 @@ struct SlideWindowView: View {
                                 .font(.headline)
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
-                            Text(" (\(currentIndex + 1)/\(entries.count))")
-                                .font(.subheadline)
-                                .foregroundStyle(.white.opacity(0.6))
+                            // #115: Spread-aware position indicator
+                            if isShowingSpread {
+                                let left = currentIndex + 1
+                                let right = currentIndex + 2
+                                Text(" (\(isRTL ? "\(right)-\(left)" : "\(left)-\(right)")/\(entries.count))")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white.opacity(0.6))
+                            } else {
+                                Text(" (\(currentIndex + 1)/\(entries.count))")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
                         }
                     }
                     
                     Spacer()
                     
                     // #72: Favorite indicator (right side, fixed position)
-                    if favoriteIndices.contains(currentIndex) {
+                    // #115: spread-aware — show if either page is favorited
+                    if favoriteIndices.contains(currentIndex) ||
+                       (isShowingSpread && favoriteIndices.contains(currentIndex + 1)) {
                         Image(systemName: "star.fill")
                             .font(.title3)
                             .foregroundStyle(.yellow)

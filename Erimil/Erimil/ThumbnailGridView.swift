@@ -2588,6 +2588,20 @@ struct ViewerView: View {
         return selectedPaths.contains(entry.path)
     }
     
+    // #115: Check if spread partner page is a favorite
+    private var isSpreadPartnerFavorite: Bool {
+        let partnerIndex = viewerIndex + 1
+        guard partnerIndex < entries.count else { return false }
+        let partnerEntry = entries[partnerIndex]
+        let hash = contentHashes[partnerEntry.path]
+        let status = CacheManager.shared.getFavoriteStatus(
+            sourceURL: imageSource.url,
+            entryPath: partnerEntry.path,
+            contentHash: hash
+        )
+        return status == .direct
+    }
+    
     var body: some View {
         ZStack {
             // Background
@@ -2776,8 +2790,8 @@ struct ViewerView: View {
             
             Spacer()
             
-            // Favorite indicator
-            if isCurrentFavorite {
+            // Favorite indicator — #115: spread-aware (either page)
+            if isCurrentFavorite || (isShowingSpread && isSpreadPartnerFavorite) {
                 Image(systemName: "star.fill")
                     .foregroundStyle(.yellow)
             }
@@ -2813,10 +2827,20 @@ struct ViewerView: View {
             
             Spacer()
             
-            // Position indicator
-            Text("\(viewerIndex + 1) / \(entries.count)")
-                .foregroundStyle(.white.opacity(0.8))
-                .monospacedDigit()
+            // Position indicator — #115: spread-aware (show both pages)
+            if isShowingSpread {
+                let left = viewerIndex + 1
+                let right = viewerIndex + 2
+                Text(isRTL
+                     ? "\(right)-\(left) / \(entries.count)"
+                     : "\(left)-\(right) / \(entries.count)")
+                    .foregroundStyle(.white.opacity(0.8))
+                    .monospacedDigit()
+            } else {
+                Text("\(viewerIndex + 1) / \(entries.count)")
+                    .foregroundStyle(.white.opacity(0.8))
+                    .monospacedDigit()
+            }
             
             // Fullscreen button
             Button {
