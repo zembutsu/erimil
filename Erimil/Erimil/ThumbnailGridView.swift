@@ -2409,7 +2409,8 @@ struct SpreadThumbnailPairView: View {
     }
     
     var body: some View {
-        // HStack with two thumbnails - RTL handled by parent's layoutDirection
+        // HStack with two thumbnails - #116: RTL resolved internally via source reading direction
+        let direction = CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
         HStack(spacing: 2) {
             // Left side (in LTR: lower index page; in RTL: higher index page)
             thumbnailView(
@@ -2429,6 +2430,7 @@ struct SpreadThumbnailPairView: View {
                 isSelected: isRightSelected
             )
         }
+        .environment(\.layoutDirection, direction.layoutDirection)  // #116: RTL spread inversion
         .frame(width: pairSize, height: pairSize)
         .background(
             RoundedRectangle(cornerRadius: 4)
@@ -2608,6 +2610,7 @@ struct ViewerView: View {
                             onSelect: { index in navigateTo(index) }
                         )
                         mainContentView
+                            .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)
                     }
                     
                 case .bottom:
@@ -2629,6 +2632,7 @@ struct ViewerView: View {
                     
                 case .hidden:
                     mainContentView
+                        .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)
                 }
             }
             
