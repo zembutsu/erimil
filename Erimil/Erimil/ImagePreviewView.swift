@@ -32,6 +32,7 @@ struct ImagePreviewView: View {
     
     @State private var currentIndex: Int = 0
     @State private var spreadUpdateTrigger: Bool = false  // #55: For triggering view update
+    @State private var isShowingSpread: Bool = false  // #115: Track for position indicator
     
     // #62 Phase 5: Bookmark list overlay state
     @State private var showBookmarkList: Bool = false
@@ -55,7 +56,9 @@ struct ImagePreviewView: View {
                 entries: entries,
                 currentIndex: $currentIndex,
                 favoriteIndices: favoriteIndices,
-                reloadTrigger: spreadUpdateTrigger
+                reloadTrigger: spreadUpdateTrigger,
+                isShowingSpread: $isShowingSpread,  // #115: Track for position indicator
+                couldBeSpreadWithPrevious: .constant(false)
             )
             
             // Header overlay
@@ -161,9 +164,20 @@ struct ImagePreviewView: View {
                         .font(.headline)
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    Text("\(currentIndex + 1) / \(entries.count)")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.7))
+                    // #115: Spread-aware position indicator
+                    if isShowingSpread {
+                        let left = currentIndex + 1
+                        let right = currentIndex + 2
+                        Text(isRTL
+                             ? "\(right)-\(left) / \(entries.count)"
+                             : "\(left)-\(right) / \(entries.count)")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                    } else {
+                        Text("\(currentIndex + 1) / \(entries.count)")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
                 }
             }
             
