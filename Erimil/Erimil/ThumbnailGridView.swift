@@ -173,12 +173,27 @@ struct ThumbnailGridView: View {
     }
 
     var body: some View {
-        // S013: Viewer Mode - full window image display
-        if case .viewer(let viewerIndex) = previewMode {
-            viewerModeView(index: viewerIndex)
-        } else {
-            thumbnailBrowserView
-        } // end else (Grid view)
+        Group {
+            // S013: Viewer Mode - full window image display
+            if case .viewer(let viewerIndex) = previewMode {
+                viewerModeView(index: viewerIndex)
+            } else {
+                thumbnailBrowserView
+            } // end else (Grid view)
+        }
+        .onChange(of: imageSource.url) { oldURL, newURL in
+            if currentSourceURL != newURL {
+                loadSource()
+            }
+        }
+        .onChange(of: entries) { _, newEntries in
+            handleEntriesChange(newEntries)
+        }
+        .onAppear {
+            if currentSourceURL != imageSource.url {
+                loadSource()
+            }
+        }
     }
     
     // MARK: - Viewer Mode
@@ -289,19 +304,6 @@ struct ThumbnailGridView: View {
                         },
                         onClose: { showBookmarkList = false }
                     )
-                }
-            }
-            .onChange(of: imageSource.url) { oldURL, newURL in
-                if currentSourceURL != newURL {
-                    loadSource()
-                }
-            }
-            .onChange(of: entries) { _, newEntries in
-                handleEntriesChange(newEntries)
-            }
-            .onAppear {
-                if currentSourceURL != imageSource.url {
-                    loadSource()
                 }
             }
             .sheet(isPresented: Binding(
