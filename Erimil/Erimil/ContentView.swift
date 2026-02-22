@@ -230,6 +230,7 @@ private struct DetailContainerView: View {
                     sourceSelection.consumePrefetchedEntries(for: imageSource.url)
                 }
             )
+            .id(imageSource.url)  // S051: Force view recreation on source switch (#121)
             .onChange(of: shouldOpenSlideMode) { _, newValue in
                 if newValue {
                     shouldOpenSlideMode = false
