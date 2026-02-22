@@ -24,6 +24,9 @@ struct ContentView: View {
     // S010: Flag to open Slide Mode from sidebar double-click
     @State private var shouldOpenSlideMode: Bool = false
     
+    // S051: Track Viewer Mode state for .id()-driven view recreation (#121)
+    @State private var isInViewerMode: Bool = false
+    
     // S016: Flag to reopen Viewer Mode after source switch
     @State private var shouldReopenViewerMode: Bool = false
     
@@ -55,6 +58,7 @@ struct ContentView: View {
                 shouldReopenSlideMode: $shouldReopenSlideMode,
                 shouldReopenViewerMode: $shouldReopenViewerMode,
                 shouldOpenSlideMode: $shouldOpenSlideMode,
+                isInViewerMode: $isInViewerMode,
                 onExportSuccess: { reloadFolder() },
                 onRequestNextSource: { navigateToNextSource() },
                 onRequestPreviousSource: { navigateToPreviousSource() }
@@ -112,6 +116,10 @@ struct ContentView: View {
             pendingSourceType = type
             showUnsavedAlert = true
         } else {
+            // S051: Preserve Viewer Mode across .id()-driven view recreation
+            if isInViewerMode {
+                shouldReopenViewerMode = true
+            }
             // S050: Direct model call — atomic, no intermediate @State
             sourceSelection.select(url: url, type: type)
             selectedPaths.removeAll()
@@ -121,6 +129,9 @@ struct ContentView: View {
     private func discardAndNavigate() {
         selectedPaths.removeAll()
         if let url = pendingSourceURL, let type = pendingSourceType {
+            if isInViewerMode {
+                shouldReopenViewerMode = true
+            }
             // S050: Direct model call
             sourceSelection.select(url: url, type: type)
             pendingSourceURL = nil
@@ -212,6 +223,7 @@ private struct DetailContainerView: View {
     @Binding var shouldReopenSlideMode: Bool
     @Binding var shouldReopenViewerMode: Bool
     @Binding var shouldOpenSlideMode: Bool
+    @Binding var isInViewerMode: Bool
     let onExportSuccess: () -> Void
     let onRequestNextSource: () -> Void
     let onRequestPreviousSource: () -> Void
@@ -226,6 +238,7 @@ private struct DetailContainerView: View {
                 onRequestPreviousSource: onRequestPreviousSource,
                 shouldReopenSlideMode: $shouldReopenSlideMode,
                 shouldReopenViewerMode: $shouldReopenViewerMode,
+                isInViewerMode: $isInViewerMode,
                 consumePrefetchedEntries: {
                     sourceSelection.consumePrefetchedEntries(for: imageSource.url)
                 }

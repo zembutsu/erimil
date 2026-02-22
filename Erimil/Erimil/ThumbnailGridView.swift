@@ -107,6 +107,7 @@ struct ThumbnailGridView: View {
     var onRequestPreviousSource: (() -> Void)?  // S005: Source navigation
     @Binding var shouldReopenSlideMode: Bool    // S005: Reopen after source switch
     @Binding var shouldReopenViewerMode: Bool   // S016: Reopen Viewer Mode after source switch
+    @Binding var isInViewerMode: Bool            // S051: Report Viewer Mode state to parent
     var consumePrefetchedEntries: (() -> [ImageEntry]?)?  // S050: Prefetch from SourceSelection
     
     @ObservedObject private var settings = AppSettings.shared
@@ -197,6 +198,9 @@ struct ThumbnailGridView: View {
         }
         .onChange(of: entries) { _, newEntries in
             handleEntriesChange(newEntries)
+        }
+        .onChange(of: previewMode) { _, newMode in
+            isInViewerMode = newMode.isViewer
         }
         .onAppear {
             if currentSourceURL != imageSource.url {
@@ -812,10 +816,6 @@ struct ThumbnailGridView: View {
         contentHashes = [:]
         selectedPaths = []
         focusedIndex = nil
-        // Preserve viewer mode for re-entry after source switch (e.g., mouse click)
-        if previewMode.isViewer {
-            shouldReopenViewerMode = true
-        }
         previewMode = .none
         entries = []
         isLoadingSource = true
@@ -3540,6 +3540,7 @@ struct ExportConfirmationView: View {
         onExportSuccess: nil,
         shouldReopenSlideMode: .constant(false),
         shouldReopenViewerMode: .constant(false),
+        isInViewerMode: .constant(false),
         consumePrefetchedEntries: nil
     )
 }
