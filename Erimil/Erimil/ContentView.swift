@@ -49,40 +49,16 @@ struct ContentView: View {
             )
         } detail: {
             // S050: Reads sourceSelection.currentSource — only detail re-evaluates on source change
-            if let imageSource = sourceSelection.currentSource {
-                ThumbnailGridView(
-                    imageSource: imageSource,
-                    selectedPaths: $selectedPaths,
-                    onExportSuccess: {
-                        reloadFolder()
-                    },
-                    onRequestNextSource: {
-                        navigateToNextSource()
-                    },
-                    onRequestPreviousSource: {
-                        navigateToPreviousSource()
-                    },
-                    shouldReopenSlideMode: $shouldReopenSlideMode,
-                    shouldReopenViewerMode: $shouldReopenViewerMode,
-                    consumePrefetchedEntries: {
-                        selection.consumePrefetchedEntries(for: imageSource.url)
-                    }
-                )
-                // NOTE: .id() removed (S036) — loadSource() handles full state reset via onChange(imageSource.url)
-                // S010: Trigger Slide Mode open from sidebar
-                .onChange(of: shouldOpenSlideMode) { _, newValue in
-                    if newValue {
-                        shouldOpenSlideMode = false
-                        // ThumbnailGridView will handle opening Slide Mode via shouldReopenSlideMode
-                    }
-                }
-            } else {
-                ContentUnavailableView(
-                    "ZIPファイルまたはフォルダを選択",
-                    systemImage: "archivebox",
-                    description: Text("左のツリーから選んでください")
-                )
-            }
+            DetailContainerView(
+                sourceSelection: sourceSelection,
+                selectedPaths: $selectedPaths,
+                shouldReopenSlideMode: $shouldReopenSlideMode,
+                shouldReopenViewerMode: $shouldReopenViewerMode,
+                shouldOpenSlideMode: $shouldOpenSlideMode,
+                onExportSuccess: { reloadFolder() },
+                onRequestNextSource: { navigateToNextSource() },
+                onRequestPreviousSource: { navigateToPreviousSource() }
+            )
         }
         .frame(minWidth: 800, minHeight: 600)
         // S050: onChange × 2 chain REMOVED — model.select() handles everything atomically
@@ -224,6 +200,47 @@ struct ContentView: View {
             return .pdf
         } else {
             return .folder
+        }
+    }
+}
+
+// S050: Isolate detail re-evaluation from sidebar
+// Only this view re-evaluates when currentSource changes
+private struct DetailContainerView: View {
+    let sourceSelection: SourceSelection
+    @Binding var selectedPaths: Set<String>
+    @Binding var shouldReopenSlideMode: Bool
+    @Binding var shouldReopenViewerMode: Bool
+    @Binding var shouldOpenSlideMode: Bool
+    let onExportSuccess: () -> Void
+    let onRequestNextSource: () -> Void
+    let onRequestPreviousSource: () -> Void
+    
+    var body: some View {
+        if let imageSource = sourceSelection.currentSource {
+            ThumbnailGridView(
+                imageSource: imageSource,
+                selectedPaths: $selectedPaths,
+                onExportSuccess: onExportSuccess,
+                onRequestNextSource: onRequestNextSource,
+                onRequestPreviousSource: onRequestPreviousSource,
+                shouldReopenSlideMode: $shouldReopenSlideMode,
+                shouldReopenViewerMode: $shouldReopenViewerMode,
+                consumePrefetchedEntries: {
+                    sourceSelection.consumePrefetchedEntries(for: imageSource.url)
+                }
+            )
+            .onChange(of: shouldOpenSlideMode) { _, newValue in
+                if newValue {
+                    shouldOpenSlideMode = false
+                }
+            }
+        } else {
+            ContentUnavailableView(
+                "ZIPファイルまたはフォルダを選択",
+                systemImage: "archivebox",
+                description: Text("左のツリーから選んでください")
+            )
         }
     }
 }
