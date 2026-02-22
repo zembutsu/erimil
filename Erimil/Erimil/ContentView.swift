@@ -4,6 +4,7 @@
 //
 //  Created by Masahito Zembutsu on 2025/12/13.
 //  Updated: S010 (2025-01-11) - Sidebar double-click to open Slide Mode
+//  Updated: S050 (2026-02-22) - @Observable SourceSelection model (#93)
 //
 
 import SwiftUI
@@ -11,13 +12,11 @@ import os
 
 struct ContentView: View {
     @State private var selectedFolderURL: URL?
-    @State private var selectedSourceURL: URL?
-    @State private var selectedSourceType: ImageSourceType?
+    // S050: Replaced @State selectedSourceURL / selectedSourceType / currentImageSource
+    //       with single @Observable model. Eliminates onChange × 2 chain.
+    @State private var sourceSelection = SourceSelection()
     @State private var selectedPaths: Set<String> = []  // User's actual selections
     @State private var folderReloadTrigger = UUID()
-    
-    // Stable image source (not recreated on every render)
-    @State private var currentImageSource: (any ImageSource)?
     
     // S005: Flag to reopen Slide Mode after source switch
     @State private var shouldReopenSlideMode: Bool = false
@@ -35,18 +34,12 @@ struct ContentView: View {
     
     var body: some View {
         NavigationSplitView {
+            // S050: 3 callbacks → 1 unified callback + read-only URL for highlight
             SidebarView(
                 selectedFolderURL: $selectedFolderURL,
-                selectedSourceURL: $selectedSourceURL,  // シンプルに直接バインド
-                hasUnsavedChanges: !selectedPaths.isEmpty,
-                onZipSelectionAttempt: { url in
-                    handleSourceSelectionAttempt(url: url, type: .archive)
-                },
-                onFolderSelectionAttempt: { url in
-                    handleSourceSelectionAttempt(url: url, type: .folder)
-                },
-                onPdfSelectionAttempt: { url in
-                    handleSourceSelectionAttempt(url: url, type: .pdf)
+                currentSourceURL: sourceSelection.currentURL,
+                onSourceSelect: { url, type in
+                    handleSourceSelectionAttempt(url: url, type: type)
                 },
                 onOpenSlideMode: { url in
                     openSlideModeForSource(url)
@@ -54,10 +47,11 @@ struct ContentView: View {
                 reloadTrigger: folderReloadTrigger
             )
         } detail: {
-            if let imageSource = currentImageSource {
+            // S050: Reads sourceSelection.currentSource — only detail re-evaluates on source change
+            if let imageSource = sourceSelection.currentSource {
                 ThumbnailGridView(
                     imageSource: imageSource,
-                    selectedPaths: $selectedPaths,  // Changed: pass selectedPaths
+                    selectedPaths: $selectedPaths,
                     onExportSuccess: {
                         reloadFolder()
                     },
@@ -87,20 +81,7 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 600)
-        .onChange(of: selectedSourceURL) { _, newURL in
-            if let _ = newURL, let _ = selectedSourceType {
-                updateImageSource()
-            } else if newURL == nil {
-                currentImageSource = nil
-            }
-        }
-        .onChange(of: selectedSourceType) { _, newType in
-            if let _ = selectedSourceURL, let _ = newType {
-                updateImageSource()
-            } else if newType == nil {
-                currentImageSource = nil
-            }
-        }
+        // S050: onChange × 2 chain REMOVED — model.select() handles everything atomically
         .alert("未保存の変更があります", isPresented: $showUnsavedAlert) {
             Button("保存せず移動", role: .destructive) {
                 discardAndNavigate()
@@ -134,44 +115,22 @@ struct ContentView: View {
         }
     }
     
-    private func updateImageSource() {
-        guard let url = selectedSourceURL, let type = selectedSourceType else {
-            currentImageSource = nil
-            return
-        }
-        
-        // Check if already loaded same source
-        if let current = currentImageSource, current.url == url {
-            return
-        }
-        
-        // Clear selections when switching sources to prevent stale paths
-        selectedPaths.removeAll()
-        
-        switch type {
-        case .archive:
-            currentImageSource = ArchiveManager(zipURL: url)
-        case .folder:
-            currentImageSource = FolderManager(folderURL: url)
-        case .pdf:
-            currentImageSource = PDFManager(pdfURL: url)
-        }
-    }
+    // S050: updateImageSource() REMOVED — model.select() replaces it entirely
     
     private func handleSourceSelectionAttempt(url: URL, type: ImageSourceType) {
         // 同じソースを選択した場合は何もしない
-        if url == selectedSourceURL && type == selectedSourceType {
+        if url == sourceSelection.currentURL && type == sourceSelection.currentType {
             return
         }
         
         // 未保存の変更がある場合は確認
-        if !selectedPaths.isEmpty {  // Changed: use selectedPaths
+        if !selectedPaths.isEmpty {
             pendingSourceURL = url
             pendingSourceType = type
             showUnsavedAlert = true
         } else {
-            selectedSourceURL = url
-            selectedSourceType = type
+            // S050: Direct model call — atomic, no intermediate @State
+            sourceSelection.select(url: url, type: type)
             selectedPaths.removeAll()
         }
     }
@@ -179,8 +138,8 @@ struct ContentView: View {
     private func discardAndNavigate() {
         selectedPaths.removeAll()
         if let url = pendingSourceURL, let type = pendingSourceType {
-            selectedSourceURL = url
-            selectedSourceType = type
+            // S050: Direct model call
+            sourceSelection.select(url: url, type: type)
             pendingSourceURL = nil
             pendingSourceType = nil
         }
@@ -202,7 +161,7 @@ struct ContentView: View {
     // MARK: - Source Navigation (S005)
     
     private func navigateToNextSource() {
-        guard let currentURL = selectedSourceURL else {
+        guard let currentURL = sourceSelection.currentURL else {
             Logger.content.debug("navigateToNextSource: no current source")
             return
         }
@@ -218,15 +177,15 @@ struct ContentView: View {
             // S016: shouldReopenViewerMode is set by ViewerView before calling this
             
             selectedPaths.removeAll()
-            selectedSourceURL = nextURL
-            selectedSourceType = type
+            // S050: Direct model call
+            sourceSelection.select(url: nextURL, type: type)
         } else {
             Logger.content.debug("navigateToNextSource: no next source available")
         }
     }
     
     private func navigateToPreviousSource() {
-        guard let currentURL = selectedSourceURL else {
+        guard let currentURL = sourceSelection.currentURL else {
             Logger.content.debug("navigateToPreviousSource: no current source")
             return
         }
@@ -242,8 +201,8 @@ struct ContentView: View {
             // S016: shouldReopenViewerMode is set by ViewerView before calling this
             
             selectedPaths.removeAll()
-            selectedSourceURL = prevURL
-            selectedSourceType = type
+            // S050: Direct model call
+            sourceSelection.select(url: prevURL, type: type)
         } else {
             Logger.content.debug("navigateToPreviousSource: no previous source available")
         }
