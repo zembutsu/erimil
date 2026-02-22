@@ -187,6 +187,9 @@ struct ThumbnailGridView: View {
             } else if case .viewer(let viewerIndex) = previewMode {
                 // S013: Viewer Mode - full window image display
                 viewerModeView(index: viewerIndex)
+            } else if shouldReopenViewerMode {
+                // #122: Suppress Grid flash while waiting for Viewer Mode restoration
+                Color.black.ignoresSafeArea()
             } else {
                 thumbnailBrowserView
             } // end else (Grid view)
