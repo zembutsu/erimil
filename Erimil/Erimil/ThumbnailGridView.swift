@@ -145,7 +145,7 @@ struct ThumbnailGridView: View {
 
     // #54: Reading direction change trigger
     @State private var readingDirectionVersion: Int = 0
-    @State private var isLoadingSource: Bool = false
+    @State private var isLoadingSource: Bool = true
     @State private var showLoadingSpinner: Bool = false
     
     /// Dynamic columns based on thumbnail size
@@ -187,6 +187,8 @@ struct ThumbnailGridView: View {
             } else if case .viewer(let viewerIndex) = previewMode {
                 // S013: Viewer Mode - full window image display
                 viewerModeView(index: viewerIndex)
+            } else if shouldReopenViewerMode {
+                Color.black.ignoresSafeArea()
             } else {
                 thumbnailBrowserView
             } // end else (Grid view)
@@ -821,75 +823,70 @@ struct ThumbnailGridView: View {
         isLoadingSource = true
         showLoadingSpinner = false
         
-        // Show spinner only if load takes >100ms (avoid flicker)
+        
+        // S050: Try prefetched entries first (NO timer needed)
+        if let prefetched = consumePrefetchedEntries?() {
+            SourceSwitchTiming.mark("prefetch.hit")
+            
+            entries = prefetched
+            isLoadingSource = false
+            
+            SourceSwitchTiming.end("load.done(prefetch)")
+            
+            if !entries.isEmpty {
+                focusedIndex = 0
+            }
+            
+            if shouldReopenSlideMode && !entries.isEmpty {
+                shouldReopenSlideMode = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    reopenSlideModeAfterSwitch()
+                }
+            }
+            return
+        }
+        
+        // S050: Prefetch not ready — fallback to async load
+        SourceSwitchTiming.mark("prefetch.miss")
+        
+        // Show spinner only if async load takes >100ms
         let spinnerTimer = DispatchWorkItem {
+            guard isLoadingSource else { return }
             showLoadingSpinner = true
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: spinnerTimer)
         
+        // Capture source reference for background work
+        let source = imageSource
 
-        
-        // S050: Try prefetched entries first (loaded during SwiftUI re-evaluation gap)
-                if let prefetched = consumePrefetchedEntries?() {
-                    SourceSwitchTiming.mark("prefetch.hit")
-                    
-                    entries = prefetched
-                    isLoadingSource = false
-                    showLoadingSpinner = false
-                    spinnerTimer.cancel()
-                    
-                    SourceSwitchTiming.end("load.done(prefetch)")
-                    
-                    if !entries.isEmpty {
-                        focusedIndex = 0
-                    }
-                    
-                    // S005: Reopen Slide Mode if flag is set
-                    if shouldReopenSlideMode && !entries.isEmpty {
-                        shouldReopenSlideMode = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            reopenSlideModeAfterSwitch()
-                        }
-                    }
-                    return
+        // Run listImageEntries off main thread (#91)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let loadedEntries = source.listImageEntries()
+            
+            DispatchQueue.main.async {
+                spinnerTimer.cancel()
+                // Stale check: discard if source changed during loading
+                guard loadID == newLoadID else { return }
+                
+                entries = loadedEntries
+                isLoadingSource = false
+                showLoadingSpinner = false
+                
+                SourceSwitchTiming.end("load.done")
+                
+                if !entries.isEmpty {
+                    focusedIndex = 0
                 }
                 
-                // S050: Prefetch not ready — fallback to async load
-                SourceSwitchTiming.mark("prefetch.miss")
-                
-                // Capture source reference for background work
-                let source = imageSource
-                
-                // Run listImageEntries off main thread (#91)
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let loadedEntries = source.listImageEntries()
-                    
-                    DispatchQueue.main.async {
-                        spinnerTimer.cancel()
-                        // Stale check: discard if source changed during loading
-                        guard loadID == newLoadID else { return }
-                        
-                        entries = loadedEntries
-                        isLoadingSource = false
-                        showLoadingSpinner = false
-                        
-                        // S050: T5 — entries available, UI can render
-                        SourceSwitchTiming.end("load.done")
-                        
-                        // #52: Filer does not restore last position
-                        if !entries.isEmpty {
-                            focusedIndex = 0
-                        }
-                        
-                        // S005: Reopen Slide Mode if flag is set
-                        if shouldReopenSlideMode && !entries.isEmpty {
-                            shouldReopenSlideMode = false
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                reopenSlideModeAfterSwitch()
-                            }
-                        }
+                // S005: Reopen Slide Mode if flag is set
+                if shouldReopenSlideMode && !entries.isEmpty {
+                    shouldReopenSlideMode = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        reopenSlideModeAfterSwitch()
                     }
                 }
+            }
+        }
     }
    
     
