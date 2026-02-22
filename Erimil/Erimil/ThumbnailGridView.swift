@@ -802,6 +802,10 @@ struct ThumbnailGridView: View {
         contentHashes = [:]
         selectedPaths = []
         focusedIndex = nil
+        // Preserve viewer mode for re-entry after source switch (e.g., mouse click)
+        if previewMode.isViewer {
+            shouldReopenViewerMode = true
+        }
         previewMode = .none
         entries = []
         isLoadingSource = true
