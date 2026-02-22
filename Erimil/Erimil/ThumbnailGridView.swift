@@ -1049,32 +1049,16 @@ struct ThumbnailGridView: View {
         switch event.keyCode {
         // Arrow keys
         case 123: // Left arrow - #72: RTL-aware
-            if event.modifierFlags.contains(.control) {
-                onRequestPreviousSource?()
-            } else {
-                moveFocus(by: isRTL ? 1 : -1)
-            }
+            moveFocus(by: isRTL ? 1 : -1)
             return true
         case 124: // Right arrow - #72: RTL-aware
-            if event.modifierFlags.contains(.control) {
-                onRequestNextSource?()
-            } else {
-                moveFocus(by: isRTL ? -1 : 1)
-            }
+            moveFocus(by: isRTL ? -1 : 1)
             return true
-        case 126: // Up arrow - S017: added Ctrl+ for source nav
-            if event.modifierFlags.contains(.control) {
-                onRequestPreviousSource?()
-            } else {
-                moveFocus(by: -columnCount)
-            }
+        case 126: // Up arrow
+            moveFocus(by: -columnCount)
             return true
-        case 125: // Down arrow - S017: added Ctrl+ for source nav
-            if event.modifierFlags.contains(.control) {
-                onRequestNextSource?()
-            } else {
-                moveFocus(by: columnCount)
-            }
+        case 125: // Down arrow
+            moveFocus(by: columnCount)
             return true
             
         // Escape
@@ -1161,15 +1145,11 @@ struct ThumbnailGridView: View {
                 moveFocus(by: isRTL ? -1 : 1)  // #72: RTL-aware
             }
             return true
-        // S017: W - row up, Ctrl+W - previous source
+        // S017: W - row up (Ctrl+W handled by early source navigation)
         case "w":
-            if event.modifierFlags.contains(.control) {
-                onRequestPreviousSource?()
-            } else {
-                moveFocus(by: -columnCount)
-            }
+            moveFocus(by: -columnCount)
             return true
-        // S017: S - row down, Ctrl+S - next source, #62: Shift+S - bookmark
+        // S017: S - row down (Ctrl+S handled by early source navigation), #62: Shift+S - bookmark
         case "s":
             if event.modifierFlags.contains(.shift) {
                 // #62: Shift+S = add/delete bookmark at current position
@@ -1182,8 +1162,6 @@ struct ThumbnailGridView: View {
                     window: NSApp.keyWindow,
                     onChanged: { bookmarksVersion += 1 }
                 )
-            } else if event.modifierFlags.contains(.control) {
-                onRequestNextSource?()
             } else {
                 moveFocus(by: columnCount)
             }
@@ -2548,7 +2526,6 @@ struct ViewerView: View {
     // @State private var prefetcher = ImagePrefetcher()
     
     @State private var previousViewerIndex: Int = 0
-    @State private var currentSourceURL: URL?
     
     // #62 Phase 5: Bookmark list overlay state
     @State private var showBookmarkList: Bool = false
@@ -2672,9 +2649,6 @@ struct ViewerView: View {
         }
         .clipped()
         .onAppear {
-            if currentSourceURL != imageSource.url {
-                currentSourceURL = imageSource.url
-            }
             viewerIndex = currentIndex
             previousViewerIndex = currentIndex
             isDeskewEnabled = CacheManager.shared.isDeskewEnabled(for: imageSource.url)  // #101
