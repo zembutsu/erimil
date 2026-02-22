@@ -103,17 +103,7 @@ Manages thumbnails, metadata, and aspect ratio information.
     - `isWideImage(for:path:threshold:)` - Check if image is wide (default threshold: 1.3)
     - `clearAspectRatioCache()` - Clear on source change
 
-### 8. Prefetch Layer (S016)
-
-Manages image prefetching for smooth navigation.
-
-- **ImagePrefetcher**: LRU cache with direction-aware prefetching
-  - Configurable cache size
-  - Cancellable prefetch tasks
-  - Prioritizes images in travel direction
-  - Thread-safe via serial queue
-
-### 9. Spread Navigation Layer (S020/S021)
+### 8. Spread Navigation Layer (S020/S021)
 
 Handles spread (two-page) display logic and navigation.
 
@@ -127,7 +117,7 @@ Handles spread (two-page) display logic and navigation.
   - Auto-detect wide images as single pages
   - Manual single page markers via V key
 
-### 10. View Layer
+### 9. View Layer
 
 SwiftUI views for user interaction.
 
@@ -147,12 +137,9 @@ SwiftUI views for user interaction.
     - Uses SpreadImageViewer for image display
 - **ThumbnailCell**: Individual thumbnail with selection overlay
 - **ImagePreviewView**: Quick Look modal preview (Enter → Slide Mode)
-- **ImageViewerCore**: Shared image viewer component (S003/S016)
-  - Used by Quick Look and other viewer modes
-  - Provides: image display, navigation, favorite jump, position indicator
 - **SettingsView**: Settings panel (⌘,)
 
-### 11. Slide Mode Layer
+### 10. Slide Mode Layer
 
 Fullscreen image viewing with Favorites Mode and source navigation.
 
@@ -206,7 +193,7 @@ Fullscreen image viewing with Favorites Mode and source navigation.
   - × markers for selections (red)
   - Always shown for consistent layout (even with 1 image)
 
-### 12. Key Handling Layer (S031)
+### 11. Key Handling Layer (S031)
 
 Consolidated key handling logic shared across viewer modes.
 
@@ -477,8 +464,6 @@ Erimil/
 │   └── SlideKeyHandler          # Supplementary key view (Space only)
 ├── SpreadImageViewer.swift      # Spread view with double buffering (S020/S021)
 │   └── SpreadNavigationHelper   # Spread-aware navigation utility
-├── ImageViewerCore.swift        # Shared image viewer component (S003/S016)
-├── ImagePrefetcher.swift        # Image prefetch cache (S016)
 ├── SourceNavigator.swift        # Sibling source discovery utility
 ├── SourcePositionIndicator.swift # Source position dot/bar indicator
 ├── ImageSource.swift            # Protocol + ImageEntry model
