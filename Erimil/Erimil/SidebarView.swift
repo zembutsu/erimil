@@ -4,6 +4,7 @@
 //
 //  Updated: S010 (2025-01-11) - Double-click to open Slide Mode
 //  Updated: S023 (2026-01-27) - Preserve expansion state on reload
+//  Updated: S050 (2026-02-22) - Unified source selection callback (#93)
 //
 
 import SwiftUI
@@ -11,11 +12,10 @@ import os
 
 struct SidebarView: View {
     @Binding var selectedFolderURL: URL?
-    @Binding var selectedSourceURL: URL?
-    let hasUnsavedChanges: Bool
-    let onZipSelectionAttempt: (URL) -> Void
-    var onFolderSelectionAttempt: ((URL) -> Void)?
-    var onPdfSelectionAttempt: ((URL) -> Void)?
+    // S050: Changed from @Binding to read-only — sidebar doesn't write to source selection
+    let currentSourceURL: URL?
+    // S050: 3 callbacks (onZip/Folder/Pdf) → 1 unified callback
+    let onSourceSelect: (URL, ImageSourceType) -> Void
     var onOpenSlideMode: ((URL) -> Void)?  // S010: Double-click to open Slide Mode
     let reloadTrigger: UUID
     
@@ -29,7 +29,7 @@ struct SidebarView: View {
                     ForEach(root.children ?? [], id: \.url) { node in
                         NodeTreeView(
                             node: node,
-                            selectedSourceURL: selectedSourceURL,
+                            selectedSourceURL: currentSourceURL,
                             expandedNodes: $expandedNodes,
                             onTap: handleNodeTap,
                             onDoubleTap: handleNodeDoubleTap
@@ -89,14 +89,14 @@ struct SidebarView: View {
         }
     }
     
+    // S050: Unified handler — determines type from node, calls single callback
     private func handleNodeTap(_ node: FolderNode) {
         if node.isZip {
-            onZipSelectionAttempt(node.url)
+            onSourceSelect(node.url, .archive)
         } else if node.isPdf {
-            onPdfSelectionAttempt?(node.url)
+            onSourceSelect(node.url, .pdf)
         } else if node.isDirectory {
-            // フォルダの場合、画像があれば右ペインに表示
-            onFolderSelectionAttempt?(node.url)
+            onSourceSelect(node.url, .folder)
         }
     }
     
@@ -104,11 +104,11 @@ struct SidebarView: View {
     private func handleNodeDoubleTap(_ node: FolderNode) {
         // First select the node (same as single tap)
         if node.isZip {
-            onZipSelectionAttempt(node.url)
+            onSourceSelect(node.url, .archive)
         } else if node.isPdf {
-            onPdfSelectionAttempt?(node.url)
+            onSourceSelect(node.url, .pdf)
         } else if node.isDirectory {
-            onFolderSelectionAttempt?(node.url)
+            onSourceSelect(node.url, .folder)
         }
         
         // Then open Slide Mode after a brief delay (to let selection complete)
@@ -272,6 +272,8 @@ struct InstantClickHandler: NSViewRepresentable {
             if event.clickCount == 2 {
                 onDoubleClick?()
             } else if event.clickCount == 1 {
+                // S050: T0 — click fires
+                SourceSwitchTiming.start("click")
                 onSingleClick?()
             }
         }
@@ -307,10 +309,8 @@ struct NodeRowView: View {
 #Preview {
     SidebarView(
         selectedFolderURL: .constant(nil),
-        selectedSourceURL: .constant(nil),
-        hasUnsavedChanges: false,
-        onZipSelectionAttempt: { _ in },
-        onFolderSelectionAttempt: { _ in },
+        currentSourceURL: nil,
+        onSourceSelect: { _, _ in },
         onOpenSlideMode: { _ in },
         reloadTrigger: UUID()
     )
