@@ -33,6 +33,7 @@ struct ContentView: View {
     @State private var showUnsavedAlert = false
     
     var body: some View {
+        let selection = sourceSelection
         NavigationSplitView {
             // S050: 3 callbacks → 1 unified callback + read-only URL for highlight
             SidebarView(
@@ -62,7 +63,10 @@ struct ContentView: View {
                         navigateToPreviousSource()
                     },
                     shouldReopenSlideMode: $shouldReopenSlideMode,
-                    shouldReopenViewerMode: $shouldReopenViewerMode
+                    shouldReopenViewerMode: $shouldReopenViewerMode,
+                    consumePrefetchedEntries: {
+                        selection.consumePrefetchedEntries(for: imageSource.url)
+                    }
                 )
                 // NOTE: .id() removed (S036) — loadSource() handles full state reset via onChange(imageSource.url)
                 // S010: Trigger Slide Mode open from sidebar
@@ -118,6 +122,9 @@ struct ContentView: View {
     // S050: updateImageSource() REMOVED — model.select() replaces it entirely
     
     private func handleSourceSelectionAttempt(url: URL, type: ImageSourceType) {
+        // S050: T1 — callback arrived at ContentView
+        SourceSwitchTiming.mark("callback")
+        
         // 同じソースを選択した場合は何もしない
         if url == sourceSelection.currentURL && type == sourceSelection.currentType {
             return

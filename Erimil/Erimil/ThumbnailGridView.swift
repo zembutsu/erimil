@@ -107,6 +107,7 @@ struct ThumbnailGridView: View {
     var onRequestPreviousSource: (() -> Void)?  // S005: Source navigation
     @Binding var shouldReopenSlideMode: Bool    // S005: Reopen after source switch
     @Binding var shouldReopenViewerMode: Bool   // S016: Reopen Viewer Mode after source switch
+    var consumePrefetchedEntries: (() -> [ImageEntry]?)?  // S050: Prefetch from SourceSelection
     
     @ObservedObject private var settings = AppSettings.shared
     
@@ -792,6 +793,7 @@ struct ThumbnailGridView: View {
     // MARK: - Data Loading
     
     private func loadSource() {
+        SourceSwitchTiming.mark("load.start")
         // Generate new load ID to invalidate any pending async operations
         let newLoadID = UUID()
         loadID = newLoadID
@@ -817,88 +819,117 @@ struct ThumbnailGridView: View {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: spinnerTimer)
         
-        // Capture source reference for background work
-        let source = imageSource
+
         
-        // Run listImageEntries off main thread (#91)
-        DispatchQueue.global(qos: .userInitiated).async {
-            let loadedEntries = source.listImageEntries()
-            
-            DispatchQueue.main.async {
-                spinnerTimer.cancel()
-                // Stale check: discard if source changed during loading
-                guard loadID == newLoadID else { return }
-                
-                entries = loadedEntries
-                isLoadingSource = false
-                showLoadingSpinner = false
-                
-                // #52: Filer does not restore last position
-                // Last position is restored when entering Viewer/Slide Mode
-                if !entries.isEmpty {
-                    focusedIndex = 0
+        // S050: Try prefetched entries first (loaded during SwiftUI re-evaluation gap)
+                if let prefetched = consumePrefetchedEntries?() {
+                    SourceSwitchTiming.mark("prefetch.hit")
+                    
+                    entries = prefetched
+                    isLoadingSource = false
+                    showLoadingSpinner = false
+                    spinnerTimer.cancel()
+                    
+                    SourceSwitchTiming.end("load.done(prefetch)")
+                    
+                    if !entries.isEmpty {
+                        focusedIndex = 0
+                    }
+                    
+                    // S005: Reopen Slide Mode if flag is set
+                    if shouldReopenSlideMode && !entries.isEmpty {
+                        shouldReopenSlideMode = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            reopenSlideModeAfterSwitch()
+                        }
+                    }
+                    return
                 }
                 
-                // S005: Reopen Slide Mode if flag is set (after source navigation)
-                if shouldReopenSlideMode && !entries.isEmpty {
-                    shouldReopenSlideMode = false
+                // S050: Prefetch not ready — fallback to async load
+                SourceSwitchTiming.mark("prefetch.miss")
+                
+                // Capture source reference for background work
+                let source = imageSource
+                
+                // Run listImageEntries off main thread (#91)
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let loadedEntries = source.listImageEntries()
                     
-                    // Delay slightly to ensure view is ready
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        let favIndices = favoriteIndices
+                    DispatchQueue.main.async {
+                        spinnerTimer.cancel()
+                        // Stale check: discard if source changed during loading
+                        guard loadID == newLoadID else { return }
                         
-                        // S010: Get source position info
-                        let positionInfo = SourceNavigator.positionInfo(for: imageSource.url)
-                        let sourceName = imageSource.url.lastPathComponent
-
-                        // S010: Convert selectedPaths to indices (empty for new source)
-                        let selectedIndices: Set<Int> = []
-
-                        // Use updateSource to maintain fullscreen state
-                        SlideWindowController.shared.updateSource(
-                            imageSource: imageSource,
-                            entries: entries,
-                            favoriteIndices: favIndices,
-                            selectedIndices: selectedIndices,
-                            sourceName: sourceName,
-                            sourcePosition: positionInfo?.position ?? 0,
-                            totalSources: positionInfo?.total ?? 0,
-                            onClose: {
-                                Logger.thumbnailGrid.info("SlideWindowController closed (after source switch)")
-                            },
-                            onIndexChange: { newIndex in
-                                focusedIndex = newIndex
-                                // #52: Save last position
-                                CacheManager.shared.setLastPosition(for: imageSource.url, index: newIndex)
-                            },
-                            onNextSource: onRequestNextSource,
-                            onPreviousSource: onRequestPreviousSource,
-                            onToggleFavorite: { [self] index in
-                                guard index >= 0, index < entries.count else { return }
-                                let entry = entries[index]
-                                let hash = contentHashes[entry.path]
-                                _ = CacheManager.shared.toggleFavorite(
-                                    sourceURL: imageSource.url,
-                                    entryPath: entry.path,
-                                    contentHash: hash
-                                )
-                                favoritesVersion += 1
-                            },
-                            onToggleSelection: { [self] index in
-                                guard index >= 0, index < entries.count else { return }
-                                let entry = entries[index]
-                                if selectedPaths.contains(entry.path) {
-                                    selectedPaths.remove(entry.path)
-                                } else {
-                                    selectedPaths.insert(entry.path)
-                                }
+                        entries = loadedEntries
+                        isLoadingSource = false
+                        showLoadingSpinner = false
+                        
+                        // S050: T5 — entries available, UI can render
+                        SourceSwitchTiming.end("load.done")
+                        
+                        // #52: Filer does not restore last position
+                        if !entries.isEmpty {
+                            focusedIndex = 0
+                        }
+                        
+                        // S005: Reopen Slide Mode if flag is set
+                        if shouldReopenSlideMode && !entries.isEmpty {
+                            shouldReopenSlideMode = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                reopenSlideModeAfterSwitch()
                             }
-                        )
-
+                        }
                     }
                 }
-            }
-        }
+    }
+   
+    
+    // S050: Extracted from loadSource() — reopen Slide Mode after source switch
+    private func reopenSlideModeAfterSwitch() {
+            let favIndices = favoriteIndices
+            let positionInfo = SourceNavigator.positionInfo(for: imageSource.url)
+            let sourceName = imageSource.url.lastPathComponent
+            let selectedIndices: Set<Int> = []
+            
+            SlideWindowController.shared.updateSource(
+                imageSource: imageSource,
+                entries: entries,
+                favoriteIndices: favIndices,
+                selectedIndices: selectedIndices,
+                sourceName: sourceName,
+                sourcePosition: positionInfo?.position ?? 0,
+                totalSources: positionInfo?.total ?? 0,
+                onClose: {
+                    Logger.thumbnailGrid.info("SlideWindowController closed (after source switch)")
+                },
+                onIndexChange: { newIndex in
+                    focusedIndex = newIndex
+                    CacheManager.shared.setLastPosition(for: imageSource.url, index: newIndex)
+                },
+                onNextSource: onRequestNextSource,
+                onPreviousSource: onRequestPreviousSource,
+                onToggleFavorite: { [self] index in
+                    guard index >= 0, index < entries.count else { return }
+                    let entry = entries[index]
+                    let hash = contentHashes[entry.path]
+                    _ = CacheManager.shared.toggleFavorite(
+                        sourceURL: imageSource.url,
+                        entryPath: entry.path,
+                        contentHash: hash
+                    )
+                    favoritesVersion += 1
+                },
+                onToggleSelection: { [self] index in
+                    guard index >= 0, index < entries.count else { return }
+                    let entry = entries[index]
+                    if selectedPaths.contains(entry.path) {
+                        selectedPaths.remove(entry.path)
+                    } else {
+                        selectedPaths.insert(entry.path)
+                    }
+                }
+            )
     }
     
     private func loadThumbnailIfNeeded(for entry: ImageEntry) {
@@ -3500,6 +3531,7 @@ struct ExportConfirmationView: View {
         selectedPaths: .constant([]),
         onExportSuccess: nil,
         shouldReopenSlideMode: .constant(false),
-        shouldReopenViewerMode: .constant(false)
+        shouldReopenViewerMode: .constant(false),
+        consumePrefetchedEntries: nil
     )
 }

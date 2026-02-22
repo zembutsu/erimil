@@ -272,6 +272,8 @@ struct InstantClickHandler: NSViewRepresentable {
             if event.clickCount == 2 {
                 onDoubleClick?()
             } else if event.clickCount == 1 {
+                // S050: T0 — click fires
+                SourceSwitchTiming.start("click")
                 onSingleClick?()
             }
         }
