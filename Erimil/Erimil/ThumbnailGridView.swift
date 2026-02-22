@@ -174,9 +174,17 @@ struct ThumbnailGridView: View {
     }
 
     var body: some View {
+        // S051: Guard against stale entries during source switch (#121)
+        // When imageSource changes, body re-evaluates BEFORE onChange fires loadSource().
+        // Without this guard, ViewerView/ThumbnailSidebarView would render with
+        // new imageSource + old entries for one frame, causing "Entry not found" errors.
+        let entriesAreStale = currentSourceURL != nil && currentSourceURL != imageSource.url
         Group {
-            // S013: Viewer Mode - full window image display
-            if case .viewer(let viewerIndex) = previewMode {
+            if entriesAreStale {
+                // Transient state: source changed, loadSource() pending from onChange
+                Color.black.ignoresSafeArea()
+            } else if case .viewer(let viewerIndex) = previewMode {
+                // S013: Viewer Mode - full window image display
                 viewerModeView(index: viewerIndex)
             } else {
                 thumbnailBrowserView
