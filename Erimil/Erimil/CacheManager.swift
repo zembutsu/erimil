@@ -84,6 +84,10 @@ class CacheManager {
     /// contentHash → thumbnail (memory cache, thread-safe)
     private let thumbnailCache = NSCache<NSString, NSImage>()
     
+    /// contentHash → full-size image (memory cache, thread-safe)
+    /// #134: Prevents redundant fullImage decode when SwiftUI body re-evaluates
+    private let fullImageCache = NSCache<NSString, NSImage>()
+    
     /// Favorites lock for thread-safety
     private let favoritesLock = NSLock()
     
@@ -139,6 +143,7 @@ class CacheManager {
         
         // Configure cache
         thumbnailCache.countLimit = 200
+        fullImageCache.countLimit = 200
         
         // Create directories if needed
         createDirectoriesIfNeeded()
@@ -314,8 +319,16 @@ class CacheManager {
             return nil
         }
         
-        guard let image = NSImage(contentsOf: url) else {
-            return nil
+        // #134 P6: Use CGImageSource + materialize to force complete pixel decode.
+        // NSImage(contentsOf:) creates a lazily-decoded image that SwiftUI renders
+        // progressively (visible top-to-bottom drawing).
+        guard let image = ImageUtilities.loadAndMaterialize(from: url) else {
+            // Fallback to NSImage if CGImageSource fails
+            guard let fallback = NSImage(contentsOf: url) else {
+                return nil
+            }
+            thumbnailCache.setObject(fallback, forKey: contentHash as NSString)
+            return fallback
         }
         
         // Add to memory cache
@@ -342,6 +355,18 @@ class CacheManager {
         
         // Save to disk
         saveThumbnailToDisk(image, for: contentHash)
+    }
+    
+    // MARK: - Full Image Memory Cache (#134)
+    
+    /// Get full-size image from memory cache
+    func getFullImageFromMemory(for contentHash: String) -> NSImage? {
+        return fullImageCache.object(forKey: contentHash as NSString)
+    }
+    
+    /// Save full-size image to memory cache (no disk persistence)
+    func cacheFullImage(_ image: NSImage, for contentHash: String) {
+        fullImageCache.setObject(image, forKey: contentHash as NSString)
     }
     
     // MARK: - Hybrid Favorites Management
@@ -756,6 +781,7 @@ class CacheManager {
     /// Clear memory cache
     func clearMemoryCache() {
         thumbnailCache.removeAllObjects()
+        fullImageCache.removeAllObjects()
         Logger.cache.debug("Memory cache cleared")
     }
     

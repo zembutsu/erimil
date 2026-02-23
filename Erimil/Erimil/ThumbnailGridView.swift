@@ -996,9 +996,27 @@ struct ThumbnailGridView: View {
             fullPath = entry.path  // FolderManager already has full path
         }
         
+        // #134 P1: Synchronous memory cache check — avoid async dispatch + ProgressView flash
+        let cache = CacheManager.shared
+        let pathHash = cache.pathHash(for: fullPath)
+        if let contentHash = cache.getContentHash(for: pathHash),
+           let cached = cache.getThumbnailFromMemory(for: contentHash) {
+            thumbnails[entryPath] = cached
+            if let hash = cache.getContentHashForPath(fullPath) {
+                contentHashes[entryPath] = hash
+            }
+            Logger.thumbnailGrid.debug("★PERF★ SYNC memory hit: \(entryName)")
+            return
+        }
+        
         Logger.thumbnailGrid.debug("Starting for \(entryName) from \(capturedSourceURL.lastPathComponent), loadID: \(capturedLoadID, privacy: .public)")
         
+        let tDispatch = CFAbsoluteTimeGetCurrent()
+        
         DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let tBgStart = CFAbsoluteTimeGetCurrent()
+            let dispatchLatencyMs = (tBgStart - tDispatch) * 1000
+            
             // FIRST: Check validity on main thread BEFORE expensive operation
             var stillValid = false
             DispatchQueue.main.sync {
@@ -1010,16 +1028,24 @@ struct ThumbnailGridView: View {
             
             guard stillValid else { return }
             
+            let tGenStart = CFAbsoluteTimeGetCurrent()
+            let validityCheckMs = (tGenStart - tBgStart) * 1000
+            
             // Now generate thumbnail
             guard let thumbnail = currentSource.thumbnail(for: entry, maxSize: maxSize) else {
                 Logger.thumbnailGrid.error("Failed for: \(entryName) from \(capturedSourceURL.lastPathComponent)")
                 return
             }
             
+            let tGenEnd = CFAbsoluteTimeGetCurrent()
+            let genMs = (tGenEnd - tGenStart) * 1000
+            
             // Get content hash from CacheManager (it was registered during thumbnail generation)
             let contentHash = CacheManager.shared.getContentHashForPath(fullPath)
             
             DispatchQueue.main.async {
+                let tMainStart = CFAbsoluteTimeGetCurrent()
+                
                 // Re-check validity after thumbnail generated
                 guard capturedLoadID == loadID else {
                     Logger.thumbnailGrid.debug("Discarding stale thumbnail: \(entryName) (loadID mismatch)")
@@ -1043,7 +1069,11 @@ struct ThumbnailGridView: View {
                     contentHashes[entryPath] = hash
                 }
                 
-                Logger.thumbnailGrid.info("Success: \(entryName)")
+                let tDone = CFAbsoluteTimeGetCurrent()
+                let mainDispatchMs = (tMainStart - tGenEnd) * 1000
+                let assignMs = (tDone - tMainStart) * 1000
+                let totalMs = (tDone - tDispatch) * 1000
+                Logger.thumbnailGrid.info("★PERF★ \(entryName): dispatch=\(String(format: "%.1f", dispatchLatencyMs))ms valid=\(String(format: "%.1f", validityCheckMs))ms gen=\(String(format: "%.1f", genMs))ms mainWait=\(String(format: "%.1f", mainDispatchMs))ms assign=\(String(format: "%.1f", assignMs))ms TOTAL=\(String(format: "%.1f", totalMs))ms")
             }
         }
     }

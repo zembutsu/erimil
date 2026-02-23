@@ -130,7 +130,7 @@ class ArchiveManager: ImageSource {
         
         // Cache miss - extract and generate
         Logger.thumbnailGrid.debug("Cache MISS for \(entry.name), extracting...")
-        guard let (image, imageData) = extractImageWithData(for: entry) else { return nil }
+        guard let imageData = extractData(for: entry) else { return nil }
         
         // Calculate content hash
         let contentHash = cache.contentHash(for: imageData)
@@ -138,8 +138,15 @@ class ArchiveManager: ImageSource {
         // Register mapping
         cache.registerMapping(pathHash: pathHash, contentHash: contentHash)
         
-        // Generate thumbnail
-        let thumbnail = resizedImage(image, maxSize: maxSize)
+        // #134 P6: Single-pass downsample via CGImageSource (no full bitmap allocation)
+        guard let thumbnail = ImageUtilities.downsampledThumbnail(from: imageData, maxSize: maxSize) else {
+            Logger.thumbnailGrid.error("CGImageSource thumbnail failed for \(entry.name), falling back to NSImage")
+            // Fallback: decode + resize (legacy path)
+            guard let image = NSImage(data: imageData) else { return nil }
+            let fallback = resizedImage(image, maxSize: maxSize)
+            cache.saveThumbnail(fallback, for: contentHash)
+            return fallback
+        }
         
         // Save to cache
         cache.saveThumbnail(thumbnail, for: contentHash)
@@ -147,15 +154,51 @@ class ArchiveManager: ImageSource {
         return thumbnail
     }
     
-    /// Get full-size image
+    /// Get full-size image (fully materialized — no progressive rendering)
     func fullImage(for entry: ImageEntry) -> NSImage? {
-        return extractImageWithData(for: entry)?.0
+        // #134: Check memory cache first (prevents redundant decode on SwiftUI re-evaluation)
+        let cache = CacheManager.shared
+        let fullPath = url.path + "/" + entry.path
+        let pathHash = cache.pathHash(for: fullPath)
+        if let contentHash = cache.getContentHash(for: pathHash),
+           let cached = cache.getFullImageFromMemory(for: contentHash) {
+            Logger.archive.info("★PERF★ fullImage CACHE HIT \(entry.name)")
+            return cached
+        }
+        
+        let t0 = CFAbsoluteTimeGetCurrent()
+        guard let data = extractData(for: entry) else { return nil }
+        let t1 = CFAbsoluteTimeGetCurrent()
+        
+        // #134 P6: Use CGImageSource + materialize to force complete decode.
+        // NSImage(data:) creates lazily-decoded image that renders progressively.
+        if let materialized = ImageUtilities.materializedImage(from: data) {
+            let t2 = CFAbsoluteTimeGetCurrent()
+            let extractMs = (t1 - t0) * 1000
+            let matMs = (t2 - t1) * 1000
+            Logger.archive.info("★PERF★ fullImage \(entry.name): extract=\(String(format: "%.1f", extractMs))ms materialize=\(String(format: "%.1f", matMs))ms total=\(String(format: "%.1f", extractMs + matMs))ms size=\(materialized.size.debugDescription)")
+            
+            // Cache with contentHash
+            let contentHash = cache.contentHash(for: data)
+            cache.registerMapping(pathHash: pathHash, contentHash: contentHash)
+            cache.cacheFullImage(materialized, for: contentHash)
+            
+            return materialized
+        }
+        
+        // Fallback: legacy path
+        Logger.archive.error("materializedImage failed for \(entry.name), falling back to NSImage(data:)")
+        guard let image = NSImage(data: data) else {
+            Logger.archive.error("Invalid image data for: \(entry.name), size: \(data.count, privacy: .public) bytes")
+            return nil
+        }
+        return image
     }
     
     // MARK: - Private Helpers
     
-    /// Extract image and raw data from ZIP
-    private func extractImageWithData(for imageEntry: ImageEntry) -> (NSImage, Data)? {
+    /// Extract raw data from ZIP entry
+    private func extractData(for imageEntry: ImageEntry) -> Data? {
         return accessQueue.sync {
             Logger.archive.debug("Looking for '\(imageEntry.path)' in '\(self.url.lastPathComponent)'")
             
@@ -200,12 +243,7 @@ class ArchiveManager: ImageSource {
                 return nil
             }
             
-            guard let image = NSImage(data: imageData) else {
-                Logger.archive.error("Invalid image data for: \(imageEntry.name), size: \(imageData.count, privacy: .public) bytes")
-                return nil
-            }
-            
-            return (image, imageData)
+            return imageData
         }
     }
     
