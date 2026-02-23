@@ -2656,7 +2656,7 @@ struct ViewerView: View {
                             favoritesVersion: favoritesVersion,
                             selectionMode: selectionMode,
                             orientation: .vertical,
-                            onSelect: { index in navigateTo(index) }
+                            onSelect: { index in navigateTo(spreadSnappedIndex(index)) }
                         )
                         mainContentView
                             .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)
@@ -2674,7 +2674,7 @@ struct ViewerView: View {
                             favoritesVersion: favoritesVersion,
                             selectionMode: selectionMode,
                             orientation: .horizontal,
-                            onSelect: { index in navigateTo(index) }
+                            onSelect: { index in navigateTo(spreadSnappedIndex(index)) }
                         )
                     }
                     .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)
@@ -2933,6 +2933,12 @@ struct ViewerView: View {
         Logger.viewer.debug("navigateTo: \(viewerIndex, privacy: .public) → \(index, privacy: .public)")
         previousViewerIndex = viewerIndex
         viewerIndex = index
+    }
+    
+    /// #129: Snap index to spread pair start if target is a non-leading page
+    private func spreadSnappedIndex(_ index: Int) -> Int {
+        SpreadNavigationHelper.spreadStartIndex(
+            for: index, sourceURL: imageSource.url, entries: entries)
     }
     
     private func goToPrevious() {

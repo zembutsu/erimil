@@ -146,6 +146,34 @@ enum SpreadNavigationHelper {
         
         return nil
     }
+    
+    /// #129: Compute correct spread-start index by tracing alignment from index 0
+    /// Local checks (shouldShowSinglePage at index-1) cannot determine global spread
+    /// alignment when single-page markers exist earlier in the sequence.
+    /// This function traces the actual pairing from the start to find which spread
+    /// pair contains the target index.
+    static func spreadStartIndex(
+        for targetIndex: Int,
+        sourceURL: URL,
+        entries: [ImageEntry]
+    ) -> Int {
+        guard AppSettings.shared.isSpreadModeEnabled else { return targetIndex }
+        
+        var i = 0
+        while i < entries.count {
+            if shouldShowSinglePage(for: sourceURL, at: i, totalCount: entries.count, entries: entries) {
+                if i == targetIndex { return i }
+                i += 1
+            } else {
+                // Spread pair: i|i+1
+                if i == targetIndex || i + 1 == targetIndex {
+                    return i
+                }
+                i += 2
+            }
+        }
+        return targetIndex
+    }
 }
 
 // MARK: - Spread Image Viewer
@@ -166,7 +194,6 @@ struct SpreadImageViewer: View {
     @State private var bufferB: (left: NSImage?, right: NSImage?, index: Int)? = nil
     @State private var activeBuffer: Int = 0  // 0 = A, 1 = B
     @State private var isLoading: Bool = true
-    @State private var showLoadingText: Bool = false  // #122: 100ms delay to avoid flash
     @State private var spreadUpdateTrigger: Bool = false
     
     // Convenience initializer without bindings (for backward compatibility)
@@ -276,7 +303,7 @@ struct SpreadImageViewer: View {
             }
             
             // Loading indicator (only on initial load)
-            if isLoading && bufferA == nil && bufferB == nil && showLoadingText {
+            if isLoading && bufferA == nil && bufferB == nil {
                 ProgressView("読み込み中...")
                     .foregroundStyle(.white)
                     .zIndex(2)
@@ -284,12 +311,6 @@ struct SpreadImageViewer: View {
         }
         .onAppear {
             loadImages()
-            // #122: Show loading text only if load takes >100ms
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                if isLoading && bufferA == nil && bufferB == nil {
-                    showLoadingText = true
-                }
-            }
         }
         .onChange(of: currentIndex) { _, _ in
             loadImages()
