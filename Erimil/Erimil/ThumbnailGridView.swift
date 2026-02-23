@@ -861,14 +861,12 @@ struct ThumbnailGridView: View {
                 shouldReopenViewerMode = false
             }
             
-            if shouldReopenSlideMode && !entries.isEmpty {
+            if shouldReopenSlideMode {
+                // #131: Update Slide Mode even for empty entries (shows emptySourceView)
                 shouldReopenSlideMode = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     reopenSlideModeAfterSwitch()
                 }
-            } else if shouldReopenSlideMode && entries.isEmpty {
-                // #131: Clear flag on empty source
-                shouldReopenSlideMode = false
             }
             return
         }
@@ -907,14 +905,12 @@ struct ThumbnailGridView: View {
                 }
                 
                 // S005: Reopen Slide Mode if flag is set
-                if shouldReopenSlideMode && !entries.isEmpty {
+                // #131: Update even for empty entries (shows emptySourceView)
+                if shouldReopenSlideMode {
                     shouldReopenSlideMode = false
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         reopenSlideModeAfterSwitch()
                     }
-                } else if shouldReopenSlideMode && entries.isEmpty {
-                    // #131: Clear flag on empty source
-                    shouldReopenSlideMode = false
                 }
                 
                 // #131: Clear Viewer Mode flag on empty source
