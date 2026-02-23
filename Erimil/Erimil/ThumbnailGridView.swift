@@ -1002,9 +1002,8 @@ struct ThumbnailGridView: View {
         if let contentHash = cache.getContentHash(for: pathHash),
            let cached = cache.getThumbnailFromMemory(for: contentHash) {
             thumbnails[entryPath] = cached
-            if let hash = cache.getContentHashForPath(fullPath) {
-                contentHashes[entryPath] = hash
-            }
+            // #134 P4: Reuse already-resolved contentHash (was calling getContentHashForPath → redundant SHA256)
+            contentHashes[entryPath] = contentHash
             Logger.thumbnailGrid.debug("★PERF★ SYNC memory hit: \(entryName)")
             return
         }

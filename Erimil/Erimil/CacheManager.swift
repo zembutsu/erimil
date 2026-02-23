@@ -81,6 +81,11 @@ class CacheManager {
     private var pathIndex: [String: String] = [:]
     private let indexLock = NSLock()
     
+    /// #134 P4: path → pathHash cache (SHA256 is deterministic, avoid recomputation)
+    /// In-memory only, no persistence needed.
+    private var pathHashCache: [String: String] = [:]
+    private let pathHashLock = NSLock()
+    
     /// contentHash → thumbnail (memory cache, thread-safe)
     private let thumbnailCache = NSCache<NSString, NSImage>()
     
@@ -241,9 +246,20 @@ class CacheManager {
         return hashData(imageData)
     }
     
-    /// Calculate path hash for a file path
+    /// Calculate path hash for a file path (cached)
+    /// #134 P4: SHA256 is deterministic — cache results to avoid recomputation.
     func pathHash(for path: String) -> String {
-        return hashString(path)
+        pathHashLock.lock()
+        if let cached = pathHashCache[path] {
+            pathHashLock.unlock()
+            return cached
+        }
+        pathHashLock.unlock()
+        let hash = hashString(path)
+        pathHashLock.lock()
+        pathHashCache[path] = hash
+        pathHashLock.unlock()
+        return hash
     }
     
     // MARK: - Index Management
@@ -794,6 +810,9 @@ class CacheManager {
     func clearMemoryCache() {
         thumbnailCache.removeAllObjects()
         fullImageCache.removeAllObjects()
+        pathHashLock.lock()
+        pathHashCache.removeAll()
+        pathHashLock.unlock()
         Logger.cache.debug("Memory cache cleared")
     }
     
