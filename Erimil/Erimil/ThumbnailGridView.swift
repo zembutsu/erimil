@@ -564,10 +564,7 @@ struct ThumbnailGridView: View {
                                                     isLastViewed: item.index == lastViewedIndex  // #52
                                                 )
                                                 .id(item.index)
-                                                .onTapGesture(count: 2) {
-                                                    previewMode = .slideMode(index: item.index)
-                                                }
-                                                .onTapGesture(count: 1) {
+                                                .onTapGesture {
                                                     focusedIndex = item.index
                                                     toggleSelection(item.entry)
                                                 }
