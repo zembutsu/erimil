@@ -180,6 +180,7 @@ struct ThumbnailGridView: View {
         // Without this guard, ViewerView/ThumbnailSidebarView would render with
         // new imageSource + old entries for one frame, causing "Entry not found" errors.
         let entriesAreStale = currentSourceURL != nil && currentSourceURL != imageSource.url
+        let _ = Logger.thumbnailGrid.debug("body: stale=\(entriesAreStale), preview=\(String(describing: previewMode)), reopen=\(shouldReopenViewerMode), loading=\(isLoadingSource), entries=\(entries.count)")
         Group {
             if entriesAreStale {
                 // Transient state: source changed, loadSource() pending from onChange
@@ -823,7 +824,7 @@ struct ThumbnailGridView: View {
         isLoadingSource = true
         showLoadingSpinner = false
         
-        
+        Logger.thumbnailGrid.debug("loadSource: shouldReopenViewerMode=\(shouldReopenViewerMode), previewMode=\(String(describing: previewMode))")
         // S050: Try prefetched entries first (NO timer needed)
         if let prefetched = consumePrefetchedEntries?() {
             SourceSwitchTiming.mark("prefetch.hit")
@@ -837,6 +838,19 @@ struct ThumbnailGridView: View {
                 focusedIndex = 0
             }
             
+            // #122: Restore Viewer Mode immediately in same synchronous block
+            // Avoids 1+ frame gap via onChange(of: entries) → handleEntriesChange
+            if shouldReopenViewerMode && !entries.isEmpty {
+                let startIndex: Int
+                if let lastIndex = CacheManager.shared.getLastPosition(for: imageSource.url) {
+                    startIndex = min(lastIndex, entries.count - 1)
+                } else {
+                    startIndex = 0
+                }
+                previewMode = .viewer(index: startIndex)
+                shouldReopenViewerMode = false
+            }
+            
             if shouldReopenSlideMode && !entries.isEmpty {
                 shouldReopenSlideMode = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -845,6 +859,7 @@ struct ThumbnailGridView: View {
             }
             return
         }
+        Logger.thumbnailGrid.debug("loadSource: prefetch MISS — consumePrefetchedEntries returned nil")
         
         // S050: Prefetch not ready — fallback to async load
         SourceSwitchTiming.mark("prefetch.miss")

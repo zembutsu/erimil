@@ -166,6 +166,7 @@ struct SpreadImageViewer: View {
     @State private var bufferB: (left: NSImage?, right: NSImage?, index: Int)? = nil
     @State private var activeBuffer: Int = 0  // 0 = A, 1 = B
     @State private var isLoading: Bool = true
+    @State private var showLoadingText: Bool = false  // #122: 100ms delay to avoid flash
     @State private var spreadUpdateTrigger: Bool = false
     
     // Convenience initializer without bindings (for backward compatibility)
@@ -275,7 +276,7 @@ struct SpreadImageViewer: View {
             }
             
             // Loading indicator (only on initial load)
-            if isLoading && bufferA == nil && bufferB == nil {
+            if isLoading && bufferA == nil && bufferB == nil && showLoadingText {
                 ProgressView("読み込み中...")
                     .foregroundStyle(.white)
                     .zIndex(2)
@@ -283,6 +284,12 @@ struct SpreadImageViewer: View {
         }
         .onAppear {
             loadImages()
+            // #122: Show loading text only if load takes >100ms
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                if isLoading && bufferA == nil && bufferB == nil {
+                    showLoadingText = true
+                }
+            }
         }
         .onChange(of: currentIndex) { _, _ in
             loadImages()
