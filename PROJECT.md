@@ -131,9 +131,25 @@ This project uses AI-assisted development following the WORKFLOW.md guidelines:
 - ✅ Hybrid ★ auto-protect behavior for export vs delete (#103)
 - ✅ Record ★ on both pages in spread view (#104)
 - ✅ Metadata carry-over on export with per-export selection (#105)
+- ✅ Thumbnail performance: OperationQueue prefetch, PDF cache fix (#134)
+- ✅ Grid flash elimination on Viewer Mode source switch (#122)
+- ✅ Stale thumbnail fix on source switch (#127)
+- ✅ Spread view misalign on favorite navigation (#129)
+- ✅ Empty source feedback on Viewer/Full Mode entry (#131)
+- ✅ Selection tap delay: double-tap gesture removal (#138 partial)
 - 🔄 PDF page export — PDF/PNG (#100)
 - 🔄 Deskew display correction for scanned PDFs (#101)
 - 🔄 Bug fixes and refinements
+
+### v0.3.4 (Next Release) - UX Polish & Features
+- Selection tap delay: 50ms residual investigation (#138)
+- "/" command palette replacing inline help tooltips (#139)
+- "i" key metadata inspector (#140)
+- Show non-image items in Grid view (#132)
+- Grid view filtering and sorting (#97)
+- Drag & drop files to open directly in Viewer/Slide mode (#63)
+- PDF file support enhancements (#57)
+- Extract SlideWindowController.open helper (#50)
 
 ### Phase 3 (Next) - Curation Quality
 - Grid filtering (filename search) and sorting (name, size, date, ★)
