@@ -142,8 +142,13 @@ class CacheManager {
         deskewAnglesFileURL = baseDirectory.appendingPathComponent("deskew_angles.json")  // #101
         
         // Configure cache
-        thumbnailCache.countLimit = 200
-        fullImageCache.countLimit = 200
+        // #134 P3: Use totalCostLimit (bytes) instead of countLimit for thumbnails.
+        // ~180px thumbnails are ~50-100KB each; 100MB holds ~1000-2000 thumbnails,
+        // eliminating eviction-driven disk I/O for large sources (e.g. 298-page PDF).
+        thumbnailCache.totalCostLimit = 100 * 1024 * 1024  // 100MB
+        // #134 P3: Full-size images are ~4-5MB each; 5 is sufficient for Viewer/Slide
+        // navigation (current + neighbors). 200 was a memory explosion risk (~940MB).
+        fullImageCache.countLimit = 5
         
         // Create directories if needed
         createDirectoriesIfNeeded()
@@ -222,6 +227,13 @@ class CacheManager {
     func hashData(_ data: Data) -> String {
         let hash = SHA256.hash(data: data)
         return "sha256:" + hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+    
+    /// #134 P3: Estimate in-memory bitmap size for NSCache cost accounting.
+    /// Returns width × height × 4 (RGBA bytes). Used with totalCostLimit.
+    private func estimatedBitmapCost(of image: NSImage) -> Int {
+        let size = image.size
+        return Int(size.width * size.height) * 4
     }
     
     /// Calculate content hash for image data
@@ -327,12 +339,12 @@ class CacheManager {
             guard let fallback = NSImage(contentsOf: url) else {
                 return nil
             }
-            thumbnailCache.setObject(fallback, forKey: contentHash as NSString)
+            thumbnailCache.setObject(fallback, forKey: contentHash as NSString, cost: estimatedBitmapCost(of: fallback))
             return fallback
         }
         
         // Add to memory cache
-        thumbnailCache.setObject(image, forKey: contentHash as NSString)
+        thumbnailCache.setObject(image, forKey: contentHash as NSString, cost: estimatedBitmapCost(of: image))
         
         return image
     }
@@ -351,7 +363,7 @@ class CacheManager {
     /// Save thumbnail to both memory and disk cache
     func saveThumbnail(_ image: NSImage, for contentHash: String) {
         // Add to memory cache
-        thumbnailCache.setObject(image, forKey: contentHash as NSString)
+        thumbnailCache.setObject(image, forKey: contentHash as NSString, cost: estimatedBitmapCost(of: image))
         
         // Save to disk
         saveThumbnailToDisk(image, for: contentHash)
