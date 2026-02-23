@@ -419,6 +419,9 @@ struct ThumbnailGridView: View {
             }
             previewMode = .viewer(index: startIndex)
             shouldReopenViewerMode = false
+        } else if shouldReopenViewerMode && newEntries.isEmpty {
+            // #131: Clear flag on empty source to avoid Color.black stuck
+            shouldReopenViewerMode = false
         }
     }
 
@@ -428,6 +431,9 @@ struct ThumbnailGridView: View {
             shouldReopenSlideMode = false
             let index = focusedIndex ?? 0
             previewMode = .slideMode(index: index)
+        } else if newValue && entries.isEmpty {
+            // #131: Clear flag on empty source
+            shouldReopenSlideMode = false
         }
     }
 
@@ -850,6 +856,9 @@ struct ThumbnailGridView: View {
                 }
                 previewMode = .viewer(index: startIndex)
                 shouldReopenViewerMode = false
+            } else if shouldReopenViewerMode && entries.isEmpty {
+                // #131: Clear flag on empty source to avoid Color.black stuck
+                shouldReopenViewerMode = false
             }
             
             if shouldReopenSlideMode && !entries.isEmpty {
@@ -857,6 +866,9 @@ struct ThumbnailGridView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     reopenSlideModeAfterSwitch()
                 }
+            } else if shouldReopenSlideMode && entries.isEmpty {
+                // #131: Clear flag on empty source
+                shouldReopenSlideMode = false
             }
             return
         }
@@ -900,6 +912,14 @@ struct ThumbnailGridView: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                         reopenSlideModeAfterSwitch()
                     }
+                } else if shouldReopenSlideMode && entries.isEmpty {
+                    // #131: Clear flag on empty source
+                    shouldReopenSlideMode = false
+                }
+                
+                // #131: Clear Viewer Mode flag on empty source
+                if shouldReopenViewerMode && entries.isEmpty {
+                    shouldReopenViewerMode = false
                 }
             }
         }
@@ -1093,7 +1113,26 @@ struct ThumbnailGridView: View {
             }
         }
         
-        guard !entries.isEmpty else { return false }
+        // #131: Allow Viewer/Slide Mode entry on empty source (show feedback)
+        if entries.isEmpty {
+            if let chars = event.charactersIgnoringModifiers?.lowercased() {
+                switch chars {
+                case "r" where !event.modifierFlags.contains(.control):
+                    previewMode = .viewer(index: 0)
+                    return true
+                case "f" where event.modifierFlags.contains(.control):
+                    previewMode = .slideMode(index: 0)
+                    return true
+                default:
+                    break
+                }
+            }
+            if event.keyCode == 36 { // Enter
+                previewMode = .slideMode(index: 0)
+                return true
+            }
+            return false
+        }
         
         // Initialize focus if not set
         if focusedIndex == nil {
@@ -2744,49 +2783,65 @@ struct ViewerView: View {
             headerBar
             
             // #67: Main image area - now using SpreadImageViewer
-            ZStack {
-                SpreadImageViewer(
-                    imageSource: imageSource,
-                    entries: entries,
-                    currentIndex: $viewerIndex,
-                    favoriteIndices: favoriteIndices,
-                    reloadTrigger: spreadUpdateTrigger,
-                    isShowingSpread: $isShowingSpread,
-                    couldBeSpreadWithPrevious: $couldBeSpreadWithPrevious
-                )
-                
-                // Navigation hints (left/right edges) - #67: Spread-aware
-                HStack {
-                    // Left arrow area
-                    if viewerIndex > 0 {
-                        Button {
-                            goToPrevious()
-                        } label: {
-                            Rectangle()
-                                .fill(Color.clear)
-                                .frame(width: 60)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
+            // #131: Empty source feedback in Viewer Mode
+            if entries.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 64))
+                        .foregroundStyle(.white.opacity(0.4))
+                    Text("画像がありません")
+                        .font(.title2)
+                        .foregroundStyle(.white.opacity(0.6))
+                    Text(imageSource.url.lastPathComponent)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.4))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ZStack {
+                    SpreadImageViewer(
+                        imageSource: imageSource,
+                        entries: entries,
+                        currentIndex: $viewerIndex,
+                        favoriteIndices: favoriteIndices,
+                        reloadTrigger: spreadUpdateTrigger,
+                        isShowingSpread: $isShowingSpread,
+                        couldBeSpreadWithPrevious: $couldBeSpreadWithPrevious
+                    )
                     
-                    Spacer()
-                    
-                    // Right arrow area
-                    if viewerIndex < entries.count - 1 {
-                        Button {
-                            goToNext()
-                        } label: {
-                            Rectangle()
-                                .fill(Color.clear)
-                                .frame(width: 60)
-                                .contentShape(Rectangle())
+                    // Navigation hints (left/right edges) - #67: Spread-aware
+                    HStack {
+                        // Left arrow area
+                        if viewerIndex > 0 {
+                            Button {
+                                goToPrevious()
+                            } label: {
+                                Rectangle()
+                                    .fill(Color.clear)
+                                    .frame(width: 60)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                        
+                        Spacer()
+                        
+                        // Right arrow area
+                        if viewerIndex < entries.count - 1 {
+                            Button {
+                                goToNext()
+                            } label: {
+                                Rectangle()
+                                    .fill(Color.clear)
+                                    .frame(width: 60)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             
             // Footer with keyboard hints
             footerBar
