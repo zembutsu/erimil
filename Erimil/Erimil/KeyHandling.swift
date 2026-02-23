@@ -258,14 +258,9 @@ struct NavigationHelper {
             from: currentIndex, favoriteIndices: favoriteIndices, wrap: wrap
         ) else { return nil }
         
-        // #104: If target is partner of a spread, adjust to leading page
-        if AppSettings.shared.isSpreadModeEnabled,
-           targetIndex > 0,
-           !SpreadNavigationHelper.shouldShowSinglePage(
-               for: sourceURL, at: targetIndex - 1,
-               totalCount: entries.count, entries: entries) {
-            targetIndex = targetIndex - 1
-        }
+        // #129: Snap to correct spread-start using global alignment trace
+        targetIndex = SpreadNavigationHelper.spreadStartIndex(
+            for: targetIndex, sourceURL: sourceURL, entries: entries)
         
         return targetIndex
     }
@@ -293,14 +288,9 @@ struct NavigationHelper {
             targetIndex = nextTarget
         }
         
-        // #104: If target is partner of a spread, adjust to leading page
-        if AppSettings.shared.isSpreadModeEnabled,
-           targetIndex > 0,
-           !SpreadNavigationHelper.shouldShowSinglePage(
-               for: sourceURL, at: targetIndex - 1,
-               totalCount: entries.count, entries: entries) {
-            targetIndex = targetIndex - 1
-        }
+        // #129: Snap to correct spread-start using global alignment trace
+        targetIndex = SpreadNavigationHelper.spreadStartIndex(
+            for: targetIndex, sourceURL: sourceURL, entries: entries)
         
         return targetIndex
     }
