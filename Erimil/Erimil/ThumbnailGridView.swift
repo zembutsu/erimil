@@ -1017,19 +1017,11 @@ struct ThumbnailGridView: View {
             let tBgStart = CFAbsoluteTimeGetCurrent()
             let dispatchLatencyMs = (tBgStart - tDispatch) * 1000
             
-            // FIRST: Check validity on main thread BEFORE expensive operation
-            var stillValid = false
-            DispatchQueue.main.sync {
-                stillValid = (capturedLoadID == loadID && capturedSourceURL == currentSourceURL)
-                if !stillValid {
-                    Logger.thumbnailGrid.debug("SKIP async stale: \(entryName)")
-                }
-            }
-            
-            guard stillValid else { return }
+            // #134 P2: Removed DispatchQueue.main.sync validity check (priority inversion).
+            // Stale thumbnails are caught by the guard in DispatchQueue.main.async below.
+            // Any "wasted" generation still warms the disk/memory cache for future use.
             
             let tGenStart = CFAbsoluteTimeGetCurrent()
-            let validityCheckMs = (tGenStart - tBgStart) * 1000
             
             // Now generate thumbnail
             guard let thumbnail = currentSource.thumbnail(for: entry, maxSize: maxSize) else {
@@ -1073,7 +1065,7 @@ struct ThumbnailGridView: View {
                 let mainDispatchMs = (tMainStart - tGenEnd) * 1000
                 let assignMs = (tDone - tMainStart) * 1000
                 let totalMs = (tDone - tDispatch) * 1000
-                Logger.thumbnailGrid.info("★PERF★ \(entryName): dispatch=\(String(format: "%.1f", dispatchLatencyMs))ms valid=\(String(format: "%.1f", validityCheckMs))ms gen=\(String(format: "%.1f", genMs))ms mainWait=\(String(format: "%.1f", mainDispatchMs))ms assign=\(String(format: "%.1f", assignMs))ms TOTAL=\(String(format: "%.1f", totalMs))ms")
+                Logger.thumbnailGrid.info("★PERF★ \(entryName): dispatch=\(String(format: "%.1f", dispatchLatencyMs))ms gen=\(String(format: "%.1f", genMs))ms mainWait=\(String(format: "%.1f", mainDispatchMs))ms assign=\(String(format: "%.1f", assignMs))ms TOTAL=\(String(format: "%.1f", totalMs))ms")
             }
         }
     }
