@@ -79,19 +79,24 @@ class FolderManager: ImageSource {
             return nil
         }
         
-        guard let image = NSImage(data: imageData) else {
-            Logger.folder.error("Invalid image data: \(entry.path)")
-            return nil
-        }
-        
         // Calculate content hash
         let contentHash = cache.contentHash(for: imageData)
         
         // Register mapping
         cache.registerMapping(pathHash: pathHash, contentHash: contentHash)
         
-        // Generate thumbnail
-        let thumbnail = resizedImage(image, maxSize: maxSize)
+        // #134 P6: Single-pass downsample via CGImageSource (no full bitmap allocation)
+        guard let thumbnail = ImageUtilities.downsampledThumbnail(from: imageData, maxSize: maxSize) else {
+            Logger.folder.error("CGImageSource thumbnail failed for \(entry.name), falling back to NSImage")
+            // Fallback: legacy path
+            guard let image = NSImage(data: imageData) else {
+                Logger.folder.error("Invalid image data: \(entry.path)")
+                return nil
+            }
+            let fallback = resizedImage(image, maxSize: maxSize)
+            cache.saveThumbnail(fallback, for: contentHash)
+            return fallback
+        }
         
         // Save to cache
         cache.saveThumbnail(thumbnail, for: contentHash)
@@ -99,11 +104,44 @@ class FolderManager: ImageSource {
         return thumbnail
     }
     
-    /// Get full-size image - direct file access
+    /// Get full-size image - direct file access (fully materialized)
     func fullImage(for entry: ImageEntry) -> NSImage? {
         let fileURL = URL(fileURLWithPath: entry.path)
+        
+        // #134: Check memory cache first (prevents redundant decode on SwiftUI re-evaluation)
+        let cache = CacheManager.shared
+        let pathHash = cache.pathHash(for: entry.path)
+        if let contentHash = cache.getContentHash(for: pathHash),
+           let cached = cache.getFullImageFromMemory(for: contentHash) {
+            Logger.folder.info("★PERF★ fullImage CACHE HIT \(entry.name)")
+            return cached
+        }
+        
         Logger.folder.debug("Loading image: \(fileURL.lastPathComponent)")
         
+        let t0 = CFAbsoluteTimeGetCurrent()
+        
+        // #134 P6: Use CGImageSource + materialize to force complete decode.
+        // NSImage(contentsOf:) creates lazily-decoded image that renders progressively.
+        if let materialized = ImageUtilities.materializedImage(from: fileURL) {
+            let t1 = CFAbsoluteTimeGetCurrent()
+            let ms = (t1 - t0) * 1000
+            Logger.folder.info("★PERF★ fullImage \(entry.name): materialize=\(String(format: "%.1f", ms))ms size=\(materialized.size.debugDescription)")
+            
+            // Cache with contentHash (read file for hash if needed)
+            if let contentHash = cache.getContentHash(for: pathHash) {
+                cache.cacheFullImage(materialized, for: contentHash)
+            } else if let data = try? Data(contentsOf: fileURL) {
+                let contentHash = cache.contentHash(for: data)
+                cache.registerMapping(pathHash: pathHash, contentHash: contentHash)
+                cache.cacheFullImage(materialized, for: contentHash)
+            }
+            
+            return materialized
+        }
+        
+        // Fallback: legacy path
+        Logger.folder.error("materializedImage failed for \(entry.name), falling back to NSImage(contentsOf:)")
         guard let image = NSImage(contentsOf: fileURL) else {
             Logger.folder.error("Failed to load: \(entry.path)")
             return nil
