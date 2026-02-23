@@ -148,6 +148,19 @@ struct ThumbnailGridView: View {
     @State private var isLoadingSource: Bool = true
     @State private var showLoadingSpinner: Bool = false
     
+    // #134 P8: Batch prefetch — OperationQueue to limit concurrent thumbnail generation.
+        // Per-cell onAppear dispatch caused thread pool saturation (298 concurrent tasks).
+        // maxConcurrentOperationCount=4 keeps CPU busy without flooding GCD.
+        @State private var thumbnailQueue: OperationQueue = {
+            let q = OperationQueue()
+            q.maxConcurrentOperationCount = 4
+            q.qualityOfService = .userInitiated
+            q.name = "jp.pocketstudio.zem.Erimil.thumbnailLoad"
+            return q
+        }()
+        /// entryPath → Operation mapping for cancel-on-source-switch
+        @State private var pendingOperations: [String: Operation] = [:]
+    
     /// Dynamic columns based on thumbnail size
     private var columns: [GridItem] {
         let size = settings.effectiveThumbnailSize
@@ -816,6 +829,10 @@ struct ThumbnailGridView: View {
     
     private func loadSource() {
         SourceSwitchTiming.mark("load.start")
+        // #134 P8: Cancel all pending thumbnail operations on source switch.
+        // Prevents stale work from consuming thread pool for the old source.
+        thumbnailQueue.cancelAllOperations()
+        pendingOperations.removeAll()
         // Generate new load ID to invalidate any pending async operations
         let newLoadID = UUID()
         loadID = newLoadID
@@ -990,10 +1007,11 @@ struct ThumbnailGridView: View {
         
         // Calculate the full path for CacheManager lookup
         let fullPath: String
-        if imageSource is ArchiveManager {
-            fullPath = imageSource.url.path + "/" + entry.path
-        } else {
+        if imageSource is FolderManager {
             fullPath = entry.path  // FolderManager already has full path
+        } else {
+            // ArchiveManager and PDFManager both use url.path + "/" + entry.path
+            fullPath = imageSource.url.path + "/" + entry.path
         }
         
         // #134 P1: Synchronous memory cache check — avoid async dispatch + ProgressView flash
@@ -1011,63 +1029,81 @@ struct ThumbnailGridView: View {
         Logger.thumbnailGrid.debug("Starting for \(entryName) from \(capturedSourceURL.lastPathComponent), loadID: \(capturedLoadID, privacy: .public)")
         
         let tDispatch = CFAbsoluteTimeGetCurrent()
-        
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
-            let tBgStart = CFAbsoluteTimeGetCurrent()
-            let dispatchLatencyMs = (tBgStart - tDispatch) * 1000
-            
-            // #134 P2: Removed DispatchQueue.main.sync validity check (priority inversion).
-            // Stale thumbnails are caught by the guard in DispatchQueue.main.async below.
-            // Any "wasted" generation still warms the disk/memory cache for future use.
-            
-            let tGenStart = CFAbsoluteTimeGetCurrent()
-            
-            // Now generate thumbnail
-            guard let thumbnail = currentSource.thumbnail(for: entry, maxSize: maxSize) else {
-                Logger.thumbnailGrid.error("Failed for: \(entryName) from \(capturedSourceURL.lastPathComponent)")
-                return
-            }
-            
-            let tGenEnd = CFAbsoluteTimeGetCurrent()
-            let genMs = (tGenEnd - tGenStart) * 1000
-            
-            // Get content hash from CacheManager (it was registered during thumbnail generation)
-            let contentHash = CacheManager.shared.getContentHashForPath(fullPath)
-            
-            DispatchQueue.main.async {
-                let tMainStart = CFAbsoluteTimeGetCurrent()
                 
-                // Re-check validity after thumbnail generated
-                guard capturedLoadID == loadID else {
-                    Logger.thumbnailGrid.debug("Discarding stale thumbnail: \(entryName) (loadID mismatch)")
-                    return
+                // #134 P8: Cancel any duplicate pending operation for same entry
+                if let existing = pendingOperations[entryPath] {
+                    existing.cancel()
+                    pendingOperations.removeValue(forKey: entryPath)
                 }
                 
-                guard capturedSourceURL == currentSourceURL else {
-                    Logger.thumbnailGrid.debug("Discarding stale thumbnail: \(entryName) (URL mismatch)")
-                    return
+                let operation = BlockOperation()
+                weak var weakOp = operation
+                
+                operation.addExecutionBlock { [self] in
+                    guard let op = weakOp, !op.isCancelled else { return }
+                    
+                    let tBgStart = CFAbsoluteTimeGetCurrent()
+                    let dispatchLatencyMs = (tBgStart - tDispatch) * 1000
+                    
+                    // #134 P2: No main.sync validity check (priority inversion removed in S054).
+                    
+                    let tGenStart = CFAbsoluteTimeGetCurrent()
+                    
+                    guard !op.isCancelled else { return }
+                    
+                    // Generate thumbnail
+                    guard let thumbnail = currentSource.thumbnail(for: entry, maxSize: maxSize) else {
+                        Logger.thumbnailGrid.error("Failed for: \(entryName) from \(capturedSourceURL.lastPathComponent)")
+                        return
+                    }
+                    
+                    guard !op.isCancelled else { return }
+                    
+                    let tGenEnd = CFAbsoluteTimeGetCurrent()
+                    let genMs = (tGenEnd - tGenStart) * 1000
+                    
+                    // Get content hash from CacheManager (registered during thumbnail generation)
+                    let contentHash = CacheManager.shared.getContentHashForPath(fullPath)
+                    
+                    DispatchQueue.main.async {
+                        let tMainStart = CFAbsoluteTimeGetCurrent()
+                        
+                        // Re-check validity after thumbnail generated
+                        guard capturedLoadID == loadID else {
+                            Logger.thumbnailGrid.debug("Discarding stale thumbnail: \(entryName) (loadID mismatch)")
+                            return
+                        }
+                        
+                        guard capturedSourceURL == currentSourceURL else {
+                            Logger.thumbnailGrid.debug("Discarding stale thumbnail: \(entryName) (URL mismatch)")
+                            return
+                        }
+                        
+                        guard entries.contains(where: { $0.path == entryPath }) else {
+                            Logger.thumbnailGrid.debug("Discarding thumbnail for removed entry: \(entryName)")
+                            return
+                        }
+                        
+                        thumbnails[entryPath] = thumbnail
+                        
+                        // Store content hash for favorite lookup
+                        if let hash = contentHash {
+                            contentHashes[entryPath] = hash
+                        }
+                        
+                        // #134 P8: Clean up completed operation tracking
+                        pendingOperations.removeValue(forKey: entryPath)
+                        
+                        let tDone = CFAbsoluteTimeGetCurrent()
+                        let mainDispatchMs = (tMainStart - tGenEnd) * 1000
+                        let assignMs = (tDone - tMainStart) * 1000
+                        let totalMs = (tDone - tDispatch) * 1000
+                        Logger.thumbnailGrid.info("★PERF★ \(entryName): dispatch=\(String(format: "%.1f", dispatchLatencyMs))ms gen=\(String(format: "%.1f", genMs))ms mainWait=\(String(format: "%.1f", mainDispatchMs))ms assign=\(String(format: "%.1f", assignMs))ms TOTAL=\(String(format: "%.1f", totalMs))ms")
+                    }
                 }
                 
-                guard entries.contains(where: { $0.path == entryPath }) else {
-                    Logger.thumbnailGrid.debug("Discarding thumbnail for removed entry: \(entryName)")
-                    return
-                }
-                
-                thumbnails[entryPath] = thumbnail
-                
-                // Store content hash for favorite lookup
-                if let hash = contentHash {
-                    contentHashes[entryPath] = hash
-                }
-                
-                let tDone = CFAbsoluteTimeGetCurrent()
-                let mainDispatchMs = (tMainStart - tGenEnd) * 1000
-                let assignMs = (tDone - tMainStart) * 1000
-                let totalMs = (tDone - tDispatch) * 1000
-                Logger.thumbnailGrid.info("★PERF★ \(entryName): dispatch=\(String(format: "%.1f", dispatchLatencyMs))ms gen=\(String(format: "%.1f", genMs))ms mainWait=\(String(format: "%.1f", mainDispatchMs))ms assign=\(String(format: "%.1f", assignMs))ms TOTAL=\(String(format: "%.1f", totalMs))ms")
-            }
-        }
-    }
+                pendingOperations[entryPath] = operation
+                thumbnailQueue.addOperation(operation)    }
     
     // MARK: - Keyboard Navigation
     
