@@ -160,6 +160,40 @@ struct ThumbnailGridView: View {
         }()
         /// entryPath → Operation mapping for cancel-on-source-switch
         @State private var pendingOperations: [String: Operation] = [:]
+
+    // #138 Coalesced thumbnail buffer — batch assign to reduce body re-evaluation
+    private let thumbnailCoalescer = ThumbnailCoalescer()
+
+    private class ThumbnailCoalescer {
+        private let lock = NSLock()
+        private var buffer: [(path: String, image: NSImage, contentHash: String?)] = []
+        private var flushScheduled = false
+        
+        func append(_ item: (path: String, image: NSImage, contentHash: String?)) -> Bool {
+            lock.lock()
+            buffer.append(item)
+            let needsSchedule = !flushScheduled
+            if needsSchedule { flushScheduled = true }
+            lock.unlock()
+            return needsSchedule
+        }
+        
+        func flush() -> [(path: String, image: NSImage, contentHash: String?)] {
+            lock.lock()
+            let batch = buffer
+            buffer.removeAll()
+            flushScheduled = false
+            lock.unlock()
+            return batch
+        }
+        
+        func clear() {
+            lock.lock()
+            buffer.removeAll()
+            flushScheduled = false
+            lock.unlock()
+        }
+    }
     
     /// Dynamic columns based on thumbnail size
     private var columns: [GridItem] {
@@ -830,6 +864,7 @@ struct ThumbnailGridView: View {
         // Prevents stale work from consuming thread pool for the old source.
         thumbnailQueue.cancelAllOperations()
         pendingOperations.removeAll()
+        thumbnailCoalescer.clear()
         // Generate new load ID to invalidate any pending async operations
         let newLoadID = UUID()
         loadID = newLoadID
@@ -1065,42 +1100,48 @@ struct ThumbnailGridView: View {
                     DispatchQueue.main.async {
                         let tMainStart = CFAbsoluteTimeGetCurrent()
                         
-                        // Re-check validity after thumbnail generated
-                        guard capturedLoadID == loadID else {
+                        // Validate before buffering (lightweight checks on background thread)
+                        guard capturedLoadID == self.loadID else {
                             Logger.thumbnailGrid.debug("Discarding stale thumbnail: \(entryName) (loadID mismatch)")
                             return
                         }
-                        
-                        guard capturedSourceURL == currentSourceURL else {
-                            Logger.thumbnailGrid.debug("Discarding stale thumbnail: \(entryName) (URL mismatch)")
-                            return
+
+                        // Buffer for coalesced flush
+                        let needsSchedule = self.thumbnailCoalescer.append((path: entryPath, image: thumbnail, contentHash: contentHash))
+
+                        if needsSchedule {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
+                                self.flushThumbnailBuffer()
+                            }
                         }
-                        
-                        guard entries.contains(where: { $0.path == entryPath }) else {
-                            Logger.thumbnailGrid.debug("Discarding thumbnail for removed entry: \(entryName)")
-                            return
-                        }
-                        
-                        thumbnails[entryPath] = thumbnail
-                        
-                        // Store content hash for favorite lookup
-                        if let hash = contentHash {
-                            contentHashes[entryPath] = hash
-                        }
-                        
-                        // #134 P8: Clean up completed operation tracking
-                        pendingOperations.removeValue(forKey: entryPath)
-                        
-                        let tDone = CFAbsoluteTimeGetCurrent()
-                        let mainDispatchMs = (tMainStart - tGenEnd) * 1000
-                        let assignMs = (tDone - tMainStart) * 1000
-                        let totalMs = (tDone - tDispatch) * 1000
-                        Logger.thumbnailGrid.info("★PERF★ \(entryName): dispatch=\(String(format: "%.1f", dispatchLatencyMs))ms gen=\(String(format: "%.1f", genMs))ms mainWait=\(String(format: "%.1f", mainDispatchMs))ms assign=\(String(format: "%.1f", assignMs))ms TOTAL=\(String(format: "%.1f", totalMs))ms")
+
+                        let tBuffered = CFAbsoluteTimeGetCurrent()
+                        let mainDispatchMs = (tBuffered - tGenEnd) * 1000
+                        let totalMs = (tBuffered - tDispatch) * 1000
+                        Logger.thumbnailGrid.info("★PERF★ \(entryName): dispatch=\(String(format: "%.1f", dispatchLatencyMs))ms gen=\(String(format: "%.1f", genMs))ms buffered=\(String(format: "%.1f", mainDispatchMs))ms TOTAL=\(String(format: "%.1f", totalMs))ms")
                     }
                 }
                 
                 pendingOperations[entryPath] = operation
                 thumbnailQueue.addOperation(operation)    }
+    
+    private func flushThumbnailBuffer() {
+        let batch = thumbnailCoalescer.flush()
+        guard !batch.isEmpty else { return }
+        
+        var assignedCount = 0
+        for item in batch {
+            guard entries.contains(where: { $0.path == item.path }) else { continue }
+            thumbnails[item.path] = item.image
+            if let hash = item.contentHash {
+                contentHashes[item.path] = hash
+            }
+            pendingOperations.removeValue(forKey: item.path)
+            assignedCount += 1
+        }
+        
+        Logger.thumbnailGrid.info("★PERF★ FLUSH: \(assignedCount)/\(batch.count) thumbnails assigned in single body evaluation")
+    }
     
     // MARK: - Keyboard Navigation
     
