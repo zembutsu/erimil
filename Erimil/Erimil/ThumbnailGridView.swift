@@ -2280,7 +2280,7 @@ struct ThumbnailSidebarView: View {
                     size: thumbnailSize,
                     onTap: { onSelect(index) }
                 )
-                .id("\(index)-\(favoritesVersion)-\(selectedPaths.contains(entry.path))")
+                .id("\(index)-\(favoritesVersion)")
                 
             case .spread(let leftIndex, let rightIndex):
                 SpreadThumbnailPairView(
