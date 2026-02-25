@@ -61,6 +61,7 @@ enum KeyAction {
     case addOrDeleteBookmark       // Shift+S
     case navigateBookmark(NavigationDirection)  // Shift+A/D
     case showBookmarkList          // Shift+B
+    case toggleMetadataInspector   // #140: I key
     
     // Mode transitions
     case close
