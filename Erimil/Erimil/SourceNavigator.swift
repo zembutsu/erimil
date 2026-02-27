@@ -42,6 +42,23 @@ struct SourceNavigator {
         return siblings[prevIndex]
     }
     
+    /// Jump N sources forward or backward with boundary clamping (#143)
+    /// - Parameters:
+    ///   - currentURL: The currently selected source URL
+    ///   - steps: Number of steps (positive = forward, negative = backward)
+    /// - Returns: Target source URL, or nil if no siblings or already at boundary
+    static func jumpSource(from currentURL: URL, by steps: Int) -> URL? {
+        let siblings = siblingSourcesOf(currentURL)
+        guard siblings.count > 1 else { return nil }
+        guard let currentIndex = siblings.firstIndex(of: currentURL) else { return nil }
+        
+        let targetIndex = min(max(currentIndex + steps, 0), siblings.count - 1)
+        guard targetIndex != currentIndex else { return nil }
+        
+        Logger.sourceNav.debug("jumpSource: \(currentIndex) → \(targetIndex) (step \(steps))")
+        return siblings[targetIndex]
+    }
+    
     /// Returns the current position and total count for display (e.g., "3/10")
     /// - Parameter currentURL: The currently selected source URL
     /// - Returns: Tuple of (1-based position, total count), or nil if not found

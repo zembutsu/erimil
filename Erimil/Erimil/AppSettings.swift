@@ -162,6 +162,7 @@ class AppSettings: ObservableObject {
         static let metadataBookmarks = "metadataCarryOverBookmarks"          // #105
         static let metadataReadingDirection = "metadataCarryOverDirection"   // #105
         static let metadataSinglePageMarkers = "metadataCarryOverMarkers"   // #105
+        static let navigationStepCount = "navigationStepCount"             // #143
     }
     
     // MARK: - Published Properties
@@ -281,6 +282,14 @@ class AppSettings: ObservableObject {
     /// Copy single page markers on export
     @Published var metadataCarryOverMarkers: Bool {
         didSet { defaults.set(metadataCarryOverMarkers, forKey: Keys.metadataSinglePageMarkers) }
+    }
+    
+    /// Navigation step count for Ctrl+Option+key N-step navigation (#143)
+    /// Default: 10, range: 2-50
+    @Published var navigationStepCount: Int {
+        didSet {
+            defaults.set(navigationStepCount, forKey: Keys.navigationStepCount)
+        }
     }
     
     /// Build MetadataCarryOverOptions from current settings
@@ -486,6 +495,10 @@ class AppSettings: ObservableObject {
         self.metadataCarryOverBookmarks = defaults.object(forKey: Keys.metadataBookmarks) == nil ? true : defaults.bool(forKey: Keys.metadataBookmarks)
         self.metadataCarryOverDirection = defaults.object(forKey: Keys.metadataReadingDirection) == nil ? true : defaults.bool(forKey: Keys.metadataReadingDirection)
         self.metadataCarryOverMarkers = defaults.object(forKey: Keys.metadataSinglePageMarkers) == nil ? true : defaults.bool(forKey: Keys.metadataSinglePageMarkers)
+        
+        // #143: Navigation step count (default 10)
+        let savedStepCount = defaults.integer(forKey: Keys.navigationStepCount)
+        self.navigationStepCount = savedStepCount > 0 ? min(max(savedStepCount, 2), 50) : 10
     }
     
     // MARK: - Helper Methods
@@ -517,5 +530,6 @@ class AppSettings: ObservableObject {
         metadataCarryOverBookmarks = true    // #105
         metadataCarryOverDirection = true    // #105
         metadataCarryOverMarkers = true      // #105
+        navigationStepCount = 10                 // #143
     }
 }

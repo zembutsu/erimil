@@ -93,6 +93,11 @@ struct SettingsView: View {
                     in: 0...10
                 )
                 Toggle("ソース内ループナビゲーション", isOn: $settings.loopWithinSource)
+                Stepper(
+                    "N-stepジャンプ幅: \(settings.navigationStepCount)",
+                    value: $settings.navigationStepCount,
+                    in: 2...50
+                )
             } header: {
                 Text("ビューアモード")
             } footer: {
@@ -100,6 +105,7 @@ struct SettingsView: View {
                     Text("サムネイル位置はTキーでも切替可能")
                     Text("先読み: 0=無効、大きいほど快適だがメモリ使用増加")
                     Text("ループ: 末尾→先頭、先頭→末尾のナビゲーション")
+                    Text("N-step: Ctrl+Option+キーでジャンプする幅")
                 }
                 .font(.caption)
             }
@@ -200,7 +206,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 780)
+        .frame(width: 450, height: 810)
         .navigationTitle("設定")
         .onAppear {
             updateCacheInfo()

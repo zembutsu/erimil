@@ -61,7 +61,8 @@ struct ContentView: View {
                 isInViewerMode: $isInViewerMode,
                 onExportSuccess: { reloadFolder() },
                 onRequestNextSource: { navigateToNextSource() },
-                onRequestPreviousSource: { navigateToPreviousSource() }
+                onRequestPreviousSource: { navigateToPreviousSource() },
+                onRequestSourceJump: { steps in navigateToSourceBySteps(steps) }
             )
         }
         .frame(minWidth: 800, minHeight: 600)
@@ -213,6 +214,24 @@ struct ContentView: View {
             return .folder
         }
     }
+    
+    // MARK: - #143: N-Step Source Navigation
+    
+    private func navigateToSourceBySteps(_ steps: Int) {
+        guard let currentURL = sourceSelection.currentURL else { return }
+        
+        if let targetURL = SourceNavigator.jumpSource(from: currentURL, by: steps) {
+            Logger.content.debug("navigateToSourceBySteps(\(steps)): \(currentURL.lastPathComponent) → \(targetURL.lastPathComponent)")
+            let type = inferSourceType(targetURL)
+            
+            if SlideWindowController.shared.isOpen {
+                shouldReopenSlideMode = true
+            }
+            
+            selectedPaths.removeAll()
+            sourceSelection.select(url: targetURL, type: type)
+        }
+    }
 }
 
 // S050: Isolate detail re-evaluation from sidebar
@@ -227,6 +246,7 @@ private struct DetailContainerView: View {
     let onExportSuccess: () -> Void
     let onRequestNextSource: () -> Void
     let onRequestPreviousSource: () -> Void
+    let onRequestSourceJump: (Int) -> Void
     
     var body: some View {
         if let imageSource = sourceSelection.currentSource {
@@ -236,6 +256,7 @@ private struct DetailContainerView: View {
                 onExportSuccess: onExportSuccess,
                 onRequestNextSource: onRequestNextSource,
                 onRequestPreviousSource: onRequestPreviousSource,
+                onRequestSourceJump: onRequestSourceJump,
                 shouldReopenSlideMode: $shouldReopenSlideMode,
                 shouldReopenViewerMode: $shouldReopenViewerMode,
                 isInViewerMode: $isInViewerMode,
