@@ -403,6 +403,8 @@ class SlideWindowController {
         let hasControl = event.modifierFlags.contains(.control)
         let hasCommand = event.modifierFlags.contains(.command)
         let hasShift = event.modifierFlags.contains(.shift)  // #62: Bookmark keys
+        let hasOption = event.modifierFlags.contains(.option)  // #143: N-step navigation
+        let hasCtrlOption = hasControl && hasOption  // #143: Ctrl+Option = N-step
         
         Logger.slideWindow.debug("handleKeyEvent: keyCode=\(event.keyCode, privacy: .public), ctrl=\(hasControl, privacy: .public), cmd=\(hasCommand, privacy: .public), shift=\(hasShift, privacy: .public), favMode=\(self.isFavoritesMode, privacy: .public)")
         
@@ -457,7 +459,11 @@ class SlideWindowController {
             
         // Left arrow
         case 123:
-            if hasControl {
+            if hasCtrlOption {
+                // #143: N-step file navigation (RTL-aware)
+                jumpNStep(direction: .backward)
+                return nil
+            } else if hasControl {
                 Logger.slideWindow.debug("→ Previous source (Ctrl+←)")
                 storedOnPreviousSource?()
                 return nil
@@ -474,7 +480,11 @@ class SlideWindowController {
             
         // Right arrow
         case 124:
-            if hasControl {
+            if hasCtrlOption {
+                // #143: N-step file navigation (RTL-aware)
+                jumpNStep(direction: .forward)
+                return nil
+            } else if hasControl {
                 Logger.slideWindow.debug("→ Next source (Ctrl+→)")
                 storedOnNextSource?()
                 return nil
@@ -543,7 +553,10 @@ class SlideWindowController {
             if let chars = event.charactersIgnoringModifiers?.lowercased() {
                 switch chars {
                 case "a":
-                    if hasShift {
+                    if hasCtrlOption {
+                        // #143: N-step file navigation (RTL-aware)
+                        jumpNStep(direction: .backward)
+                    } else if hasShift {
                         // #62: Shift+A = previous bookmark (RTL-aware)
                         if let source = storedImageSource,
                            let target = NavigationHelper.navigateBookmark(
@@ -569,7 +582,10 @@ class SlideWindowController {
                     return nil
                     
                 case "d":
-                    if hasShift {
+                    if hasCtrlOption {
+                        // #143: N-step file navigation (RTL-aware)
+                        jumpNStep(direction: .forward)
+                    } else if hasShift {
                         // #62: Shift+D = next bookmark (RTL-aware)
                         if let source = storedImageSource,
                            let target = NavigationHelper.navigateBookmark(
@@ -734,7 +750,10 @@ class SlideWindowController {
                 
                 // #72: Z - previous favorite (RTL-aware), Ctrl+Z - first/last favorite (RTL-aware)
                 case "z":
-                    if hasControl {
+                    if hasCtrlOption {
+                        // #143: N-step favorite navigation (RTL-aware)
+                        jumpNStepFavorite(direction: .backward)
+                    } else if hasControl {
                         // Ctrl+Z = jump to visual left favorite (first in LTR, last in RTL)
                         let targetFav = isRTL ? storedFavoriteIndices.max() : storedFavoriteIndices.min()
                         if let fav = targetFav {
@@ -749,7 +768,10 @@ class SlideWindowController {
                     
                 // #72: C - next favorite (RTL-aware), Ctrl+C - last/first favorite (RTL-aware)
                 case "c":
-                    if hasControl {
+                    if hasCtrlOption {
+                        // #143: N-step favorite navigation (RTL-aware)
+                        jumpNStepFavorite(direction: .forward)
+                    } else if hasControl {
                         // Ctrl+C = jump to visual right favorite (last in LTR, first in RTL)
                         let targetFav = isRTL ? storedFavoriteIndices.min() : storedFavoriteIndices.max()
                         if let fav = targetFav {
@@ -934,6 +956,32 @@ class SlideWindowController {
         Logger.slideWindow.debug("→ jumped to: \(self.currentIndex, privacy: .public)")
         storedOnIndexChange?(currentIndex)
         notifyViewOfIndexChange()
+    }
+    
+    // MARK: - #143: N-Step Navigation
+    
+    /// Jump N files forward/backward (Ctrl+Option+A/D/←/→)
+    private func jumpNStep(direction: NavigationDirection) {
+        let step = AppSettings.shared.navigationStepCount
+        if let target = NavigationHelper.navigateNStep(
+            direction: direction, from: currentIndex,
+            totalCount: storedEntries.count, stepCount: step, isRTL: isRTL
+        ) {
+            Logger.slideWindow.debug("→ N-step(\(step)) \(direction == .forward ? "fwd" : "bwd") → \(target, privacy: .public)")
+            jumpToIndex(target)
+        }
+    }
+    
+    /// Jump N favorites forward/backward (Ctrl+Option+Z/C)
+    private func jumpNStepFavorite(direction: NavigationDirection) {
+        let step = AppSettings.shared.navigationStepCount
+        if let target = NavigationHelper.navigateFavoriteNStep(
+            direction: direction, from: currentIndex,
+            favoriteIndices: storedFavoriteIndices, stepCount: step, isRTL: isRTL
+        ) {
+            Logger.slideWindow.debug("→ N-step fav(\(step)) \(direction == .forward ? "fwd" : "bwd") → \(target, privacy: .public)")
+            jumpToIndex(target)
+        }
     }
     
     // MARK: - S010: Favorite and Selection Toggles

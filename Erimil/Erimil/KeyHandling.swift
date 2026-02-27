@@ -42,6 +42,10 @@ enum KeyAction {
     case navigateSource(NavigationDirection)
     case navigateFavorite(NavigationDirection)
     
+    // #143: N-step navigation (Ctrl+Option)
+    case navigateNStep(NavigationDirection)
+    case navigateFavoriteNStep(NavigationDirection)
+    
     // Position jumps (#72: Ctrl+A/D, Ctrl+1-5)
     case jumpToStart
     case jumpToEnd
@@ -368,6 +372,73 @@ struct NavigationHelper {
             return CacheManager.shared.previousBookmarkIndex(for: sourceURL, from: currentIndex, wrap: wrap)
         }
     }
+    
+    // MARK: - N-Step Navigation (#143)
+    
+    /// Jump N entries forward/backward with boundary clamping
+    /// - Parameters:
+    ///   - direction: Logical direction (forward/backward)
+    ///   - currentIndex: Current position
+    ///   - totalCount: Total number of entries
+    ///   - stepCount: Number of steps (from AppSettings)
+    ///   - isRTL: Whether RTL mode is active
+    /// - Returns: New index (always valid, clamped to boundaries)
+    static func navigateNStep(
+        direction: NavigationDirection,
+        from currentIndex: Int,
+        totalCount: Int,
+        stepCount: Int,
+        isRTL: Bool
+    ) -> Int? {
+        guard totalCount > 0 else { return nil }
+        let adjustedDirection = adjustForRTL(direction, isRTL: isRTL)
+        
+        switch adjustedDirection {
+        case .forward:
+            let target = currentIndex + stepCount
+            return min(target, totalCount - 1)
+        case .backward:
+            let target = currentIndex - stepCount
+            return max(target, 0)
+        }
+    }
+    
+    /// Jump N favorites forward/backward with boundary clamping
+    /// - Parameters:
+    ///   - direction: Logical direction
+    ///   - currentIndex: Current position
+    ///   - favoriteIndices: Set of favorite indices
+    ///   - stepCount: Number of favorites to skip
+    ///   - isRTL: Whether RTL mode is active
+    /// - Returns: Target favorite index, or nil if no favorites
+    static func navigateFavoriteNStep(
+        direction: NavigationDirection,
+        from currentIndex: Int,
+        favoriteIndices: Set<Int>,
+        stepCount: Int,
+        isRTL: Bool
+    ) -> Int? {
+        guard !favoriteIndices.isEmpty else { return nil }
+        let adjustedDirection = adjustForRTL(direction, isRTL: isRTL)
+        let sorted = favoriteIndices.sorted()
+        
+        switch adjustedDirection {
+        case .forward:
+            // Find current position in sorted favorites
+            let afterCurrent = sorted.filter { $0 > currentIndex }
+            if afterCurrent.count <= stepCount {
+                return sorted.last  // Clamp to last favorite
+            }
+            return afterCurrent[stepCount - 1]
+        case .backward:
+            let beforeCurrent = sorted.filter { $0 < currentIndex }.reversed()
+            let beforeArray = Array(beforeCurrent)
+            if beforeArray.count <= stepCount {
+                return sorted.first  // Clamp to first favorite
+            }
+            return beforeArray[stepCount - 1]
+        }
+    }
 }
 
 // MARK: - Key Code Constants
@@ -423,11 +494,17 @@ struct CommonKeyParser {
         isFavoritesMode: Bool = false
     ) -> KeyAction? {
         let hasControl = event.modifierFlags.contains(.control)
+        let hasOption = event.modifierFlags.contains(.option)
+        
+        // #143: Ctrl+Option = N-step navigation (must check before Ctrl alone)
+        let hasCtrlOption = hasControl && hasOption
         
         switch event.keyCode {
         // Left arrow - horizontal, RTL-invertible
         case KeyCode.leftArrow:
-            if hasControl {
+            if hasCtrlOption {
+                return .navigateNStep(.backward)
+            } else if hasControl {
                 return .navigateSource(.backward)
             } else if isFavoritesMode {
                 return .navigateFavorite(.backward)
@@ -437,7 +514,9 @@ struct CommonKeyParser {
             
         // Right arrow - horizontal, RTL-invertible
         case KeyCode.rightArrow:
-            if hasControl {
+            if hasCtrlOption {
+                return .navigateNStep(.forward)
+            } else if hasControl {
                 return .navigateSource(.forward)
             } else if isFavoritesMode {
                 return .navigateFavorite(.forward)
@@ -480,7 +559,9 @@ struct CommonKeyParser {
         switch chars {
         // A - horizontal, RTL-invertible
         case "a":
-            if hasControl {
+            if hasCtrlOption {
+                return .navigateNStep(.backward)
+            } else if hasControl {
                 return .navigateSource(.backward)
             } else if isFavoritesMode {
                 return .navigateFavorite(.backward)
@@ -490,7 +571,9 @@ struct CommonKeyParser {
         
         // D - horizontal, RTL-invertible
         case "d":
-            if hasControl {
+            if hasCtrlOption {
+                return .navigateNStep(.forward)
+            } else if hasControl {
                 return .navigateSource(.forward)
             } else if isFavoritesMode {
                 return .navigateFavorite(.forward)
@@ -519,9 +602,15 @@ struct CommonKeyParser {
             }
             
         case "z":
+            if hasCtrlOption {
+                return .navigateFavoriteNStep(.backward)
+            }
             return .navigateFavorite(.backward)
             
         case "c":
+            if hasCtrlOption {
+                return .navigateFavoriteNStep(.forward)
+            }
             return .navigateFavorite(.forward)
             
         case "v":
