@@ -219,6 +219,9 @@ class SlideWindowController {
         // S010: Reset favorites mode
         isFavoritesMode = false
         
+        // #140: Close metadata inspector panel
+        MetadataInspectorPanelController.shared.close()
+        
         guard let window = slideWindow else {
             Logger.slideWindow.debug("No window to close")
             return
@@ -301,6 +304,7 @@ class SlideWindowController {
         currentIndex = startIndex
         isFavoritesMode = false  // Reset mode on source change
         showBookmarkList = false  // #62: Reset bookmark list on source change
+        MetadataInspectorPanelController.shared.close()  // #140: Close inspector on source change
         storedOnClose = onClose
         storedImageSource = imageSource  // #54
         storedOnNextSource = onNextSource
@@ -426,10 +430,15 @@ class SlideWindowController {
         }
         
         switch event.keyCode {
-        // Escape - close fullscreen
+        // Escape - dismiss inspector panel OR close fullscreen
         case 53:
-            Logger.slideWindow.debug("→ Close (Esc)")
-            triggerClose()
+            if MetadataInspectorPanelController.shared.isVisible {
+                Logger.slideWindow.debug("→ Close metadata inspector (Esc)")
+                MetadataInspectorPanelController.shared.close()
+            } else {
+                Logger.slideWindow.debug("→ Close (Esc)")
+                triggerClose()
+            }
             return nil
             
         // Space - toggle controls (pass to view)
@@ -765,6 +774,17 @@ class SlideWindowController {
                         nudgeDeskewAngle(by: 0.1, targetRight: hasShift)
                     }
                     return nil
+                
+                // #140: Toggle metadata inspector panel
+                case "i":
+                    if currentIndex < storedEntries.count {
+                        MetadataInspectorPanelController.shared.toggle(
+                            imageSource: storedImageSource,
+                            entry: storedEntries[currentIndex],
+                            parentWindow: slideWindow
+                        )
+                    }
+                    return nil
                     
                 default:
                     return event  // Pass through unhandled
@@ -1062,6 +1082,15 @@ class SlideWindowController {
             object: nil,
             userInfo: ["index": currentIndex]
         )
+        
+        // #140: Update metadata inspector panel if visible
+        if MetadataInspectorPanelController.shared.isVisible,
+           currentIndex < storedEntries.count {
+            MetadataInspectorPanelController.shared.update(
+                imageSource: storedImageSource,
+                entry: storedEntries[currentIndex]
+            )
+        }
     }
     
     /// Notify the view of mode change via NotificationCenter
@@ -1104,6 +1133,7 @@ class SlideWindowController {
             ]
         )
     }
+    
 }
 
 // MARK: - Slide Window View

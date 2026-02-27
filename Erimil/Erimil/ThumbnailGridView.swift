@@ -2719,6 +2719,10 @@ struct ViewerView: View {
     @State private var showBookmarkList: Bool = false
     @State private var bookmarkListCursor: Int = 0
     
+    // #140: Metadata inspector state
+    @State private var showMetadataInspector: Bool = false
+    @State private var metadataSections: [MetadataSection] = []
+    
     // #101: Deskew state
     @State private var isDeskewEnabled: Bool = false
     
@@ -2834,6 +2838,13 @@ struct ViewerView: View {
                     onClose: { showBookmarkList = false }
                 )
             }
+            // #140: Metadata inspector overlay
+            if showMetadataInspector {
+                MetadataInspectorView(
+                    sections: metadataSections,
+                    onClose: { showMetadataInspector = false }
+                )
+            }
         }
         .clipped()
         .onAppear {
@@ -2851,6 +2862,10 @@ struct ViewerView: View {
             if newValue != currentIndex {
                 previousViewerIndex = oldValue
                 onIndexChange(newValue)
+            }
+            // #140: Update metadata if inspector is open
+            if showMetadataInspector, newValue >= 0, newValue < entries.count {
+                metadataSections = MetadataExtractor.extract(from: imageSource, entry: entries[newValue])
             }
         }
         .onChange(of: isShowingSpread) { _, _ in
@@ -3257,6 +3272,12 @@ struct ViewerView: View {
             }
             return true
         }
+
+        // #140: When metadata inspector is showing, Esc closes it instead of exiting viewer
+        if showMetadataInspector && event.keyCode == 53 {
+            showMetadataInspector = false
+            return true
+        }
         
         switch event.keyCode {
         // Escape
@@ -3432,7 +3453,18 @@ struct ViewerView: View {
                 Logger.viewer.debug("Shift+B → bookmark list (\(bookmarks.count, privacy: .public) bookmarks)")
             }
             return true
-        
+        // #140: I - toggle metadata inspector
+        case "i":
+            if showMetadataInspector {
+                showMetadataInspector = false
+            } else {
+                if let entry = currentEntry {
+                    metadataSections = MetadataExtractor.extract(from: imageSource, entry: entry)
+                }
+                showMetadataInspector = true
+            }
+            return true
+
         // #72: Cmd+1-5 = jump to percentage position (RTL-aware, Cmd to avoid system shortcut conflict)
         case "1":
             if event.modifierFlags.contains(.command) {

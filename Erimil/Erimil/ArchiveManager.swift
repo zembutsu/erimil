@@ -197,8 +197,8 @@ class ArchiveManager: ImageSource {
     
     // MARK: - Private Helpers
     
-    /// Extract raw data from ZIP entry
-    private func extractData(for imageEntry: ImageEntry) -> Data? {
+    /// Extract raw data from ZIP entry (#140: internal for MetadataExtractor access)
+    func extractData(for imageEntry: ImageEntry) -> Data? {
         return accessQueue.sync {
             Logger.archive.debug("Looking for '\(imageEntry.path)' in '\(self.url.lastPathComponent)'")
             
