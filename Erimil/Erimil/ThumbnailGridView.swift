@@ -1097,6 +1097,10 @@ struct ThumbnailGridView: View {
                         return
                     }
                     
+                    
+                    // #144: Cache aspect ratio for spread detection
+                    CacheManager.shared.setAspectRatio(for: capturedSourceURL, path: entryPath, ratio: thumbnail.size.width / thumbnail.size.height)
+                    
                     guard !op.isCancelled else { return }
                     
                     let tGenEnd = CFAbsoluteTimeGetCurrent()
@@ -2401,15 +2405,15 @@ struct ThumbnailSidebarView: View {
                 }) {
                     switch item {
                     case .single(let i):
-                        targetID = "\(i)-\(favoritesVersion)-\(selectedPaths.contains(entries[i].path))"
+                        targetID = "\(i)-\(favoritesVersion)"
                     case .spread(let left, _):
                         targetID = "spread-\(left)-\(favoritesVersion)"
                     }
                 } else {
-                    targetID = "\(index)-\(favoritesVersion)-\(selectedPaths.contains(entries[index].path))"
+                    targetID = "\(index)-\(favoritesVersion)"
                 }
             } else {
-                targetID = "\(index)-\(favoritesVersion)-\(selectedPaths.contains(entries[index].path))"
+                targetID = "\(index)-\(favoritesVersion)"
             }
             
             withAnimation(.easeInOut(duration: 0.2)) {

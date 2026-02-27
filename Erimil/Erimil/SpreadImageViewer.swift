@@ -52,17 +52,14 @@ enum SpreadNavigationHelper {
         
         // #67 Phase 3: Check cached aspect ratios for wide images
         if let entries = entries {
-            // Current page is wide → single
-            if let isWide = CacheManager.shared.isWideImage(for: sourceURL, path: entries[index].path),
-               isWide {
+            // Current page is wide or unknown → single (#144: nil = single, not spread)
+            if CacheManager.shared.isWideImage(for: sourceURL, path: entries[index].path) != false {
                 return true
             }
             
-            // Next page is wide → current should be single
+            // Next page is wide or unknown → current should be single (#144)
             if index + 1 < totalCount,
-               let isNextWide = CacheManager.shared.isWideImage(for: sourceURL, path: entries[index + 1].path),
-               isNextWide {
-                return true
+               CacheManager.shared.isWideImage(for: sourceURL, path: entries[index + 1].path) != false {                return true
             }
         }
         
