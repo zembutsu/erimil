@@ -105,6 +105,7 @@ struct ThumbnailGridView: View {
     var onExportSuccess: (() -> Void)?
     var onRequestNextSource: (() -> Void)?      // S005: Source navigation
     var onRequestPreviousSource: (() -> Void)?  // S005: Source navigation
+    var onRequestSourceJump: ((Int) -> Void)?   // #143: N-step source navigation
     @Binding var shouldReopenSlideMode: Bool    // S005: Reopen after source switch
     @Binding var shouldReopenViewerMode: Bool   // S016: Reopen Viewer Mode after source switch
     @Binding var isInViewerMode: Bool            // S051: Report Viewer Mode state to parent
@@ -313,6 +314,7 @@ struct ThumbnailGridView: View {
                         },
                         onNextSource: onRequestNextSource,
                         onPreviousSource: onRequestPreviousSource,
+                        onSourceJump: onRequestSourceJump,
                         onToggleFavorite: { [self] idx in
                             guard idx >= 0, idx < entries.count else { return }
                             let entry = entries[idx]
@@ -347,6 +349,10 @@ struct ThumbnailGridView: View {
             onRequestPreviousSource: {
                 shouldReopenViewerMode = true
                 onRequestPreviousSource?()
+            },
+            onRequestSourceJump: { steps in
+                shouldReopenViewerMode = true
+                onRequestSourceJump?(steps)
             }
         )
     }
@@ -525,6 +531,7 @@ struct ThumbnailGridView: View {
             },
             onNextSource: onRequestNextSource,
             onPreviousSource: onRequestPreviousSource,
+            onSourceJump: onRequestSourceJump,
             onToggleFavorite: { [self] index in
                 guard index >= 0, index < entries.count else { return }
                 let entry = entries[index]
@@ -995,6 +1002,7 @@ struct ThumbnailGridView: View {
                 },
                 onNextSource: onRequestNextSource,
                 onPreviousSource: onRequestPreviousSource,
+                onSourceJump: onRequestSourceJump,
                 onToggleFavorite: { [self] index in
                     guard index >= 0, index < entries.count else { return }
                     let entry = entries[index]
@@ -2695,6 +2703,7 @@ struct ViewerView: View {
     var onEnterSlideMode: (Int) -> Void
     var onRequestNextSource: (() -> Void)?
     var onRequestPreviousSource: (() -> Void)?
+    var onRequestSourceJump: ((Int) -> Void)?  // #143
     
     @ObservedObject private var settings = AppSettings.shared
     
@@ -3327,7 +3336,11 @@ struct ViewerView: View {
         
         // Up arrow - always previous (#106: vertical = direction-independent)
         case 126:
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.control) && event.modifierFlags.contains(.option) {
+                // #143: N-step source navigation
+                let step = AppSettings.shared.navigationStepCount
+                onRequestSourceJump?(-step)
+            } else if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
                 goToPrevious()
@@ -3336,7 +3349,11 @@ struct ViewerView: View {
             
         // Down arrow - always next (#106: vertical = direction-independent)
         case 125:
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.control) && event.modifierFlags.contains(.option) {
+                // #143: N-step source navigation
+                let step = AppSettings.shared.navigationStepCount
+                onRequestSourceJump?(step)
+            } else if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
                 goToNext()
@@ -3438,7 +3455,11 @@ struct ViewerView: View {
         
         // S017: W - previous (#106: vertical = direction-independent)
         case "w":
-            if event.modifierFlags.contains(.control) {
+            if event.modifierFlags.contains(.control) && event.modifierFlags.contains(.option) {
+                // #143: N-step source navigation
+                let step = AppSettings.shared.navigationStepCount
+                onRequestSourceJump?(-step)
+            } else if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
                 goToPrevious()
@@ -3448,7 +3469,11 @@ struct ViewerView: View {
         // S017: S - next (#106: vertical = direction-independent)
         // #62: Shift+S = bookmark
         case "s":
-            if event.modifierFlags.contains(.shift) {
+            if event.modifierFlags.contains(.control) && event.modifierFlags.contains(.option) {
+                // #143: N-step source navigation
+                let step = AppSettings.shared.navigationStepCount
+                onRequestSourceJump?(step)
+            } else if event.modifierFlags.contains(.shift) {
                 // #62: Shift+S = add/delete bookmark at current position
                 if let entry = currentEntry {
                     let defaultName = URL(fileURLWithPath: entry.path).deletingPathExtension().lastPathComponent

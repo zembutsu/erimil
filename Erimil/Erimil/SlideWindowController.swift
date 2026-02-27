@@ -40,6 +40,7 @@ class SlideWindowController {
     private var storedOnClose: (() -> Void)?
     private var storedOnNextSource: (() -> Void)?
     private var storedOnPreviousSource: (() -> Void)?
+    private var storedOnSourceJump: ((Int) -> Void)?  // #143: N-step source navigation
     private var storedOnIndexChange: ((Int) -> Void)?
     private var storedOnExitToViewerMode: (() -> Void)?
     private var storedImageSource: (any ImageSource)?  // #54: For reading direction toggle
@@ -85,6 +86,7 @@ class SlideWindowController {
         onIndexChange: ((Int) -> Void)? = nil,
         onNextSource: (() -> Void)? = nil,
         onPreviousSource: (() -> Void)? = nil,
+        onSourceJump: ((Int) -> Void)? = nil,  // #143: N-step source navigation
         onToggleFavorite: ((Int) -> Void)? = nil,
         onToggleSelection: ((Int) -> Void)? = nil,
         onExitToViewerMode: (() -> Void)? = nil
@@ -106,6 +108,7 @@ class SlideWindowController {
         storedImageSource = imageSource  // #54
         storedOnNextSource = onNextSource
         storedOnPreviousSource = onPreviousSource
+        storedOnSourceJump = onSourceJump  // #143
         storedOnIndexChange = onIndexChange
         storedEntries = entries
         storedFavoriteIndices = favoriteIndices
@@ -203,6 +206,7 @@ class SlideWindowController {
         storedImageSource = nil  // #54
         storedOnNextSource = nil
         storedOnPreviousSource = nil
+        storedOnSourceJump = nil  // #143
         storedOnIndexChange = nil
         storedOnToggleFavorite = nil
         storedOnToggleSelection = nil
@@ -262,6 +266,7 @@ class SlideWindowController {
         onIndexChange: ((Int) -> Void)? = nil,
         onNextSource: (() -> Void)? = nil,
         onPreviousSource: (() -> Void)? = nil,
+        onSourceJump: ((Int) -> Void)? = nil,  // #143
         onToggleFavorite: ((Int) -> Void)? = nil,
         onToggleSelection: ((Int) -> Void)? = nil,
         onExitToViewerMode: (() -> Void)? = nil
@@ -281,6 +286,7 @@ class SlideWindowController {
                 onIndexChange: onIndexChange,
                 onNextSource: onNextSource,
                 onPreviousSource: onPreviousSource,
+                onSourceJump: onSourceJump,
                 onToggleFavorite: onToggleFavorite,
                 onToggleSelection: onToggleSelection
             )
@@ -309,6 +315,7 @@ class SlideWindowController {
         storedImageSource = imageSource  // #54
         storedOnNextSource = onNextSource
         storedOnPreviousSource = onPreviousSource
+        storedOnSourceJump = onSourceJump  // #143
         storedOnIndexChange = onIndexChange
         storedEntries = entries
         storedFavoriteIndices = favoriteIndices
@@ -501,7 +508,11 @@ class SlideWindowController {
         
         // Up arrow - always previous (#106: vertical = direction-independent)
         case 126:
-            if hasControl {
+            if hasCtrlOption {
+                // #143: N-step source navigation
+                jumpNStepSource(direction: .backward)
+                return nil
+            } else if hasControl {
                 Logger.slideWindow.debug("→ Previous source (Ctrl+↑)")
                 storedOnPreviousSource?()
                 return nil
@@ -516,7 +527,11 @@ class SlideWindowController {
             
         // Down arrow - always next (#106: vertical = direction-independent)
         case 125:
-            if hasControl {
+            if hasCtrlOption {
+                // #143: N-step source navigation
+                jumpNStepSource(direction: .forward)
+                return nil
+            } else if hasControl {
                 Logger.slideWindow.debug("→ Next source (Ctrl+↓)")
                 storedOnNextSource?()
                 return nil
@@ -615,7 +630,10 @@ class SlideWindowController {
                 
                 // S017: W key (#106: vertical = direction-independent)
                 case "w":
-                    if hasControl {
+                    if hasCtrlOption {
+                        // #143: N-step source navigation
+                        jumpNStepSource(direction: .backward)
+                    } else if hasControl {
                         Logger.slideWindow.debug("→ Previous source (Ctrl+W)")
                         storedOnPreviousSource?()
                     } else if isFavoritesMode {
@@ -628,7 +646,10 @@ class SlideWindowController {
                     
                 // S017: S key (#106: vertical = direction-independent, #62: Shift+S = bookmark)
                 case "s":
-                    if hasShift {
+                    if hasCtrlOption {
+                        // #143: N-step source navigation
+                        jumpNStepSource(direction: .forward)
+                    } else if hasShift {
                         // #62: Shift+S = add/delete bookmark at current position
                         if let source = storedImageSource, currentIndex < storedEntries.count {
                             let entry = storedEntries[currentIndex]
@@ -981,6 +1002,25 @@ class SlideWindowController {
         ) {
             Logger.slideWindow.debug("→ N-step fav(\(step)) \(direction == .forward ? "fwd" : "bwd") → \(target, privacy: .public)")
             jumpToIndex(target)
+        }
+    }
+    
+    /// Jump N sources forward/backward (Ctrl+Option+W/S/↑/↓)
+    private func jumpNStepSource(direction: NavigationDirection) {
+        guard let source = storedImageSource else { return }
+        let step = AppSettings.shared.navigationStepCount
+        let steps = direction == .forward ? step : -step
+        
+        if storedOnSourceJump != nil {
+            Logger.slideWindow.debug("→ N-step source(\(step)) \(direction == .forward ? "fwd" : "bwd")")
+            storedOnSourceJump?(steps)
+        } else {
+            Logger.slideWindow.debug("→ N-step source: no jump callback, falling back to single step")
+            if direction == .forward {
+                storedOnNextSource?()
+            } else {
+                storedOnPreviousSource?()
+            }
         }
     }
     

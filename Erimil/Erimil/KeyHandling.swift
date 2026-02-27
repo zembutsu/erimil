@@ -44,6 +44,7 @@ enum KeyAction {
     
     // #143: N-step navigation (Ctrl+Option)
     case navigateNStep(NavigationDirection)
+    case navigateSourceNStep(NavigationDirection)
     case navigateFavoriteNStep(NavigationDirection)
     
     // Position jumps (#72: Ctrl+A/D, Ctrl+1-5)
