@@ -63,9 +63,6 @@ class SlideWindowController {
     private var showBookmarkList: Bool = false
     private var bookmarkListCursor: Int = 0
     
-    // #140: Metadata inspector state
-    private var showMetadataInspector: Bool = false
-    
     // #76: RTL navigation support
     private var isRTL: Bool {
         guard let source = storedImageSource else { return false }
@@ -102,7 +99,6 @@ class SlideWindowController {
         currentIndex = initialIndex
         isFavoritesMode = false
         showBookmarkList = false
-        showMetadataInspector = false  // #140
         bookmarkListCursor = 0
         
         // S008: Store callbacks and state for event monitor
@@ -222,7 +218,9 @@ class SlideWindowController {
         
         // S010: Reset favorites mode
         isFavoritesMode = false
-        showMetadataInspector = false  // #140
+        
+        // #140: Close metadata inspector panel
+        MetadataInspectorPanelController.shared.close()
         
         guard let window = slideWindow else {
             Logger.slideWindow.debug("No window to close")
@@ -306,7 +304,7 @@ class SlideWindowController {
         currentIndex = startIndex
         isFavoritesMode = false  // Reset mode on source change
         showBookmarkList = false  // #62: Reset bookmark list on source change
-        showMetadataInspector = false  // #140: Reset inspector on source change
+        MetadataInspectorPanelController.shared.close()  // #140: Close inspector on source change
         storedOnClose = onClose
         storedImageSource = imageSource  // #54
         storedOnNextSource = onNextSource
@@ -432,12 +430,11 @@ class SlideWindowController {
         }
         
         switch event.keyCode {
-        // Escape - dismiss inspector OR close fullscreen
+        // Escape - dismiss inspector panel OR close fullscreen
         case 53:
-            if showMetadataInspector {
+            if MetadataInspectorPanelController.shared.isVisible {
                 Logger.slideWindow.debug("→ Close metadata inspector (Esc)")
-                showMetadataInspector = false
-                notifyViewOfMetadataInspectorChange()
+                MetadataInspectorPanelController.shared.close()
             } else {
                 Logger.slideWindow.debug("→ Close (Esc)")
                 triggerClose()
@@ -778,11 +775,15 @@ class SlideWindowController {
                     }
                     return nil
                 
-                // #140: Toggle metadata inspector
+                // #140: Toggle metadata inspector panel
                 case "i":
-                    showMetadataInspector.toggle()
-                    Logger.slideWindow.debug("→ Metadata inspector: \(self.showMetadataInspector ? "ON" : "OFF")")
-                    notifyViewOfMetadataInspectorChange()
+                    if currentIndex < storedEntries.count {
+                        MetadataInspectorPanelController.shared.toggle(
+                            imageSource: storedImageSource,
+                            entry: storedEntries[currentIndex],
+                            parentWindow: slideWindow
+                        )
+                    }
                     return nil
                     
                 default:
@@ -1081,6 +1082,15 @@ class SlideWindowController {
             object: nil,
             userInfo: ["index": currentIndex]
         )
+        
+        // #140: Update metadata inspector panel if visible
+        if MetadataInspectorPanelController.shared.isVisible,
+           currentIndex < storedEntries.count {
+            MetadataInspectorPanelController.shared.update(
+                imageSource: storedImageSource,
+                entry: storedEntries[currentIndex]
+            )
+        }
     }
     
     /// Notify the view of mode change via NotificationCenter
@@ -1124,14 +1134,6 @@ class SlideWindowController {
         )
     }
     
-    /// Notify the view of metadata inspector state change (#140)
-    private func notifyViewOfMetadataInspectorChange() {
-        NotificationCenter.default.post(
-            name: NSNotification.Name("SlideWindowMetadataInspectorChanged"),
-            object: nil,
-            userInfo: ["show": showMetadataInspector]
-        )
-    }
 }
 
 // MARK: - Slide Window View
@@ -1162,9 +1164,6 @@ struct SlideWindowView: View {
     // #62 Phase 5: Bookmark list overlay state
     @State private var showBookmarkList: Bool = false
     @State private var bookmarkListCursor: Int = 0
-    
-    // #140: Metadata inspector state
-    @State private var showMetadataInspector: Bool = false
     
     // #101: Deskew state
     @State private var isDeskewEnabled: Bool = false
@@ -1296,17 +1295,6 @@ struct SlideWindowView: View {
                 )
             }
             
-            // #140: Metadata inspector overlay
-            if showMetadataInspector, !entries.isEmpty, currentIndex < entries.count {
-                MetadataInspectorView(
-                    sections: MetadataExtractor.extract(
-                        from: imageSource,
-                        entry: entries[currentIndex]
-                    ),
-                    onClose: { showMetadataInspector = false }
-                )
-            }
-            
             // Key event handler (supplementary - main handling in Controller)
             SlideKeyHandler(
                 onClose: onClose,
@@ -1367,12 +1355,6 @@ struct SlideWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowDeskewChanged"))) { notification in
             if let enabled = notification.userInfo?["deskewEnabled"] as? Bool {
                 isDeskewEnabled = enabled
-            }
-        }
-        // #140: Listen for metadata inspector changes from controller
-        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowMetadataInspectorChanged"))) { notification in
-            if let show = notification.userInfo?["show"] as? Bool {
-                showMetadataInspector = show
             }
         }
     }

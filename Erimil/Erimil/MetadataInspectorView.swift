@@ -3,7 +3,7 @@
 //  Erimil
 //
 //  Metadata inspector overlay for Viewer Mode / Slide Mode (#140)
-//  Session: S058
+//  Session: S058 (created), S059 (refactored: extracted MetadataInspectorContent)
 //
 //  Toggle: "i" key or Esc to dismiss
 //  Features: category grouping, per-value copy, full copy
@@ -12,8 +12,13 @@
 import SwiftUI
 import os
 
-struct MetadataInspectorView: View {
+// MARK: - Shared Content View
+
+/// Reusable metadata inspector content — used by both overlay (MetadataInspectorView)
+/// and standalone panel (MetadataInspectorPanelController)
+struct MetadataInspectorContent: View {
     let sections: [MetadataSection]
+    let showCloseButton: Bool
     let onClose: () -> Void
     
     @State private var expandedSections: Set<String> = []
@@ -21,30 +26,6 @@ struct MetadataInspectorView: View {
     @State private var showCopiedAll: Bool = false
     
     var body: some View {
-        HStack {
-            Spacer()
-            panelContent
-                .frame(width: 340)
-                .frame(maxHeight: 500)
-                .background(.regularMaterial)
-                .cornerRadius(12)
-                .shadow(radius: 20)
-                .padding(.trailing, 24)
-                .padding(.top, 60)
-                .onAppear { expandFirstSection() }
-                .onChange(of: sections.map(\.name)) { _, newNames in
-                    // Ensure at least the first section is expanded when content changes
-                    if !newNames.isEmpty && expandedSections.isDisjoint(with: newNames) {
-                        expandedSections.insert(newNames[0])
-                    }
-                }
-        }
-    }
-    
-    // MARK: - Panel Content
-    
-    @ViewBuilder
-    private var panelContent: some View {
         VStack(spacing: 0) {
             // Header
             HStack {
@@ -71,14 +52,16 @@ struct MetadataInspectorView: View {
                 }
                 .buttonStyle(.plain)
                 
-                // Close button
-                Button {
-                    onClose()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+                // Close button (optional — hidden when panel title bar provides close)
+                if showCloseButton {
+                    Button {
+                        onClose()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
             .padding()
             
@@ -89,6 +72,12 @@ struct MetadataInspectorView: View {
                 emptyState
             } else {
                 sectionList
+            }
+        }
+        .onAppear { expandFirstSection() }
+        .onChange(of: sections.map(\.name)) { _, newNames in
+            if !newNames.isEmpty && expandedSections.isDisjoint(with: newNames) {
+                expandedSections.insert(newNames[0])
             }
         }
     }
@@ -124,7 +113,6 @@ struct MetadataInspectorView: View {
     @ViewBuilder
     private func sectionView(_ section: MetadataSection) -> some View {
         VStack(spacing: 0) {
-            // Section header (tap to expand/collapse)
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) {
                     if expandedSections.contains(section.name) {
@@ -151,7 +139,6 @@ struct MetadataInspectorView: View {
             }
             .buttonStyle(.plain)
             
-            // Items
             if expandedSections.contains(section.name) {
                 ForEach(section.items) { item in
                     itemRow(item)
@@ -166,19 +153,16 @@ struct MetadataInspectorView: View {
     @ViewBuilder
     private func itemRow(_ item: MetadataItem) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            // Key
             Text(item.key)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 100, alignment: .trailing)
                 .lineLimit(2)
             
-            // Value
             Text(item.value.count > 1000 ? String(item.value.prefix(1000)) + "…" : item.value)
                 .font(.caption)
                 .frame(maxWidth: .infinity, alignment: .leading)
             
-            // Copy button
             Button {
                 copyItem(item)
             } label: {
@@ -221,6 +205,33 @@ struct MetadataInspectorView: View {
         showCopiedAll = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             showCopiedAll = false
+        }
+    }
+}
+
+// MARK: - Overlay Wrapper (Viewer Mode)
+
+/// Overlay-style metadata inspector for use in SwiftUI ZStack.
+/// Wraps MetadataInspectorContent with positioning, material background, and shadow.
+struct MetadataInspectorView: View {
+    let sections: [MetadataSection]
+    let onClose: () -> Void
+    
+    var body: some View {
+        HStack {
+            Spacer()
+            MetadataInspectorContent(
+                sections: sections,
+                showCloseButton: true,
+                onClose: onClose
+            )
+            .frame(width: 340)
+            .frame(maxHeight: 500)
+            .background(.regularMaterial)
+            .cornerRadius(12)
+            .shadow(radius: 20)
+            .padding(.trailing, 24)
+            .padding(.top, 60)
         }
     }
 }
