@@ -2271,6 +2271,16 @@ struct ThumbnailSidebarView: View {
     private let sidebarWidth: CGFloat = 100
     private let sidebarHeight: CGFloat = 100
     
+    @State private var spreadLayoutVersion: Int = 0
+    @State private var pendingDebounce: DispatchWorkItem? = nil
+
+    private func scheduleSpreadLayoutUpdate() {
+        pendingDebounce?.cancel()
+        let work = DispatchWorkItem { spreadLayoutVersion += 1 }
+        pendingDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+    }
+    
     var body: some View {
         ScrollViewReader { proxy in
             if orientation == .vertical {
@@ -2315,6 +2325,7 @@ struct ThumbnailSidebarView: View {
     
     @ViewBuilder
     private var thumbnailItems: some View {
+        let _ = spreadLayoutVersion  // #144: Trigger re-evaluation after aspect ratio cache
         let isSpreadMode = AppSettings.shared.isSpreadModeEnabled
         let indices = buildDisplayIndices(isSpreadMode: isSpreadMode)
         
@@ -2331,7 +2342,8 @@ struct ThumbnailSidebarView: View {
                     isSelected: selectedPaths.contains(entry.path),
                     selectionMode: selectionMode,
                     size: thumbnailSize,
-                    onTap: { onSelect(index) }
+                    onTap: { onSelect(index) },
+                    onAspectRatioCached: { scheduleSpreadLayoutUpdate() }
                 )
                 .id("\(index)-\(favoritesVersion)")
                 
@@ -2441,6 +2453,7 @@ struct ThumbnailItemView: View {
     let selectionMode: SelectionMode
     let size: CGFloat
     var onTap: () -> Void
+    var onAspectRatioCached: (() -> Void)? = nil
     
     @State private var thumbnail: NSImage? = nil
     
@@ -2517,8 +2530,16 @@ struct ThumbnailItemView: View {
     private func loadThumbnail() {
         DispatchQueue.global(qos: .utility).async {
             let image = imageSource.thumbnail(for: entry, maxSize: size * 2)
+            if let image = image {
+                // #144: Cache aspect ratio for spread detection
+                CacheManager.shared.setAspectRatio(
+                    for: imageSource.url, path: entry.path,
+                    ratio: image.size.width / image.size.height
+                )
+            }
             DispatchQueue.main.async {
                 thumbnail = image
+                onAspectRatioCached?()
             }
         }
     }
