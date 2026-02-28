@@ -324,6 +324,10 @@ struct SpreadImageViewer: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowSpreadChanged"))) { _ in
             spreadUpdateTrigger.toggle()
         }
+        // #150: Re-render on reading direction change (swap spread page order)
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowReadingDirectionChanged"))) { _ in
+            spreadUpdateTrigger.toggle()
+        }
     }
     
     @ViewBuilder
