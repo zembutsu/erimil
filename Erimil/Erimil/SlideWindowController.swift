@@ -60,6 +60,10 @@ class SlideWindowController {
     // S010: Favorites Mode state
     private var isFavoritesMode: Bool = false
     
+    // #151: Overlay display level (persists across source switches)
+    // 0=full (all controls+hints), 1=compact (nav bar only), 2=clean (indicators only)
+    private var overlayLevel: Int = 0
+    
     // #62 Phase 5: Bookmark list state
     private var showBookmarkList: Bool = false
     private var bookmarkListCursor: Int = 0
@@ -150,6 +154,7 @@ class SlideWindowController {
             sourcePosition: sourcePosition,
             totalSources: totalSources,
             isFavoritesMode: isFavoritesMode,
+            overlayLevel: overlayLevel,  // #151: Persist across source switches
             onClose: { [weak self] in
                 Logger.slideWindow.debug("onClose callback triggered")
                 self?.close()
@@ -366,6 +371,7 @@ class SlideWindowController {
             sourcePosition: sourcePosition,
             totalSources: totalSources,
             isFavoritesMode: isFavoritesMode,
+            overlayLevel: overlayLevel,  // #151: Persist across source switches
             onClose: { [weak self] in
                 Logger.slideWindow.debug("onClose callback triggered")
                 self?.close()
@@ -549,9 +555,11 @@ class SlideWindowController {
             }
             return nil
             
-        // Space - toggle controls (pass to view)
+        // Space - toggle controls (#151: handle directly, passthrough to SlideKeyView never arrives)
         case 49:
-            return event  // Let SlideKeyView handle this
+            Logger.slideWindow.debug("→ Toggle controls (Space)")
+            notifyViewOfControlsToggle()
+            return nil
             
         // Tab - next favorite + enter Favorites Mode
         case 48:
@@ -866,6 +874,12 @@ class SlideWindowController {
                         Logger.slideWindow.debug("Single page marker at \(target, privacy: .public) (from \(self.currentIndex, privacy: .public), spread: \(isInSpread, privacy: .public)): \(added ? "ON" : "OFF")")
                         notifyViewOfSpreadChange()
                     }
+                    return nil
+                
+                // #151: P - toggle PDF Deskew (alias for ⌘D)
+                case "p":
+                    Logger.slideWindow.debug("→ Toggle deskew (P)")
+                    toggleDeskew()
                     return nil
                 
                 // #72: Z - previous favorite (RTL-aware), Ctrl+Z - first/last favorite (RTL-aware)
@@ -1309,6 +1323,16 @@ class SlideWindowController {
         )
     }
     
+    /// Notify the view to cycle overlay level via NotificationCenter (#151)
+    private func notifyViewOfControlsToggle() {
+        overlayLevel = (overlayLevel + 1) % 3  // #151: Full(0) → Compact(1) → Clean(2) → Full(0)
+        NotificationCenter.default.post(
+            name: NSNotification.Name("SlideWindowControlsToggle"),
+            object: nil,
+            userInfo: ["overlayLevel": overlayLevel]
+        )
+    }
+    
     /// Notify the view of spread layout change via NotificationCenter (#55)
     private func notifyViewOfSpreadChange() {
         NotificationCenter.default.post(
@@ -1344,6 +1368,7 @@ struct SlideWindowView: View {
     let sourcePosition: Int
     let totalSources: Int
     let initialIsFavoritesMode: Bool
+    let initialOverlayLevel: Int  // #151: 0=full, 1=compact, 2=clean
     let onClose: () -> Void
     let onExitFullScreen: () -> Void
     let onIndexChange: ((Int) -> Void)?
@@ -1351,7 +1376,7 @@ struct SlideWindowView: View {
     let onPreviousSource: (() -> Void)?
     
     @State private var currentIndex: Int = 0
-    @State private var showControls: Bool = true
+    @State private var overlayLevel: Int = 0  // #151: 0=full, 1=compact, 2=clean
     @State private var isFavoritesMode: Bool = false
     @State private var favoriteIndices: Set<Int> = []
     @State private var selectedIndices: Set<Int> = []
@@ -1390,6 +1415,7 @@ struct SlideWindowView: View {
         sourcePosition: Int,
         totalSources: Int,
         isFavoritesMode: Bool,
+        overlayLevel: Int = 0,
         onClose: @escaping () -> Void,
         onExitFullScreen: @escaping () -> Void,
         onIndexChange: ((Int) -> Void)?,
@@ -1405,6 +1431,8 @@ struct SlideWindowView: View {
         self.sourcePosition = sourcePosition
         self.totalSources = totalSources
         self.initialIsFavoritesMode = isFavoritesMode
+        self.initialOverlayLevel = overlayLevel
+        self._overlayLevel = State(initialValue: overlayLevel)  // #151: Direct State init
         self.onClose = onClose
         self.onExitFullScreen = onExitFullScreen
         self.onIndexChange = onIndexChange
@@ -1431,59 +1459,8 @@ struct SlideWindowView: View {
                 .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)  // #150: RTL spread inversion
             }
             
-            // Controls overlay (auto-hide capable)
-            if showControls {
-                controlsOverlay
-            }
-            
-            // S010: Persistent Favorites Mode indicator (shown even when controls hidden)
-            if isFavoritesMode && !showControls {
-                VStack {
-                    HStack {
-                        Spacer()
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill")
-                                .font(.title3)
-                                .foregroundStyle(.yellow)
-                            Text("FAVORITES")
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundStyle(.yellow)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(.black.opacity(0.6))
-                        .cornerRadius(8)
-                        .padding(.trailing, 16)
-                        .padding(.top, 16)
-                    }
-                    Spacer()
-                }
-            }
-            
-            // #101: Persistent deskew indicator (shown even when controls hidden, PDF only)
-            if isDeskewEnabled && !showControls && imageSource.sourceType == .pdf {
-                VStack {
-                    HStack {
-                        HStack(spacing: 3) {
-                            Image(systemName: "angle")
-                                .font(.caption)
-                            Text("DESKEW")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                        }
-                        .foregroundStyle(.cyan)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(.black.opacity(0.6))
-                        .cornerRadius(6)
-                        .padding(.leading, 16)
-                        .padding(.top, 16)
-                        Spacer()
-                    }
-                    Spacer()
-                }
-            }
+            // #151: Controls overlay — always visible, hints togglable with Space
+            controlsOverlay
             
             // #62 Phase 5: Bookmark list overlay
             if showBookmarkList {
@@ -1508,7 +1485,7 @@ struct SlideWindowView: View {
                 onPreviousFavorite: { /* handled by controller */ },
                 onNextFavorite: { /* handled by controller */ },
                 onExitFullScreen: onExitFullScreen,
-                onToggleControls: { showControls.toggle() },
+                onToggleControls: { /* #151: Space now handled by controller */ },
                 onNextSource: onNextSource,
                 onPreviousSource: onPreviousSource
             )
@@ -1519,6 +1496,7 @@ struct SlideWindowView: View {
         .onAppear {
             currentIndex = initialIndex
             isFavoritesMode = initialIsFavoritesMode
+            overlayLevel = initialOverlayLevel  // #151: Restore from controller
             favoriteIndices = initialFavoriteIndices
             selectedIndices = initialSelectedIndices
             isDeskewEnabled = CacheManager.shared.isDeskewEnabled(for: imageSource.url)  // #101
@@ -1566,6 +1544,12 @@ struct SlideWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowReadingDirectionChanged"))) { _ in
             readingDirectionVersion += 1
         }
+        // #151: Listen for controls toggle
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowControlsToggle"))) { notification in
+            if let level = notification.userInfo?["overlayLevel"] as? Int {
+                overlayLevel = level
+            }
+        }
     }
     
     // MARK: - S008: Empty Source View
@@ -1599,242 +1583,268 @@ struct SlideWindowView: View {
         }
     }
     
-    // MARK: - Controls Overlay (S010: 3-row layout with Favorites Mode indicator)
+    // MARK: - Controls Overlay (#151: 3-level display)
+    // Level 0 (Full): nav bar + position bars + indicators + esc/close + bottom hints
+    // Level 1 (Compact): nav bar + position bars + indicators (no esc/close, no bottom hints)
+    // Level 2 (Clean): ★ + FAVORITES + DESKEW only, no background
     
     @ViewBuilder
     private var controlsOverlay: some View {
         VStack {
-            // Top bar (S010: 3-row structure)
-            VStack(alignment: .leading, spacing: 4) {
-                // Row 1: Source name › Filename (position) + Favorites Mode indicator
+            if overlayLevel == 2 {
+                // Clean: indicators only, no background
                 HStack {
-                    // S010: Full path display
-                    if entries.isEmpty {
-                        Text(imageSource.url.lastPathComponent)
-                            .font(.headline)
-                            .foregroundStyle(.white.opacity(0.6))
-                    } else if currentIndex >= 0 && currentIndex < entries.count {
-                        // Source name › Filename (n/total)
-                        HStack(spacing: 0) {
-                            if !sourceName.isEmpty {
-                                Text(sourceName)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.white.opacity(0.6))
-                                Text(" › ")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.white.opacity(0.4))
-                            }
-                            Text(entries[currentIndex].name)
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                            // #115: Spread-aware position indicator
-                            if isShowingSpread {
-                                let left = currentIndex + 1
-                                let right = currentIndex + 2
-                                Text(" (\(isRTL ? "\(right)-\(left)" : "\(left)-\(right)")/\(entries.count))")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.white.opacity(0.6))
-                            } else {
-                                Text(" (\(currentIndex + 1)/\(entries.count))")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.white.opacity(0.6))
-                            }
-                        }
-                    }
-                    
                     Spacer()
-                    
-                    // #72: Favorite indicator (right side, fixed position)
-                    // #115: spread-aware — show if either page is favorited
-                    if favoriteIndices.contains(currentIndex) ||
-                       (isShowingSpread && favoriteIndices.contains(currentIndex + 1)) {
-                        Image(systemName: "star.fill")
-                            .font(.title3)
-                            .foregroundStyle(.yellow)
-                            .padding(.trailing, 8)
-                    }
-                    
-                    // #101: Deskew indicator (PDF only)
-                    if isDeskewEnabled {
-                        HStack(spacing: 3) {
-                            Image(systemName: "angle")
-                                .font(.caption)
-                            Text("DESKEW")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                        }
-                        .foregroundStyle(.cyan)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(.cyan.opacity(0.15))
-                        .cornerRadius(4)
-                        .padding(.trailing, 4)
-                    }
-                    
-                    // S010: Favorites Mode indicator
-                    if isFavoritesMode {
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill")
-                                .font(.caption)
-                                .foregroundStyle(.yellow)
-                            Text("FAVORITES")
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundStyle(.yellow)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.yellow.opacity(0.2))
-                        .cornerRadius(4)
-                    }
-                    
-                    // Exit hint (changed from f to Esc)
-                    HStack(spacing: 4) {
-                        Text("esc")
-                            .font(.caption)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.white.opacity(0.2))
-                            .cornerRadius(4)
-                        Text("exit")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.6))
-                    }
-                    
-                    // Close button
-                    Button {
-                        onClose()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.leading, 12)
+                    statusIndicators
                 }
-                
-                //// Row 2: Image position indicator (within current source)
-                // if entries.count > 1 {
-                // Row 2: Image position indicator (always show for consistent layout)
-                if !entries.isEmpty {
-                    ImagePositionBar(
-                        current: currentIndex + 1,
-                        total: entries.count,
-                        favoriteIndices: favoriteIndices,
-                        selectedIndices: selectedIndices,
-                        barWidth: 144,
-                        isRTL: isRTL
-                    )
-                    .frame(height: 12)
+                .padding(.trailing, 16)
+                .padding(.top, 16)
+                Spacer()
+            } else {
+                // Full (0) and Compact (1): top bar with nav info
+                VStack(alignment: .leading, spacing: 4) {
+                    // Row 1: Source name › Filename (position) + indicators
+                    HStack {
+                        // Source name › Filename (n/total)
+                        if entries.isEmpty {
+                            Text(imageSource.url.lastPathComponent)
+                                .font(.headline)
+                                .foregroundStyle(.white.opacity(0.6))
+                        } else if currentIndex >= 0 && currentIndex < entries.count {
+                            HStack(spacing: 0) {
+                                if !sourceName.isEmpty {
+                                    Text(sourceName)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.white.opacity(0.6))
+                                    Text(" › ")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.white.opacity(0.4))
+                                }
+                                Text(entries[currentIndex].name)
+                                    .font(.headline)
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                // #115: Spread-aware position indicator
+                                if isShowingSpread {
+                                    let left = currentIndex + 1
+                                    let right = currentIndex + 2
+                                    Text(" (\(isRTL ? "\(right)-\(left)" : "\(left)-\(right)")/\(entries.count))")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.white.opacity(0.6))
+                                } else {
+                                    Text(" (\(currentIndex + 1)/\(entries.count))")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.white.opacity(0.6))
+                                }
+                            }
+                        }
+                        
+                        Spacer()
+                        
+                        statusIndicators
+                        
+                        // Full only: esc hint + close button
+                        if overlayLevel == 0 {
+                            HStack(spacing: 4) {
+                                Text("esc")
+                                    .font(.caption)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(.white.opacity(0.2))
+                                    .cornerRadius(4)
+                                Text("exit")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                            
+                            Button {
+                                onClose()
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(.white.opacity(0.7))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.leading, 12)
+                        }
+                    }
+                    
+                    // Row 2: Image position indicator
+                    if !entries.isEmpty {
+                        ImagePositionBar(
+                            current: currentIndex + 1,
+                            total: entries.count,
+                            favoriteIndices: favoriteIndices,
+                            selectedIndices: selectedIndices,
+                            barWidth: 144,
+                            isRTL: isRTL
+                        )
+                        .frame(height: 12)
+                    }
+                    
+                    // Row 3: Source position indicator
+                    if totalSources > 1 {
+                        SourcePositionIndicator(
+                            current: sourcePosition,
+                            total: totalSources,
+                            barWidth: 144,
+                            isRTL: isRTL
+                        )
+                        .frame(height: 16)
+                    }
                 }
-                
-                // Row 3: Source position indicator (among sibling sources)
-                if totalSources > 1 {
-                    SourcePositionIndicator(
-                        current: sourcePosition,
-                        total: totalSources,
-                        barWidth: 144,
-                        isRTL: isRTL
+                .padding()
+                .background(
+                    overlayLevel == 0 ?
+                    LinearGradient(
+                        colors: isFavoritesMode 
+                            ? [.yellow.opacity(0.4), .black.opacity(0.3), .clear]
+                            : [.black.opacity(0.7), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ) :
+                    LinearGradient(
+                        colors: [.clear],
+                        startPoint: .top,
+                        endPoint: .bottom
                     )
-                    .frame(height: 16)
+                )
+                
+                Spacer()
+                
+                // Full only: bottom navigation hints
+                if overlayLevel == 0 {
+                    bottomHints
                 }
             }
-            .padding()
-            .background(
-                LinearGradient(
-                    colors: isFavoritesMode 
-                        ? [.yellow.opacity(0.4), .black.opacity(0.3), .clear]  // Yellow tint for Favorites Mode
-                        : [.black.opacity(0.7), .clear],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
+        }
+    }
+    
+    /// Shared status indicators: ★, FAVORITES badge, DESKEW badge
+    @ViewBuilder
+    private var statusIndicators: some View {
+        // ★ Favorite indicator
+        if favoriteIndices.contains(currentIndex) ||
+           (isShowingSpread && favoriteIndices.contains(currentIndex + 1)) {
+            Image(systemName: "star.fill")
+                .font(.title3)
+                .foregroundStyle(.yellow)
+                .padding(.trailing, 8)
+        }
+        
+        // FAVORITES Mode badge
+        if isFavoritesMode {
+            HStack(spacing: 4) {
+                Image(systemName: "star.fill")
+                    .font(.caption)
+                    .foregroundStyle(.yellow)
+                Text("FAVORITES")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.yellow)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.yellow.opacity(0.2))
+            .cornerRadius(4)
+        }
+        
+        // DESKEW indicator (PDF only)
+        if isDeskewEnabled {
+            HStack(spacing: 3) {
+                Image(systemName: "angle")
+                    .font(.caption)
+                Text("DESKEW")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+            }
+            .foregroundStyle(.cyan)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(.cyan.opacity(0.15))
+            .cornerRadius(4)
+        }
+    }
+    
+    /// Bottom navigation hints bar
+    private var bottomHints: some View {
+        HStack {
+            Text("a/←")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.5))
+            Text(isFavoritesMode ? (isRTL ? "next ★" : "prev ★") : (isRTL ? "next" : "previous"))
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.3))
             
             Spacer()
             
-            // Bottom bar - navigation hints (#150: RTL-aware)
-            HStack {
-                Text("a/←")
+            if isFavoritesMode {
+                Text("q")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.5))
-                Text(isFavoritesMode ? (isRTL ? "next ★" : "prev ★") : (isRTL ? "next" : "previous"))
+                Text("exit ★ mode")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.3))
-                
-                Spacer()
-                
-                // Mode-specific hints
-                if isFavoritesMode {
-                    Text("q")
+            } else {
+                if AppSettings.shared.isSpreadModeEnabled {
+                    Text("v")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.5))
-                    Text("exit ★ mode")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.3))
-                } else {
-                    // #55: Single page marker hint (only when spread mode enabled)
-                    if AppSettings.shared.isSpreadModeEnabled {
-                        Text("v")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.5))
-                        Text("single")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.3))
-                    }
-                    
-                    // #101: Deskew hint (PDF only)
-                    if imageSource.sourceType == .pdf {
-                        Text("⌘D")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.5))
-                        Text("deskew")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.3))
-                        
-                        Text("⌘[/]")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.5))
-                        Text("adjust")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.3))
-                    }
-                    
-                    Text("tab")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.5))
-                        .padding(.leading, 8)
-                    Text("★ mode")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.3))
-                    
-                    Text("q")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.5))
-                        .padding(.leading, 8)
-                    Text("exit")
+                    Text("single")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.3))
                 }
                 
-                Spacer()
+                if imageSource.sourceType == .pdf {
+                    Text("p")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.5))
+                    Text("deskew")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.3))
+                    
+                    Text("⌘[/]")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.5))
+                    Text("adjust")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.3))
+                }
                 
-                Text(isFavoritesMode ? (isRTL ? "prev ★" : "next ★") : (isRTL ? "previous" : "next"))
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.3))
-                Text("d/→")
+                Text("tab")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.5))
+                    .padding(.leading, 8)
+                Text("★ mode")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.3))
+                
+                Text("q")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.leading, 8)
+                Text("exit")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.3))
             }
-            .padding()
-            .background(
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.5)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
+            
+            Spacer()
+            
+            Text(isFavoritesMode ? (isRTL ? "prev ★" : "next ★") : (isRTL ? "previous" : "next"))
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.3))
+            Text("d/→")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.5))
         }
+        .padding()
+        .background(
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.5)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 }
 
@@ -1943,40 +1953,31 @@ struct ImagePositionBar: View {
     }
     
     var body: some View {
-        HStack(spacing: 6) {
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.white.opacity(0.2))
-                    .frame(width: barWidth, height: 3)
-                
-                ForEach(Array(selectedIndices), id: \.self) { selIndex in
-                    Image(systemName: "xmark")
-                        .font(.system(size: 5, weight: .bold))
-                        .foregroundStyle(.red)
-                        .offset(x: markerX(for: selIndex) - 2.5)
-                }
-                
-                ForEach(Array(favoriteIndices), id: \.self) { favIndex in
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 6))
-                        .foregroundStyle(.yellow)
-                        .offset(x: markerX(for: favIndex) - 3)
-                }
-                
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 8, height: 8)
-                    .offset(x: max(0, progress * barWidth - 4))
+        ZStack(alignment: .leading) {
+            Capsule()
+                .fill(Color.white.opacity(0.2))
+                .frame(width: barWidth, height: 3)
+            
+            ForEach(Array(selectedIndices), id: \.self) { selIndex in
+                Image(systemName: "xmark")
+                    .font(.system(size: 5, weight: .bold))
+                    .foregroundStyle(.red)
+                    .offset(x: markerX(for: selIndex) - 2.5)
             }
-            .frame(width: barWidth, height: 10)
             
-            Spacer()
+            ForEach(Array(favoriteIndices), id: \.self) { favIndex in
+                Image(systemName: "star.fill")
+                    .font(.system(size: 6))
+                    .foregroundStyle(.yellow)
+                    .offset(x: markerX(for: favIndex) - 3)
+            }
             
-            Text("\(current)/\(total)")
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.8))
+            Circle()
+                .fill(Color.white)
+                .frame(width: 8, height: 8)
+                .offset(x: max(0, progress * barWidth - 4))
         }
+        .frame(width: barWidth, height: 10)
     }
 }
 

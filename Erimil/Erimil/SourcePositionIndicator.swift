@@ -20,19 +20,8 @@ struct SourcePositionIndicator: View {
     private let maxDots = 12  // Maximum visible dots
     
     var body: some View {
-        HStack(spacing: 6) {
-            // Dot bar (fixed width)
-            dotBar
-                .frame(width: barWidth)
-            
-            Spacer()
-            
-            // Numeric indicator (right-aligned)
-            Text("\(current)/\(total)")
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.8))
-        }
+        dotBar
+            .frame(width: barWidth)
     }
     
     @ViewBuilder
