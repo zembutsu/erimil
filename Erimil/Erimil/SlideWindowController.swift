@@ -64,6 +64,13 @@ class SlideWindowController {
     private var showBookmarkList: Bool = false
     private var bookmarkListCursor: Int = 0
     
+    // #145: Cursor auto-hide in Slide Mode
+    private var mousePollingTimer: Timer?
+    private var cursorHideTimer: DispatchWorkItem?
+    private var isCursorHidden: Bool = false
+    private let cursorHideDelay: TimeInterval = 3.0
+    private var lastMouseLocation: NSPoint = .zero
+    
     // #76: RTL navigation support
     private var isRTL: Bool {
         guard let source = storedImageSource else { return false }
@@ -184,6 +191,13 @@ class SlideWindowController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             Logger.slideWindow.debug("Toggling fullscreen...")
             window.toggleFullScreen(nil)
+            // #145: Hide cursor after fullscreen transition, then start mouse monitoring
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self = self else { return }
+                self.setupMouseMonitor()  // Register AFTER transition settles
+                self.hideCursor()         // Hide AFTER setup (setup calls removeMouseMonitor→showCursor)
+                self.scheduleCursorHide()
+            }
         }
         
         slideWindow = window
@@ -200,6 +214,7 @@ class SlideWindowController {
         
         // S008: Remove event monitor first
         removeEventMonitor()
+        removeMouseMonitor()  // #145
         
         // S008: Clear stored callbacks
         storedOnClose = nil
@@ -405,8 +420,68 @@ class SlideWindowController {
         }
     }
     
+    // MARK: - #145: Cursor Auto-Hide
+    
+    private func setupMouseMonitor() {
+        removeMouseMonitor()
+        lastMouseLocation = NSEvent.mouseLocation
+        
+        // #145: Poll mouse position instead of event monitor
+        // NSEvent.addLocalMonitorForEvents(.mouseMoved) is unreliable in fullscreen —
+        // macOS generates phantom mouse events during SwiftUI view updates.
+        // Polling at 0.2s interval avoids this entirely with minimal latency.
+        mousePollingTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            let current = NSEvent.mouseLocation
+            let dx = current.x - self.lastMouseLocation.x
+            let dy = current.y - self.lastMouseLocation.y
+            if dx * dx + dy * dy > 25.0 {  // 5px threshold
+                self.lastMouseLocation = current
+                self.showCursor()
+                self.scheduleCursorHide()
+            }
+        }
+        
+        Logger.slideWindow.debug("Mouse polling started (#145)")
+    }
+    
+    private func removeMouseMonitor() {
+        mousePollingTimer?.invalidate()
+        mousePollingTimer = nil
+        cursorHideTimer?.cancel()
+        cursorHideTimer = nil
+        showCursor()
+    }
+    
+    private func scheduleCursorHide() {
+        cursorHideTimer?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            Logger.slideWindow.debug("#145: Timer fired → hideCursor")
+            self?.hideCursor()
+        }
+        cursorHideTimer = work
+        Logger.slideWindow.debug("#145: scheduleCursorHide — timer set (3.0s)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + cursorHideDelay, execute: work)
+    }
+    
+    private func hideCursor() {
+        guard !isCursorHidden else { return }
+        CGDisplayHideCursor(CGMainDisplayID())
+        isCursorHidden = true
+        lastMouseLocation = NSEvent.mouseLocation  // #145: Reset baseline to prevent immediate re-show
+        Logger.slideWindow.debug("#145: hideCursor — cursor hidden")
+    }
+    
+    private func showCursor() {
+        guard isCursorHidden else { return }
+        CGDisplayShowCursor(CGMainDisplayID())
+        isCursorHidden = false
+        Logger.slideWindow.debug("#145: showCursor — cursor visible")
+    }
+    
     /// Handle key events centrally - returns nil to consume, event to pass through
     private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
+        hideCursor()  // #145: Hide cursor on any key navigation
         let hasControl = event.modifierFlags.contains(.control)
         let hasCommand = event.modifierFlags.contains(.command)
         let hasShift = event.modifierFlags.contains(.shift)  // #62: Bookmark keys
