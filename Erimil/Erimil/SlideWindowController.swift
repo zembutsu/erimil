@@ -64,6 +64,20 @@ class SlideWindowController {
     private var showBookmarkList: Bool = false
     private var bookmarkListCursor: Int = 0
     
+    // #145: Cursor auto-hide in Slide Mode
+    private var mousePollingTimer: Timer?
+    private var cursorHideTimer: DispatchWorkItem?
+    private var isCursorHidden: Bool = false
+    private let cursorHideDelay: TimeInterval = 1.0
+    private var lastMouseLocation: NSPoint = .zero
+    private weak var slideHostingView: NSView?  // #145: For cursor update control
+    
+    /// Transparent 1x1 cursor — immune to SwiftUI tracking area resets
+    private lazy var transparentCursor: NSCursor = {
+        let image = NSImage(size: NSSize(width: 1, height: 1))
+        return NSCursor(image: image, hotSpot: .zero)
+    }()
+    
     // #76: RTL navigation support
     private var isRTL: Bool {
         guard let source = storedImageSource else { return false }
@@ -154,8 +168,9 @@ class SlideWindowController {
             onPreviousSource: onPreviousSource
         )
         
-        // Create hosting view
-        let hostingView = NSHostingView(rootView: slideView)
+        // Create hosting view (#145: subclass for cursor control)
+        let hostingView = SlideHostingView(rootView: slideView)
+        slideHostingView = hostingView
         
         // Create window
         let window = NSWindow(
@@ -184,6 +199,12 @@ class SlideWindowController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             Logger.slideWindow.debug("Toggling fullscreen...")
             window.toggleFullScreen(nil)
+            // #145: Start mouse monitoring and hide cursor after fullscreen transition
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self = self else { return }
+                self.setupMouseMonitor()
+                self.hideCursor()
+            }
         }
         
         slideWindow = window
@@ -200,6 +221,8 @@ class SlideWindowController {
         
         // S008: Remove event monitor first
         removeEventMonitor()
+        removeMouseMonitor()  // #145
+        slideHostingView = nil  // #145
         
         // S008: Clear stored callbacks
         storedOnClose = nil
@@ -362,7 +385,9 @@ class SlideWindowController {
         )
         
         // Replace content view while keeping window state (including fullscreen)
-        let hostingView = NSHostingView(rootView: slideView)
+        let hostingView = SlideHostingView(rootView: slideView)
+        hostingView.shouldHideCursor = isCursorHidden
+        slideHostingView = hostingView  // #145
         window.contentView = hostingView
         
         Logger.slideWindow.debug("updateSource: content replaced, fullscreen maintained")
@@ -405,8 +430,82 @@ class SlideWindowController {
         }
     }
     
+    // MARK: - #145: Cursor Auto-Hide
+    
+    private func setupMouseMonitor() {
+        removeMouseMonitor()
+        lastMouseLocation = NSEvent.mouseLocation
+        
+        // #145: Poll mouse position instead of event monitor
+        // NSEvent.addLocalMonitorForEvents(.mouseMoved) is unreliable in fullscreen —
+        // macOS generates phantom mouse events during SwiftUI view updates.
+        // Polling at 0.2s interval avoids this entirely with minimal latency.
+        mousePollingTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            let current = NSEvent.mouseLocation
+            let dx = current.x - self.lastMouseLocation.x
+            let dy = current.y - self.lastMouseLocation.y
+            if dx * dx + dy * dy > 25.0 {  // 5px threshold
+                self.lastMouseLocation = current
+                self.showCursor()
+                self.scheduleCursorHide()
+            }
+        }
+        
+        Logger.slideWindow.debug("Mouse polling started (#145)")
+    }
+    
+    private func removeMouseMonitor() {
+        mousePollingTimer?.invalidate()
+        mousePollingTimer = nil
+        cursorHideTimer?.cancel()
+        cursorHideTimer = nil
+        showCursor()
+    }
+    
+    private func scheduleCursorHide() {
+        cursorHideTimer?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            Logger.slideWindow.debug("#145: Timer fired → hideCursor")
+            self?.hideCursor()
+        }
+        cursorHideTimer = work
+        Logger.slideWindow.debug("#145: scheduleCursorHide — timer set (3.0s)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + cursorHideDelay, execute: work)
+    }
+    
+    private func hideCursor() {
+        guard !isCursorHidden else { return }
+        transparentCursor.set()
+        isCursorHidden = true
+        lastMouseLocation = NSEvent.mouseLocation  // #145: Reset baseline to prevent immediate re-show
+        // Notify hosting view to block cursorUpdate resets
+        if let hostingView = slideHostingView as? SlideHostingView<SlideWindowView> {
+            hostingView.shouldHideCursor = true
+        }
+        Logger.slideWindow.debug("#145: hideCursor — transparent cursor set")
+    }
+    
+    private func showCursor() {
+        guard isCursorHidden else { return }
+        NSCursor.arrow.set()
+        isCursorHidden = false
+        if let hostingView = slideHostingView as? SlideHostingView<SlideWindowView> {
+            hostingView.shouldHideCursor = false
+        }
+        Logger.slideWindow.debug("#145: showCursor — arrow cursor restored")
+    }
+    
+    /// Re-apply transparent cursor (called from SlideHostingView.cursorUpdate)
+    func reapplyTransparentCursor() {
+        if isCursorHidden {
+            transparentCursor.set()
+        }
+    }
+    
     /// Handle key events centrally - returns nil to consume, event to pass through
     private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
+        hideCursor()  // #145: Hide cursor on any key navigation
         let hasControl = event.modifierFlags.contains(.control)
         let hasCommand = event.modifierFlags.contains(.command)
         let hasShift = event.modifierFlags.contains(.shift)  // #62: Bookmark keys
@@ -1713,6 +1812,21 @@ struct SlideWindowView: View {
                     endPoint: .bottom
                 )
             )
+        }
+    }
+}
+
+// MARK: - #145: Slide Hosting View (Cursor Control)
+
+/// NSHostingView subclass that intercepts cursorUpdate to maintain transparent cursor
+class SlideHostingView<Content: View>: NSHostingView<Content> {
+    var shouldHideCursor: Bool = false
+    
+    override func cursorUpdate(with event: NSEvent) {
+        if shouldHideCursor {
+            SlideWindowController.shared.reapplyTransparentCursor()
+        } else {
+            super.cursorUpdate(with: event)
         }
     }
 }
