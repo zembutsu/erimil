@@ -68,7 +68,7 @@ class SlideWindowController {
     private var mousePollingTimer: Timer?
     private var cursorHideTimer: DispatchWorkItem?
     private var isCursorHidden: Bool = false
-    private let cursorHideDelay: TimeInterval = 1.0
+    private let cursorHideDelay: TimeInterval = 3.0
     private var lastMouseLocation: NSPoint = .zero
     private weak var slideHostingView: NSView?  // #145: For cursor update control
     
@@ -650,8 +650,8 @@ class SlideWindowController {
                 // Ctrl+R: Toggle reading direction
                 if let source = storedImageSource {
                     let newDirection = CacheManager.shared.toggleReadingDirection(for: source.url)
+                    notifyViewOfReadingDirectionChange()  // #150: Trigger view re-render
                     Logger.slideWindow.debug("Reading direction toggled to: \(newDirection.displayName, privacy: .public)")
-                    // Note: View will need to observe this change
                 }
                 return nil
             } else {
@@ -1301,6 +1301,14 @@ class SlideWindowController {
         )
     }
     
+    /// Notify the view of reading direction change via NotificationCenter (#150)
+    private func notifyViewOfReadingDirectionChange() {
+        NotificationCenter.default.post(
+            name: NSNotification.Name("SlideWindowReadingDirectionChanged"),
+            object: nil
+        )
+    }
+    
     /// Notify the view of spread layout change via NotificationCenter (#55)
     private func notifyViewOfSpreadChange() {
         NotificationCenter.default.post(
@@ -1358,9 +1366,18 @@ struct SlideWindowView: View {
     // #115: Track spread display state for position indicator
     @State private var isShowingSpread: Bool = false
     
+    // #150: Reading direction re-render trigger
+    @State private var readingDirectionVersion: Int = 0
+    
+    /// #150: Effective reading direction (re-evaluated on readingDirectionVersion change)
+    private var effectiveReadingDirection: ReadingDirection {
+        _ = readingDirectionVersion
+        return CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
+    }
+    
     // #54: Effective reading direction
     private var isRTL: Bool {
-        CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url) == .rtl
+        effectiveReadingDirection == .rtl
     }
     
     init(
@@ -1411,6 +1428,7 @@ struct SlideWindowView: View {
                     isShowingSpread: $isShowingSpread,  // #115: Track for position indicator
                     couldBeSpreadWithPrevious: .constant(false)
                 )
+                .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)  // #150: RTL spread inversion
             }
             
             // Controls overlay (auto-hide capable)
@@ -1543,6 +1561,10 @@ struct SlideWindowView: View {
             if let enabled = notification.userInfo?["deskewEnabled"] as? Bool {
                 isDeskewEnabled = enabled
             }
+        }
+        // #150: Listen for reading direction change
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowReadingDirectionChanged"))) { _ in
+            readingDirectionVersion += 1
         }
     }
     
@@ -1731,12 +1753,12 @@ struct SlideWindowView: View {
             
             Spacer()
             
-            // Bottom bar - navigation hints
+            // Bottom bar - navigation hints (#150: RTL-aware)
             HStack {
                 Text("a/←")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.5))
-                Text(isFavoritesMode ? "prev ★" : "previous")
+                Text(isFavoritesMode ? (isRTL ? "next ★" : "prev ★") : (isRTL ? "next" : "previous"))
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.3))
                 
@@ -1797,7 +1819,7 @@ struct SlideWindowView: View {
                 
                 Spacer()
                 
-                Text(isFavoritesMode ? "next ★" : "next")
+                Text(isFavoritesMode ? (isRTL ? "prev ★" : "next ★") : (isRTL ? "previous" : "next"))
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.3))
                 Text("d/→")
