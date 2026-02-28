@@ -75,6 +75,11 @@ class CacheManager {
     /// ~/Library/Application Support/Erimil/deskew_angles.json (#101)
     private let deskewAnglesFileURL: URL
     
+    // MARK: - Cache Format
+    
+    /// Magic bytes for .ecache format ("ERIM" header)
+    private static let ecacheMagic = Data([0x45, 0x52, 0x49, 0x4D])
+    
     // MARK: - In-Memory Cache
     
     /// pathHash → contentHash mapping (loaded from index.json)
@@ -326,7 +331,7 @@ class CacheManager {
     
     /// Get cached thumbnail URL for a content hash
     private func thumbnailURL(for contentHash: String) -> URL {
-        let filename = contentHash.replacingOccurrences(of: "sha256:", with: "") + ".thumb.jpg"
+        let filename = contentHash.replacingOccurrences(of: "sha256:", with: "") + ".ecache"
         return cacheDirectory.appendingPathComponent(filename)
     }
     
@@ -347,12 +352,22 @@ class CacheManager {
             return nil
         }
         
-        // #134 P6: Use CGImageSource + materialize to force complete pixel decode.
-        // NSImage(contentsOf:) creates a lazily-decoded image that SwiftUI renders
-        // progressively (visible top-to-bottom drawing).
-        guard let image = ImageUtilities.loadAndMaterialize(from: url) else {
+        guard let raw = try? Data(contentsOf: url) else {
+            return nil
+        }
+        
+        // Strip ERIM magic header if present (#146)
+        let jpegData: Data
+        if raw.prefix(4) == Self.ecacheMagic {
+            jpegData = Data(raw.dropFirst(4))
+        } else {
+            jpegData = raw // Legacy format (no header)
+        }
+        
+        // #134 P6: Use materialize to force complete pixel decode.
+        guard let image = ImageUtilities.materializedImage(from: jpegData) else {
             // Fallback to NSImage if CGImageSource fails
-            guard let fallback = NSImage(contentsOf: url) else {
+            guard let fallback = NSImage(data: jpegData) else {
                 return nil
             }
             thumbnailCache.setObject(fallback, forKey: contentHash as NSString, cost: estimatedBitmapCost(of: fallback))
@@ -743,16 +758,32 @@ class CacheManager {
             return
         }
         
-        // Convert to JPEG data
-        guard let tiffData = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
-            Logger.cache.error("Failed to convert thumbnail to JPEG")
+        // #146: Use CGImageDestination for efficient JPEG encoding with ERIM header
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            Logger.cache.error("Failed to get CGImage from thumbnail")
             return
         }
         
+        let jpegData = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(jpegData, "public.jpeg" as CFString, 1, nil) else {
+            Logger.cache.error("Failed to create CGImageDestination")
+            return
+        }
+        
+        let options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: 0.6]
+        CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
+        
+        guard CGImageDestinationFinalize(destination) else {
+            Logger.cache.error("Failed to finalize CGImageDestination")
+            return
+        }
+        
+        // Prepend ERIM magic header
+        var output = Self.ecacheMagic
+        output.append(jpegData as Data)
+        
         do {
-            try jpegData.write(to: url, options: .atomic)
+            try output.write(to: url, options: .atomic)
         } catch {
             Logger.cache.error("Failed to save thumbnail: \(error, privacy: .public)")
         }
