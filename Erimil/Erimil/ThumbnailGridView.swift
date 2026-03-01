@@ -127,6 +127,7 @@ struct ThumbnailGridView: View {
     // Keyboard navigation
     @State private var focusedIndex: Int? = nil
     @State private var columnCount: Int = 4
+    @State private var isKeyRepeat: Bool = false  // #158: suppress scroll animation during key repeat
     
     // Generation ID to invalidate stale async results
     @State private var loadID: UUID = UUID()
@@ -630,8 +631,13 @@ struct ThumbnailGridView: View {
                             }
                             .onChange(of: focusedIndex) { _, newIndex in
                                 if let index = newIndex {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                    if isKeyRepeat {
+                                        // #158: No animation during key repeat — immediate scroll
                                         scrollProxy.scrollTo(index, anchor: .center)
+                                    } else {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            scrollProxy.scrollTo(index, anchor: .center)
+                                        }
                                     }
                                 }
                             }
@@ -1167,6 +1173,9 @@ struct ThumbnailGridView: View {
     }
     
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
+        // #158: Track key repeat for scroll animation control
+        isKeyRepeat = event.isARepeat
+        
         // #62 Phase 5: Delegate keys to bookmark list overlay when showing
         if showBookmarkList {
             let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
