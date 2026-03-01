@@ -27,6 +27,9 @@ class SlideWindowController {
     
     private var slideWindow: NSWindow?
     private var currentIndex: Int = 0
+    // #154: Render gate — prevent rapid key repeat from skipping pages
+    private var isNavigationGated: Bool = false
+    private var imageReadyObserver: NSObjectProtocol?
     
     /// Public getter for current index
     var getCurrentIndex: Int {
@@ -120,6 +123,18 @@ class SlideWindowController {
         isFavoritesMode = false
         showBookmarkList = false
         bookmarkListCursor = 0
+        isNavigationGated = false  // #154
+        
+        // #154: Listen for image ready signal to release navigation gate
+        if let existing = imageReadyObserver {
+            NotificationCenter.default.removeObserver(existing)
+        }
+        imageReadyObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("SlideWindowImageReady"),
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.isNavigationGated = false
+        }
         
         // S008: Store callbacks and state for event monitor
         storedOnClose = onClose
@@ -228,6 +243,12 @@ class SlideWindowController {
         removeEventMonitor()
         removeMouseMonitor()  // #145
         slideHostingView = nil  // #145
+        
+        // #154: Remove image ready observer
+        if let observer = imageReadyObserver {
+            NotificationCenter.default.removeObserver(observer)
+            imageReadyObserver = nil
+        }
         
         // S008: Clear stored callbacks
         storedOnClose = nil
@@ -584,11 +605,11 @@ class SlideWindowController {
             } else if isFavoritesMode {
                 // #76: RTL inverts direction
                 Logger.slideWindow.debug("→ \(self.isRTL ? "Next" : "Previous") favorite (← in Favorites Mode)")
-                isRTL ? goToNextFavorite() : goToPreviousFavorite()
+                gatedNavigate { isRTL ? goToNextFavorite() : goToPreviousFavorite() }  // #154
                 return nil
             } else {
                 // #76: RTL inverts direction
-                isRTL ? goToNext() : goToPrevious()
+                gatedNavigate { isRTL ? goToNext() : goToPrevious() }  // #154
                 return nil
             }
             
@@ -605,11 +626,11 @@ class SlideWindowController {
             } else if isFavoritesMode {
                 // #76: RTL inverts direction
                 Logger.slideWindow.debug("→ \(self.isRTL ? "Previous" : "Next") favorite (→ in Favorites Mode)")
-                isRTL ? goToPreviousFavorite() : goToNextFavorite()
+                gatedNavigate { isRTL ? goToPreviousFavorite() : goToNextFavorite() }  // #154
                 return nil
             } else {
                 // #76: RTL inverts direction
-                isRTL ? goToPrevious() : goToNext()
+                gatedNavigate { isRTL ? goToPrevious() : goToNext() }  // #154
                 return nil
             }
         
@@ -625,10 +646,10 @@ class SlideWindowController {
                 return nil
             } else if isFavoritesMode {
                 Logger.slideWindow.debug("→ Previous favorite (↑ in Favorites Mode)")
-                goToPreviousFavorite()
+                gatedNavigate { goToPreviousFavorite() }  // #154
                 return nil
             } else {
-                goToPrevious()
+                gatedNavigate { goToPrevious() }  // #154
                 return nil
             }
             
@@ -644,10 +665,10 @@ class SlideWindowController {
                 return nil
             } else if isFavoritesMode {
                 Logger.slideWindow.debug("→ Next favorite (↓ in Favorites Mode)")
-                goToNextFavorite()
+                gatedNavigate { goToNextFavorite() }  // #154
                 return nil
             } else {
-                goToNext()
+                gatedNavigate { goToNext() }  // #154
                 return nil
             }
         
@@ -696,10 +717,10 @@ class SlideWindowController {
                     } else if isFavoritesMode {
                         // #76: RTL inverts direction
                         Logger.slideWindow.debug("→ \(self.isRTL ? "Next" : "Previous") favorite (A in Favorites Mode)")
-                        isRTL ? goToNextFavorite() : goToPreviousFavorite()
+                        gatedNavigate { isRTL ? goToNextFavorite() : goToPreviousFavorite() }  // #154
                     } else {
                         // #76: RTL inverts direction
-                        isRTL ? goToNext() : goToPrevious()
+                        gatedNavigate { isRTL ? goToNext() : goToPrevious() }  // #154
                     }
                     return nil
                     
@@ -728,10 +749,10 @@ class SlideWindowController {
                     } else if isFavoritesMode {
                         // #76: RTL inverts direction
                         Logger.slideWindow.debug("→ \(self.isRTL ? "Previous" : "Next") favorite (D in Favorites Mode)")
-                        isRTL ? goToPreviousFavorite() : goToNextFavorite()
+                        gatedNavigate { isRTL ? goToPreviousFavorite() : goToNextFavorite() }  // #154
                     } else {
                         // #76: RTL inverts direction
-                        isRTL ? goToPrevious() : goToNext()
+                        gatedNavigate { isRTL ? goToPrevious() : goToNext() }  // #154
                     }
                     return nil
                 
@@ -745,9 +766,9 @@ class SlideWindowController {
                         storedOnPreviousSource?()
                     } else if isFavoritesMode {
                         Logger.slideWindow.debug("→ Previous favorite (W in Favorites Mode)")
-                        goToPreviousFavorite()
+                        gatedNavigate { goToPreviousFavorite() }  // #154
                     } else {
-                        goToPrevious()
+                        gatedNavigate { goToPrevious() }  // #154
                     }
                     return nil
                     
@@ -773,9 +794,9 @@ class SlideWindowController {
                         storedOnNextSource?()
                     } else if isFavoritesMode {
                         Logger.slideWindow.debug("→ Next favorite (S in Favorites Mode)")
-                        goToNextFavorite()
+                        gatedNavigate { goToNextFavorite() }  // #154
                     } else {
-                        goToNext()
+                        gatedNavigate { goToNext() }  // #154
                     }
                     return nil
                 
@@ -896,7 +917,7 @@ class SlideWindowController {
                         }
                     } else {
                         Logger.slideWindow.debug("→ \(self.isRTL ? "Next" : "Previous") favorite (Z)")
-                        isRTL ? goToNextFavorite() : goToPreviousFavorite()
+                        gatedNavigate { isRTL ? goToNextFavorite() : goToPreviousFavorite() }  // #154
                     }
                     return nil
                     
@@ -914,7 +935,7 @@ class SlideWindowController {
                         }
                     } else {
                         Logger.slideWindow.debug("→ \(self.isRTL ? "Previous" : "Next") favorite (C)")
-                        isRTL ? goToPreviousFavorite() : goToNextFavorite()
+                        gatedNavigate { isRTL ? goToPreviousFavorite() : goToNextFavorite() }  // #154
                     }
                     return nil
                     
@@ -1035,6 +1056,14 @@ class SlideWindowController {
             storedOnIndexChange?(currentIndex)
             notifyViewOfIndexChange()
         }
+    }
+    
+    /// #154: Navigate with render gate — ensures each page displays at least one frame
+    private func gatedNavigate(_ action: () -> Void) {
+        guard !isNavigationGated else { return }
+        let before = currentIndex
+        action()
+        if currentIndex != before { isNavigationGated = true }
     }
     
     private func goToPreviousFavorite() {
@@ -1454,7 +1483,13 @@ struct SlideWindowView: View {
                     favoriteIndices: favoriteIndices,
                     reloadTrigger: isDeskewEnabled,  // #101: Force reload when deskew changes
                     isShowingSpread: $isShowingSpread,  // #115: Track for position indicator
-                    couldBeSpreadWithPrevious: .constant(false)
+                    couldBeSpreadWithPrevious: .constant(false),
+                    onImageReady: { _ in  // #154: Release navigation gate
+                        NotificationCenter.default.post(
+                            name: NSNotification.Name("SlideWindowImageReady"),
+                            object: nil
+                        )
+                    }
                 )
                 .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)  // #150: RTL spread inversion
             }
