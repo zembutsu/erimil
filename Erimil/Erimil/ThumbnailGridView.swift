@@ -2760,6 +2760,9 @@ struct ViewerView: View {
     // #101: Deskew state
     @State private var isDeskewEnabled: Bool = false
     
+    // #154: Render gate — prevent rapid key repeat from skipping pages
+    @State private var isNavigationGated: Bool = false
+    
     /// #54: Effective reading direction for this source
     private var effectiveReadingDirection: ReadingDirection {
         CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
@@ -2946,7 +2949,8 @@ struct ViewerView: View {
                         favoriteIndices: favoriteIndices,
                         reloadTrigger: spreadUpdateTrigger,
                         isShowingSpread: $isShowingSpread,
-                        couldBeSpreadWithPrevious: $couldBeSpreadWithPrevious
+                        couldBeSpreadWithPrevious: $couldBeSpreadWithPrevious,
+                        onImageReady: { _ in isNavigationGated = false }  // #154
                     )
                     
                     // Navigation hints (left/right edges) - #67: Spread-aware
@@ -3128,6 +3132,14 @@ struct ViewerView: View {
         Logger.viewer.debug("navigateTo: \(viewerIndex, privacy: .public) → \(index, privacy: .public)")
         previousViewerIndex = viewerIndex
         viewerIndex = index
+    }
+    
+    /// #154: Navigate with render gate — ensures each page displays at least one frame
+    private func gatedNavigate(_ action: () -> Void) {
+        guard !isNavigationGated else { return }
+        let before = viewerIndex
+        action()
+        if viewerIndex != before { isNavigationGated = true }
     }
     
     /// #129: Snap index to spread pair start if target is a non-leading page
@@ -3338,7 +3350,7 @@ struct ViewerView: View {
                 onRequestPreviousSource?()
             } else {
                 // #76: RTL inverts direction
-                isRTL ? goToNext() : goToPrevious()
+                gatedNavigate { isRTL ? goToNext() : goToPrevious() }  // #154
             }
             return true
             
@@ -3355,7 +3367,7 @@ struct ViewerView: View {
                 onRequestNextSource?()
             } else {
                 // #76: RTL inverts direction
-                isRTL ? goToPrevious() : goToNext()
+                gatedNavigate { isRTL ? goToPrevious() : goToNext() }  // #154
             }
             return true
         
@@ -3368,7 +3380,7 @@ struct ViewerView: View {
             } else if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
-                goToPrevious()
+                gatedNavigate { goToPrevious() }  // #154
             }
             return true
             
@@ -3381,7 +3393,7 @@ struct ViewerView: View {
             } else if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
-                goToNext()
+                gatedNavigate { goToNext() }  // #154
             }
             return true
 
@@ -3437,7 +3449,7 @@ struct ViewerView: View {
                 Logger.viewer.debug("Ctrl+A → \(isRTL ? "end" : "start")")
             } else {
                 // #76: RTL inverts direction
-                isRTL ? goToNext() : goToPrevious()
+                gatedNavigate { isRTL ? goToNext() : goToPrevious() }  // #154
             }
             return true
             
@@ -3474,7 +3486,7 @@ struct ViewerView: View {
                 Logger.viewer.debug("Ctrl+D → \(isRTL ? "start" : "end")")
             } else {
                 // #76: RTL inverts direction
-                isRTL ? goToPrevious() : goToNext()
+                gatedNavigate { isRTL ? goToPrevious() : goToNext() }  // #154
             }
             return true
         
@@ -3487,7 +3499,7 @@ struct ViewerView: View {
             } else if event.modifierFlags.contains(.control) {
                 onRequestPreviousSource?()
             } else {
-                goToPrevious()
+                gatedNavigate { goToPrevious() }  // #154
             }
             return true
             
@@ -3512,7 +3524,7 @@ struct ViewerView: View {
             } else if event.modifierFlags.contains(.control) {
                 onRequestNextSource?()
             } else {
-                goToNext()
+                gatedNavigate { goToNext() }  // #154
             }
             return true
         
@@ -3695,7 +3707,7 @@ struct ViewerView: View {
                     Logger.viewer.debug("Ctrl+Z → \(isRTL ? "last" : "first", privacy: .public) favorite at \(fav, privacy: .public)")
                 }
             } else {
-                isRTL ? goToNextFavorite() : goToPreviousFavorite()
+                gatedNavigate { isRTL ? goToNextFavorite() : goToPreviousFavorite() }  // #154
             }
             return true
             
@@ -3716,7 +3728,7 @@ struct ViewerView: View {
                     Logger.viewer.debug("Ctrl+C → \(isRTL ? "first" : "last", privacy: .public) favorite at \(fav, privacy: .public)")
                 }
             } else {
-                isRTL ? goToPreviousFavorite() : goToNextFavorite()
+                gatedNavigate { isRTL ? goToPreviousFavorite() : goToNextFavorite() }  // #154
             }
             return true
             

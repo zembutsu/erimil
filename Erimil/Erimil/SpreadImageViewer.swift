@@ -186,6 +186,9 @@ struct SpreadImageViewer: View {
     @Binding var isShowingSpread: Bool  // #67: Notify parent if currently showing spread
     @Binding var couldBeSpreadWithPrevious: Bool  // #67: Could form spread with previous page
     
+    // #154: Callback when image buffer swap completes (render gate for rapid navigation)
+    var onImageReady: ((Int) -> Void)? = nil
+    
     // Double buffering: two layers, switch instantly when ready
     @State private var bufferA: (left: NSImage?, right: NSImage?, index: Int)? = nil
     @State private var bufferB: (left: NSImage?, right: NSImage?, index: Int)? = nil
@@ -199,7 +202,8 @@ struct SpreadImageViewer: View {
         entries: [ImageEntry],
         currentIndex: Binding<Int>,
         favoriteIndices: Set<Int>,
-        reloadTrigger: Bool = false
+        reloadTrigger: Bool = false,
+        onImageReady: ((Int) -> Void)? = nil  // #154
     ) {
         self.imageSource = imageSource
         self.entries = entries
@@ -208,6 +212,7 @@ struct SpreadImageViewer: View {
         self.reloadTrigger = reloadTrigger
         self._isShowingSpread = .constant(false)
         self._couldBeSpreadWithPrevious = .constant(false)
+        self.onImageReady = onImageReady  // #154
     }
     
     // Full initializer with bindings
@@ -218,7 +223,8 @@ struct SpreadImageViewer: View {
         favoriteIndices: Set<Int>,
         reloadTrigger: Bool = false,
         isShowingSpread: Binding<Bool>,
-        couldBeSpreadWithPrevious: Binding<Bool>
+        couldBeSpreadWithPrevious: Binding<Bool>,
+        onImageReady: ((Int) -> Void)? = nil  // #154
     ) {
         self.imageSource = imageSource
         self.entries = entries
@@ -227,6 +233,7 @@ struct SpreadImageViewer: View {
         self.reloadTrigger = reloadTrigger
         self._isShowingSpread = isShowingSpread
         self._couldBeSpreadWithPrevious = couldBeSpreadWithPrevious
+        self.onImageReady = onImageReady  // #154
     }
     
     /// Check if spread mode is enabled
@@ -477,6 +484,7 @@ struct SpreadImageViewer: View {
                         couldBeSpreadWithPrevious = canSpreadWithPrev
                         Logger.spread.debug("Single display at \(capturedIndex, privacy: .public), couldBeSpreadWithPrevious: \(canSpreadWithPrev, privacy: .public)")
                     }
+                    onImageReady?(capturedIndex)  // #154: Render gate release
                     return
                 }
                 
@@ -516,6 +524,7 @@ struct SpreadImageViewer: View {
                                 couldBeSpreadWithPrevious = canSpreadWithPrev
                                 Logger.spread.debug("Single (right wide) at \(capturedIndex, privacy: .public), couldBeSpreadWithPrevious: \(canSpreadWithPrev, privacy: .public)")
                             }
+                            onImageReady?(capturedIndex)  // #154: Render gate release
                         } else {
                             // Both are portrait - show spread
                             withTransaction(Transaction(animation: nil)) {
@@ -531,6 +540,7 @@ struct SpreadImageViewer: View {
                                 couldBeSpreadWithPrevious = false  // Already in spread
                                 Logger.spread.debug("Spread display at \(capturedIndex, privacy: .public)|\(capturedIndex+1, privacy: .public)")
                             }
+                            onImageReady?(capturedIndex)  // #154: Render gate release
                         }
                     }
                 }
