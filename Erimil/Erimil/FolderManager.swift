@@ -177,33 +177,36 @@ class FolderManager: ImageSource {
     // MARK: - Folder Operations
     
     /// Create ZIP from selected images (excluding excludedPaths)
+    /// Uses atomic safe export to prevent data loss (#161)
     func createZip(excluding excludedPaths: Set<String>, to destinationURL: URL) throws {
         Logger.folder.info("createZip called")
         Logger.folder.debug("Excluded paths: \(excludedPaths)")
         
-        guard let archive = Archive(url: destinationURL, accessMode: .create) else {
-            throw FolderError.cannotCreateZip
-        }
-        
-        let entries = listImageEntries()
-        
-        for entry in entries {
-            if excludedPaths.contains(entry.path) {
-                Logger.folder.debug("Excluding: \(entry.name)")
-                continue
+        try ExportUtilities.safeExport(to: destinationURL) { tempURL in
+            guard let archive = Archive(url: tempURL, accessMode: .create) else {
+                throw FolderError.cannotCreateZip
             }
             
-            let fileURL = URL(fileURLWithPath: entry.path)
+            let entries = listImageEntries()
             
-            do {
-                try archive.addEntry(with: entry.name, relativeTo: fileURL.deletingLastPathComponent())
-                Logger.folder.debug("Added: \(entry.name)")
-            } catch {
-                Logger.folder.error("Failed to add \(entry.name): \(error, privacy: .public)")
+            for entry in entries {
+                if excludedPaths.contains(entry.path) {
+                    Logger.folder.debug("Excluding: \(entry.name)")
+                    continue
+                }
+                
+                let fileURL = URL(fileURLWithPath: entry.path)
+                
+                do {
+                    try archive.addEntry(with: entry.name, relativeTo: fileURL.deletingLastPathComponent())
+                    Logger.folder.debug("Added: \(entry.name)")
+                } catch {
+                    Logger.folder.error("Failed to add \(entry.name): \(error, privacy: .public)")
+                }
             }
+            
+            Logger.folder.info("ZIP creation completed")
         }
-        
-        Logger.folder.info("ZIP creation completed")
     }
     
     /// Move selected images to Trash

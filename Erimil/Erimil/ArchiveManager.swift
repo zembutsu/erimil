@@ -276,75 +276,78 @@ class ArchiveManager: ImageSource {
     
     /// Export excluding specified paths
     /// Reference: https://github.com/weichsel/ZIPFoundation#adding-and-removing-entries
+    /// Uses atomic safe export to prevent data loss when destination == source (#161)
     func exportOptimized(excluding excludedPaths: Set<String>, to destinationURL: URL) throws {
         Logger.archive.info("exportOptimized called")
         Logger.archive.debug("Excluded paths: \(excludedPaths)")
         
-        guard let sourceArchive = openArchive() else {
-            Logger.archive.error("Failed to open source archive")
-            throw ArchiveError.cannotOpenSource
-        }
-        Logger.archive.debug("Source archive opened")
-        
-        guard let destinationArchive = try? Archive(url: destinationURL, accessMode: .create) else {
-            Logger.archive.error("Failed to create destination archive at: \(destinationURL.path)")
-            throw ArchiveError.cannotCreateDestination
-        }
-        Logger.archive.debug("Destination archive created")
-        
-        let encoding = getPathEncoding()
-        
-        for entry in sourceArchive {
-            let path = encoding != nil ? entry.path(using: encoding!) : entry.path
-            
-            if excludedPaths.contains(path) {
-                Logger.archive.debug("Excluding: \(path)")
-                continue
+        try ExportUtilities.safeExport(to: destinationURL) { tempURL in
+            guard let sourceArchive = openArchive() else {
+                Logger.archive.error("Failed to open source archive")
+                throw ArchiveError.cannotOpenSource
             }
+            Logger.archive.debug("Source archive opened")
             
-            if path.contains("__MACOSX/") {
-                Logger.archive.debug("Skipping __MACOSX: \(path)")
-                continue
+            guard let destinationArchive = try? Archive(url: tempURL, accessMode: .create) else {
+                Logger.archive.error("Failed to create destination archive at: \(tempURL.path)")
+                throw ArchiveError.cannotCreateDestination
             }
+            Logger.archive.debug("Destination archive created (temp)")
             
-            if entry.type == .directory {
-                Logger.archive.debug("Skipping directory: \(path)")
-                continue
-            }
+            let encoding = getPathEncoding()
             
-            Logger.archive.debug("Copying: \(path)")
-            
-            var entryData = Data()
-            do {
-                _ = try sourceArchive.extract(entry) { data in
-                    entryData.append(data)
+            for entry in sourceArchive {
+                let path = encoding != nil ? entry.path(using: encoding!) : entry.path
+                
+                if excludedPaths.contains(path) {
+                    Logger.archive.debug("Excluding: \(path)")
+                    continue
                 }
-                Logger.archive.debug("  Extracted: \(entryData.count, privacy: .public) bytes")
-            } catch {
-                Logger.archive.error("  Extract failed: \(error, privacy: .public)")
-                continue
+                
+                if path.contains("__MACOSX/") {
+                    Logger.archive.debug("Skipping __MACOSX: \(path)")
+                    continue
+                }
+                
+                if entry.type == .directory {
+                    Logger.archive.debug("Skipping directory: \(path)")
+                    continue
+                }
+                
+                Logger.archive.debug("Copying: \(path)")
+                
+                var entryData = Data()
+                do {
+                    _ = try sourceArchive.extract(entry) { data in
+                        entryData.append(data)
+                    }
+                    Logger.archive.debug("  Extracted: \(entryData.count, privacy: .public) bytes")
+                } catch {
+                    Logger.archive.error("  Extract failed: \(error, privacy: .public)")
+                    continue
+                }
+                
+                do {
+                    // Write with correctly decoded path (UTF-8 in destination)
+                    try destinationArchive.addEntry(
+                        with: path,
+                        type: entry.type,
+                        uncompressedSize: Int64(entryData.count),
+                        provider: { position, size in
+                            let start = Int(position)
+                            let end = min(start + size, entryData.count)
+                            return entryData.subdata(in: start..<end)
+                        }
+                    )
+                    Logger.archive.debug("  Added to destination")
+                } catch {
+                    Logger.archive.error("  Add failed: \(error, privacy: .public)")
+                    continue
+                }
             }
             
-            do {
-                // Write with correctly decoded path (UTF-8 in destination)
-                try destinationArchive.addEntry(
-                    with: path,
-                    type: entry.type,
-                    uncompressedSize: Int64(entryData.count),
-                    provider: { position, size in
-                        let start = Int(position)
-                        let end = min(start + size, entryData.count)
-                        return entryData.subdata(in: start..<end)
-                    }
-                )
-                Logger.archive.debug("  Added to destination")
-            } catch {
-                Logger.archive.error("  Add failed: \(error, privacy: .public)")
-                continue
-            }
+            Logger.archive.info("Export completed successfully")
         }
-        
-        Logger.archive.info("Export completed successfully")
     }
 }
 

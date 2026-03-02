@@ -1720,7 +1720,12 @@ struct ThumbnailGridView: View {
             return
         }
         
-        try? FileManager.default.removeItem(at: outputURL)
+        // #161: Block if destination already exists
+        if let reason = ExportUtilities.guardDestination(outputURL) {
+            exportMessage = reason
+            showExportError = true
+            return
+        }
         
         do {
             try archiveManager.exportOptimized(excluding: pathsToRemove, to: outputURL)
@@ -1771,7 +1776,12 @@ struct ThumbnailGridView: View {
             return
         }
         
-        try? FileManager.default.removeItem(at: outputURL)
+        // #161: Block if destination already exists
+        if let reason = ExportUtilities.guardDestination(outputURL) {
+            exportMessage = reason
+            showExportError = true
+            return
+        }
         
         do {
             try folderManager.createZip(excluding: pathsToRemove, to: outputURL)
@@ -1840,7 +1850,12 @@ struct ThumbnailGridView: View {
             return
         }
         
-        try? FileManager.default.removeItem(at: outputURL)
+        // #161: Block if destination already exists
+        if let reason = ExportUtilities.guardDestination(outputURL) {
+            exportMessage = reason
+            showExportError = true
+            return
+        }
         
         do {
             try pdfManager.exportOptimizedPDF(excluding: pathsToRemove, to: outputURL)
@@ -1946,7 +1961,12 @@ struct ThumbnailGridView: View {
             return
         }
         
-        try? FileManager.default.removeItem(at: outputURL)
+        // #161: Block if destination already exists
+        if let reason = ExportUtilities.guardDestination(outputURL) {
+            exportMessage = reason
+            showExportError = true
+            return
+        }
         
         do {
             let count = try pdfManager.exportPagesAsPNGZip(excluding: pathsToRemove, to: outputURL)

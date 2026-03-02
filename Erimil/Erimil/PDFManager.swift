@@ -193,6 +193,7 @@ class PDFManager: ImageSource {
     // MARK: - Export Operations (#100)
     
     /// Export PDF excluding specified pages, creating an optimized PDF
+    /// Uses atomic safe export to prevent data loss when destination == source (#161)
     /// - Parameters:
     ///   - pathsToRemove: Set of page paths to exclude (e.g., "page_001", "page_003")
     ///   - outputURL: Destination URL for the optimized PDF
@@ -203,34 +204,36 @@ class PDFManager: ImageSource {
             throw PDFExportError.cannotOpenDocument
         }
         
-        let newDoc = PDFDocument()
-        var insertIndex = 0
-        
-        for i in 0..<sourceDoc.pageCount {
-            let pagePath = String(format: "page_%03d", i + 1)
-            if pathsToRemove.contains(pagePath) {
-                Logger.pdf.debug("Excluding page \(i + 1, privacy: .public)")
-                continue
+        try ExportUtilities.safeExport(to: outputURL) { tempURL in
+            let newDoc = PDFDocument()
+            var insertIndex = 0
+            
+            for i in 0..<sourceDoc.pageCount {
+                let pagePath = String(format: "page_%03d", i + 1)
+                if pathsToRemove.contains(pagePath) {
+                    Logger.pdf.debug("Excluding page \(i + 1, privacy: .public)")
+                    continue
+                }
+                
+                guard let page = sourceDoc.page(at: i) else {
+                    Logger.pdf.error("Failed to get page at index \(i, privacy: .public)")
+                    continue
+                }
+                
+                newDoc.insert(page, at: insertIndex)
+                insertIndex += 1
             }
             
-            guard let page = sourceDoc.page(at: i) else {
-                Logger.pdf.error("Failed to get page at index \(i, privacy: .public)")
-                continue
+            guard insertIndex > 0 else {
+                throw PDFExportError.noRemainingPages
             }
             
-            newDoc.insert(page, at: insertIndex)
-            insertIndex += 1
+            guard newDoc.write(to: tempURL) else {
+                throw PDFExportError.writeFailed(tempURL)
+            }
+            
+            Logger.pdf.info("Exported _opt.pdf: \(insertIndex, privacy: .public) pages to \(outputURL.lastPathComponent)")
         }
-        
-        guard insertIndex > 0 else {
-            throw PDFExportError.noRemainingPages
-        }
-        
-        guard newDoc.write(to: outputURL) else {
-            throw PDFExportError.writeFailed(outputURL)
-        }
-        
-        Logger.pdf.info("Exported _opt.pdf: \(insertIndex, privacy: .public) pages to \(outputURL.lastPathComponent)")
     }
     
     /// Export PDF pages as individual PNG images at 300dpi
@@ -323,6 +326,7 @@ class PDFManager: ImageSource {
     }
     
     /// Export PDF pages as PNG images packaged in a ZIP archive
+    /// Uses atomic safe export to prevent data loss (#161)
     /// - Parameters:
     ///   - pathsToRemove: Set of page paths to exclude
     ///   - outputURL: Destination URL for the ZIP file (e.g., "sample_png.zip")
@@ -335,82 +339,86 @@ class PDFManager: ImageSource {
             throw PDFExportError.cannotOpenDocument
         }
         
-        // Create ZIP archive
-        guard let archive = Archive(url: outputURL, accessMode: .create) else {
-            throw PDFExportError.writeFailed(outputURL)
-        }
-        
-        let dpi: CGFloat = 300.0
-        let scaleFactor = dpi / 72.0
         var exportedCount = 0
         
-        for i in 0..<sourceDoc.pageCount {
-            let pagePath = String(format: "page_%03d", i + 1)
-            if pathsToRemove.contains(pagePath) {
-                continue
+        try ExportUtilities.safeExport(to: outputURL) { tempURL in
+            // Create ZIP archive
+            guard let archive = Archive(url: tempURL, accessMode: .create) else {
+                throw PDFExportError.writeFailed(tempURL)
             }
             
-            guard let page = sourceDoc.page(at: i) else {
-                Logger.pdf.error("PNG ZIP export: failed to get page \(i + 1, privacy: .public)")
-                continue
-            }
+            let dpi: CGFloat = 300.0
+            let scaleFactor = dpi / 72.0
             
-            let mediaBox = page.bounds(for: .mediaBox)
-            let renderWidth = Int(mediaBox.width * scaleFactor)
-            let renderHeight = Int(mediaBox.height * scaleFactor)
-            
-            guard let bitmapRep = NSBitmapImageRep(
-                bitmapDataPlanes: nil,
-                pixelsWide: renderWidth,
-                pixelsHigh: renderHeight,
-                bitsPerSample: 8,
-                samplesPerPixel: 4,
-                hasAlpha: true,
-                isPlanar: false,
-                colorSpaceName: .deviceRGB,
-                bytesPerRow: 0,
-                bitsPerPixel: 0
-            ) else {
-                Logger.pdf.error("PNG ZIP export: failed to create bitmap for page \(i + 1, privacy: .public)")
-                continue
-            }
-            
-            NSGraphicsContext.saveGraphicsState()
-            let context = NSGraphicsContext(bitmapImageRep: bitmapRep)
-            NSGraphicsContext.current = context
-            
-            if let cgContext = context?.cgContext {
-                cgContext.setFillColor(NSColor.white.cgColor)
-                cgContext.fill(CGRect(x: 0, y: 0, width: renderWidth, height: renderHeight))
-                cgContext.scaleBy(x: scaleFactor, y: scaleFactor)
-                page.draw(with: .mediaBox, to: cgContext)
-            }
-            
-            NSGraphicsContext.restoreGraphicsState()
-            
-            guard let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
-                Logger.pdf.error("PNG ZIP export: failed to create PNG data for page \(i + 1, privacy: .public)")
-                continue
-            }
-            
-            // Original page number preserved (飛び番)
-            let fileName = String(format: "page_%03d.png", i + 1)
-            try archive.addEntry(
-                with: fileName,
-                type: .file,
-                uncompressedSize: Int64(pngData.count),
-                provider: { position, size in
-                    pngData.subdata(in: Int(position)..<Int(position) + size)
+            for i in 0..<sourceDoc.pageCount {
+                let pagePath = String(format: "page_%03d", i + 1)
+                if pathsToRemove.contains(pagePath) {
+                    continue
                 }
-            )
-            exportedCount += 1
+                
+                guard let page = sourceDoc.page(at: i) else {
+                    Logger.pdf.error("PNG ZIP export: failed to get page \(i + 1, privacy: .public)")
+                    continue
+                }
+                
+                let mediaBox = page.bounds(for: .mediaBox)
+                let renderWidth = Int(mediaBox.width * scaleFactor)
+                let renderHeight = Int(mediaBox.height * scaleFactor)
+                
+                guard let bitmapRep = NSBitmapImageRep(
+                    bitmapDataPlanes: nil,
+                    pixelsWide: renderWidth,
+                    pixelsHigh: renderHeight,
+                    bitsPerSample: 8,
+                    samplesPerPixel: 4,
+                    hasAlpha: true,
+                    isPlanar: false,
+                    colorSpaceName: .deviceRGB,
+                    bytesPerRow: 0,
+                    bitsPerPixel: 0
+                ) else {
+                    Logger.pdf.error("PNG ZIP export: failed to create bitmap for page \(i + 1, privacy: .public)")
+                    continue
+                }
+                
+                NSGraphicsContext.saveGraphicsState()
+                let context = NSGraphicsContext(bitmapImageRep: bitmapRep)
+                NSGraphicsContext.current = context
+                
+                if let cgContext = context?.cgContext {
+                    cgContext.setFillColor(NSColor.white.cgColor)
+                    cgContext.fill(CGRect(x: 0, y: 0, width: renderWidth, height: renderHeight))
+                    cgContext.scaleBy(x: scaleFactor, y: scaleFactor)
+                    page.draw(with: .mediaBox, to: cgContext)
+                }
+                
+                NSGraphicsContext.restoreGraphicsState()
+                
+                guard let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
+                    Logger.pdf.error("PNG ZIP export: failed to create PNG data for page \(i + 1, privacy: .public)")
+                    continue
+                }
+                
+                // Original page number preserved (飛び番)
+                let fileName = String(format: "page_%03d.png", i + 1)
+                try archive.addEntry(
+                    with: fileName,
+                    type: .file,
+                    uncompressedSize: Int64(pngData.count),
+                    provider: { position, size in
+                        pngData.subdata(in: Int(position)..<Int(position) + size)
+                    }
+                )
+                exportedCount += 1
+            }
+            
+            guard exportedCount > 0 else {
+                throw PDFExportError.noRemainingPages
+            }
+            
+            Logger.pdf.info("Exported \(exportedCount, privacy: .public) PNG pages to ZIP: \(outputURL.lastPathComponent)")
         }
         
-        guard exportedCount > 0 else {
-            throw PDFExportError.noRemainingPages
-        }
-        
-        Logger.pdf.info("Exported \(exportedCount, privacy: .public) PNG pages to ZIP: \(outputURL.lastPathComponent)")
         return exportedCount
     }
 }
