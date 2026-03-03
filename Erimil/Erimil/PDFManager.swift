@@ -122,7 +122,19 @@ class PDFManager: ImageSource {
     
     /// Get full-size image for a page
     func fullImage(for entry: ImageEntry) -> NSImage? {
+        // #165: Check memory cache first (prevents redundant render on SwiftUI re-evaluation)
+        let cache = CacheManager.shared
+        let fullPath = url.path + "/" + entry.path
+        let pathHash = cache.pathHash(for: fullPath)
+        if let contentHash = cache.getContentHash(for: pathHash),
+           let cached = cache.getFullImageFromMemory(for: contentHash) {
+            Logger.pdf.info("★PERF★ fullImage CACHE HIT \(entry.name)")
+            return cached
+        }
+        
         return accessQueue.sync {
+            let t0 = CFAbsoluteTimeGetCurrent()
+            
             guard let pageIndex = pageIndex(from: entry.path),
                   let doc = openDocument(),
                   let page = doc.page(at: pageIndex) else {
@@ -157,7 +169,14 @@ class PDFManager: ImageSource {
             
             image.unlockFocus()
             
-            Logger.pdf.debug("Rendered full image for \(entry.name): \(renderSize.debugDescription, privacy: .public)")
+            let renderMs = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+            Logger.pdf.info("★PERF★ fullImage \(entry.name): render=\(String(format: "%.1f", renderMs))ms size=\(renderSize.debugDescription, privacy: .public)")
+            
+            // #165: Cache rendered image — pathHash as contentHash (PDF content is stable)
+            let contentHash = pathHash
+            cache.registerMapping(pathHash: pathHash, contentHash: contentHash)
+            cache.cacheFullImage(image, for: contentHash)
+            
             return image
         }
     }
