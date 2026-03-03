@@ -1707,6 +1707,13 @@ struct ThumbnailGridView: View {
     private func executeExportArchive() {
         guard let archiveManager = imageSource as? ArchiveManager else { return }
         
+        // #163: Block export when all items are excluded
+        if pathsToKeep.isEmpty {
+            exportMessage = "出力するファイルがありません（すべて除外されています）"
+            showExportError = true
+            return
+        }
+        
         let originalName = archiveManager.url.deletingPathExtension().lastPathComponent
         let outputName = "\(originalName)_opt.zip"
         
@@ -1763,6 +1770,13 @@ struct ThumbnailGridView: View {
     
     private func executeCreateZip() {
         guard let folderManager = imageSource as? FolderManager else { return }
+        
+        // #163: Block export when all items are excluded
+        if pathsToKeep.isEmpty {
+            exportMessage = "出力するファイルがありません（すべて除外されています）"
+            showExportError = true
+            return
+        }
         
         let outputName = "\(folderManager.displayName).zip"
         
@@ -1837,6 +1851,13 @@ struct ThumbnailGridView: View {
     private func executeExportPDF() {
         guard let pdfManager = imageSource as? PDFManager else { return }
         
+        // #163: Block export when all pages are excluded
+        if pathsToKeep.isEmpty {
+            exportMessage = "出力するページがありません（すべて除外されています）"
+            showExportError = true
+            return
+        }
+        
         let originalName = pdfManager.url.deletingPathExtension().lastPathComponent
         let outputName = "\(originalName)_opt.pdf"
         
@@ -1894,6 +1915,13 @@ struct ThumbnailGridView: View {
     private func executeExportPNG() {
         guard let pdfManager = imageSource as? PDFManager else { return }
         
+        // #163: Block export when all pages are excluded
+        if pathsToKeep.isEmpty {
+            exportMessage = "出力するページがありません（すべて除外されています）"
+            showExportError = true
+            return
+        }
+        
         let openPanel = NSOpenPanel()
         openPanel.title = "PNG出力先フォルダを選択"
         openPanel.canChooseDirectories = true
@@ -1947,6 +1975,13 @@ struct ThumbnailGridView: View {
     
     private func executeExportPNGZip() {
         guard let pdfManager = imageSource as? PDFManager else { return }
+        
+        // #163: Block export when all pages are excluded
+        if pathsToKeep.isEmpty {
+            exportMessage = "出力するページがありません（すべて除外されています）"
+            showExportError = true
+            return
+        }
         
         let originalName = pdfManager.url.deletingPathExtension().lastPathComponent
         let outputName = "\(originalName)_png.zip"
