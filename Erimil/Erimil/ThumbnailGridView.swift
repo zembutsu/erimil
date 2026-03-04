@@ -1313,7 +1313,14 @@ struct ThumbnailGridView: View {
         // WASD keys
         // A - previous image (RTL-aware), Ctrl+A - jump to start/end, #62: Shift+A - prev bookmark
         case "a":
-            if event.modifierFlags.contains(.shift) {
+            if event.modifierFlags.contains(.command) {
+                // #164: Cmd+A = select all / deselect all (toggle)
+                if selectedPaths.count == entries.count {
+                    selectedPaths.removeAll()
+                } else {
+                    selectedPaths = Set(entries.map { $0.path })
+                }
+            } else if event.modifierFlags.contains(.shift) {
                 // #62: Shift+A = previous bookmark (RTL-aware)
                 if let target = NavigationHelper.navigateBookmark(
                     direction: .backward, from: currentIndex,
