@@ -133,6 +133,13 @@ class PDFManager: ImageSource {
         }
         
         return accessQueue.sync {
+            // Double-check: another thread may have cached while we waited
+            if let contentHash = cache.getContentHash(for: pathHash),
+               let cached = cache.getFullImageFromMemory(for: contentHash) {
+                Logger.pdf.info("★PERF★ fullImage CACHE HIT (queued) \(entry.name)")
+                return cached
+            }
+            
             let t0 = CFAbsoluteTimeGetCurrent()
             
             guard let pageIndex = pageIndex(from: entry.path),
