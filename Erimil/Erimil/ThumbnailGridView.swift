@@ -1063,13 +1063,21 @@ struct ThumbnailGridView: View {
         // #134 P1: Synchronous memory cache check — avoid async dispatch + ProgressView flash
         let cache = CacheManager.shared
         let pathHash = cache.pathHash(for: fullPath)
-        if let contentHash = cache.getContentHash(for: pathHash),
-           let cached = cache.getThumbnailFromMemory(for: contentHash) {
-            thumbnails[entryPath] = cached
-            // #134 P4: Reuse already-resolved contentHash (was calling getContentHashForPath → redundant SHA256)
-            contentHashes[entryPath] = contentHash
-            Logger.thumbnailGrid.debug("★PERF★ SYNC memory hit: \(entryName)")
-            return
+        if let contentHash = cache.getContentHash(for: pathHash) {
+            if let cached = cache.getThumbnailFromMemory(for: contentHash) {
+                thumbnails[entryPath] = cached
+                // #134 P4: Reuse already-resolved contentHash (was calling getContentHashForPath → redundant SHA256)
+                contentHashes[entryPath] = contentHash
+                Logger.thumbnailGrid.debug("★PERF★ SYNC memory hit: \(entryName)")
+                return
+            }
+            // #160 Phase 1: Synchronous disk cache check — skip OperationQueue for disk hits (~7KB, <1ms)
+            if let diskCached = cache.getThumbnailFromDisk(for: contentHash) {
+                thumbnails[entryPath] = diskCached
+                contentHashes[entryPath] = contentHash
+                Logger.thumbnailGrid.debug("★PERF★ SYNC disk hit: \(entryName)")
+                return
+            }
         }
         
         Logger.thumbnailGrid.debug("Starting for \(entryName) from \(capturedSourceURL.lastPathComponent), loadID: \(capturedLoadID, privacy: .public)")
