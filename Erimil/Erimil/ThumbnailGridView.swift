@@ -900,7 +900,6 @@ struct ThumbnailGridView: View {
             
             entries = prefetched
             isLoadingSource = false
-            prewarmThumbnails(for: entries)  // #160 Phase 2
             
             SourceSwitchTiming.end("load.done(prefetch)")
             
@@ -960,7 +959,6 @@ struct ThumbnailGridView: View {
                 entries = loadedEntries
                 isLoadingSource = false
                 showLoadingSpinner = false
-                prewarmThumbnails(for: entries)  // #160 Phase 2
                 
                 SourceSwitchTiming.end("load.done")
                 
@@ -1034,38 +1032,6 @@ struct ThumbnailGridView: View {
             )
     }
     
-    // #160 Phase 2: Batch pre-warm memory cache from disk on source load.
-    // Eliminates per-cell async dispatch for the initial viewport.
-    private func prewarmThumbnails(for entries: [ImageEntry], count: Int = 20) {
-        let cache = CacheManager.shared
-        var hit = 0
-        for entry in entries.prefix(count) {
-            let fullPath: String
-            if imageSource is FolderManager {
-                fullPath = entry.path
-            } else {
-                fullPath = imageSource.url.path + "/" + entry.path
-            }
-            let pathHash = cache.pathHash(for: fullPath)
-            guard let contentHash = cache.getContentHash(for: pathHash) else { continue }
-            guard cache.getThumbnailFromMemory(for: contentHash) == nil else {
-                // Already in memory — pre-populate thumbnails dict
-                if let cached = cache.getThumbnailFromMemory(for: contentHash) {
-                    thumbnails[entry.path] = cached
-                    contentHashes[entry.path] = contentHash
-                }
-                hit += 1
-                continue
-            }
-            if let image = cache.getThumbnailFromDisk(for: contentHash) {
-                thumbnails[entry.path] = image
-                contentHashes[entry.path] = contentHash
-                hit += 1
-            }
-        }
-        Logger.thumbnailGrid.info("★PERF★ prewarm: \(hit)/\(min(entries.count, count)) hits")
-    }
-
     private func loadThumbnailIfNeeded(for entry: ImageEntry) {
         // CRITICAL: Check if this call is from a stale View instance
         // SwiftUI may trigger onAppear from old View instances with old imageSource
@@ -1097,21 +1063,13 @@ struct ThumbnailGridView: View {
         // #134 P1: Synchronous memory cache check — avoid async dispatch + ProgressView flash
         let cache = CacheManager.shared
         let pathHash = cache.pathHash(for: fullPath)
-        if let contentHash = cache.getContentHash(for: pathHash) {
-            if let cached = cache.getThumbnailFromMemory(for: contentHash) {
-                thumbnails[entryPath] = cached
-                // #134 P4: Reuse already-resolved contentHash (was calling getContentHashForPath → redundant SHA256)
-                contentHashes[entryPath] = contentHash
-                Logger.thumbnailGrid.debug("★PERF★ SYNC memory hit: \(entryName)")
-                return
-            }
-            // #160 Phase 1: Synchronous disk cache check — skip OperationQueue for disk hits (~7KB, <1ms)
-            if let diskCached = cache.getThumbnailFromDisk(for: contentHash) {
-                thumbnails[entryPath] = diskCached
-                contentHashes[entryPath] = contentHash
-                Logger.thumbnailGrid.debug("★PERF★ SYNC disk hit: \(entryName)")
-                return
-            }
+        if let contentHash = cache.getContentHash(for: pathHash),
+           let cached = cache.getThumbnailFromMemory(for: contentHash) {
+            thumbnails[entryPath] = cached
+            // #134 P4: Reuse already-resolved contentHash (was calling getContentHashForPath → redundant SHA256)
+            contentHashes[entryPath] = contentHash
+            Logger.thumbnailGrid.debug("★PERF★ SYNC memory hit: \(entryName)")
+            return
         }
         
         Logger.thumbnailGrid.debug("Starting for \(entryName) from \(capturedSourceURL.lastPathComponent), loadID: \(capturedLoadID, privacy: .public)")
@@ -3007,7 +2965,12 @@ struct ViewerView: View {
                         reloadTrigger: spreadUpdateTrigger,
                         isShowingSpread: $isShowingSpread,
                         couldBeSpreadWithPrevious: $couldBeSpreadWithPrevious,
-                        onImageReady: { _ in isNavigationGated = false }  // #154
+                        onImageReady: { _ in
+                            // #160: Hold gate for 1 frame min — prevents key-repeat from skipping pages on cache hit
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
+                                isNavigationGated = false
+                            }
+                        }  // #154
                     )
                     
                     // Navigation hints (left/right edges) - #67: Spread-aware
