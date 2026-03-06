@@ -2965,7 +2965,12 @@ struct ViewerView: View {
                         reloadTrigger: spreadUpdateTrigger,
                         isShowingSpread: $isShowingSpread,
                         couldBeSpreadWithPrevious: $couldBeSpreadWithPrevious,
-                        onImageReady: { _ in isNavigationGated = false }  // #154
+                        onImageReady: { _ in
+                            // #160: Hold gate for 1 frame min — prevents key-repeat from skipping pages on cache hit
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
+                                isNavigationGated = false
+                            }
+                        }  // #154
                     )
                     
                     // Navigation hints (left/right edges) - #67: Spread-aware

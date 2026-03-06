@@ -123,7 +123,7 @@ class SlideWindowController {
         isFavoritesMode = false
         showBookmarkList = false
         bookmarkListCursor = 0
-        isNavigationGated = false  // #154
+        isNavigationGated = false  // #154 (reset on open, no delay needed)
         
         // #154: Listen for image ready signal to release navigation gate
         if let existing = imageReadyObserver {
@@ -133,7 +133,10 @@ class SlideWindowController {
             forName: NSNotification.Name("SlideWindowImageReady"),
             object: nil, queue: .main
         ) { [weak self] _ in
-            self?.isNavigationGated = false
+            // #160: Hold gate for 1 frame min — prevents key-repeat from skipping pages on cache hit
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
+                self?.isNavigationGated = false
+            }
         }
         
         // S008: Store callbacks and state for event monitor
