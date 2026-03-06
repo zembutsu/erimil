@@ -74,6 +74,10 @@ enum KeyAction {
     case exitToFiler
     case enterFavoritesMode
     case exitFavoritesMode
+    
+    // Grid View-specific (#169)
+    case selectAll
+    case jumpToFavoriteEdge(NavigationDirection)  // Ctrl+Z/C: jump to first/last favorite
 }
 
 // MARK: - Navigation Helper
@@ -496,6 +500,8 @@ struct CommonKeyParser {
     ) -> KeyAction? {
         let hasControl = event.modifierFlags.contains(.control)
         let hasOption = event.modifierFlags.contains(.option)
+        let hasShift = event.modifierFlags.contains(.shift)
+        let hasCommand = event.modifierFlags.contains(.command)
         
         // #143: Ctrl+Option = N-step navigation (must check before Ctrl alone)
         let hasCtrlOption = hasControl && hasOption
@@ -560,10 +566,14 @@ struct CommonKeyParser {
         switch chars {
         // A - horizontal, RTL-invertible
         case "a":
-            if hasCtrlOption {
+            if hasCommand {
+                return .selectAll                     // #169: Cmd+A = select/deselect all (Grid)
+            } else if hasCtrlOption {
                 return .navigateNStep(.backward)
+            } else if hasShift {
+                return .navigateBookmark(.backward)   // Shift+A = prev bookmark (#62)
             } else if hasControl {
-                return .navigateSource(.backward)
+                return .jumpToStart                   // Ctrl+A = jump to start (not source nav)
             } else if isFavoritesMode {
                 return .navigateFavorite(.backward)
             } else {
@@ -574,8 +584,10 @@ struct CommonKeyParser {
         case "d":
             if hasCtrlOption {
                 return .navigateNStep(.forward)
+            } else if hasShift {
+                return .navigateBookmark(.forward)    // Shift+D = next bookmark (#62)
             } else if hasControl {
-                return .navigateSource(.forward)
+                return .jumpToEnd                     // Ctrl+D = jump to end (not source nav)
             } else if isFavoritesMode {
                 return .navigateFavorite(.forward)
             } else {
@@ -594,7 +606,9 @@ struct CommonKeyParser {
             
         // S - vertical, NOT RTL-invertible (#106)
         case "s":
-            if hasControl {
+            if hasShift {
+                return .addOrDeleteBookmark           // Shift+S = add/delete bookmark (#62)
+            } else if hasControl {
                 return .navigateSource(.forward)
             } else if isFavoritesMode {
                 return .navigateFavorite(.forward)
@@ -605,14 +619,37 @@ struct CommonKeyParser {
         case "z":
             if hasCtrlOption {
                 return .navigateFavoriteNStep(.backward)
+            } else if hasControl {
+                return .jumpToFavoriteEdge(.backward)  // Ctrl+Z = jump to first/last fav
             }
             return .navigateFavorite(.backward)
             
         case "c":
             if hasCtrlOption {
                 return .navigateFavoriteNStep(.forward)
+            } else if hasControl {
+                return .jumpToFavoriteEdge(.forward)   // Ctrl+C = jump to last/first fav
             }
             return .navigateFavorite(.forward)
+            
+        case "b":
+            if hasShift {
+                return .showBookmarkList              // Shift+B = toggle bookmark list (#62)
+            }
+            return nil                                // plain b: no action (caller may consume)
+            
+        case "f":
+            if hasControl {
+                return .enterSlideMode                // Ctrl+F = Slide Mode
+            }
+            return .toggleFavorite                    // F = toggle favorite
+        
+        // Cmd+1–5: percent jump (#72)
+        case "1": return hasCommand ? .jumpToPercent(1) : nil
+        case "2": return hasCommand ? .jumpToPercent(2) : nil
+        case "3": return hasCommand ? .jumpToPercent(3) : nil
+        case "4": return hasCommand ? .jumpToPercent(4) : nil
+        case "5": return hasCommand ? .jumpToPercent(5) : nil
             
         case "v":
             return .toggleSinglePageMarker
