@@ -1309,238 +1309,182 @@ struct ThumbnailGridView: View {
             return false
         }
         
-        switch characters {
-        // WASD keys
-        // A - previous image (RTL-aware), Ctrl+A - jump to start/end, #62: Shift+A - prev bookmark
-        case "a":
-            if event.modifierFlags.contains(.command) {
-                // #164: Cmd+A = select all / deselect all (toggle)
-                if selectedPaths.count == entries.count {
-                    selectedPaths.removeAll()
-                } else {
-                    selectedPaths = Set(entries.map { $0.path })
-                }
-            } else if event.modifierFlags.contains(.shift) {
-                // #62: Shift+A = previous bookmark (RTL-aware)
-                if let target = NavigationHelper.navigateBookmark(
-                    direction: .backward, from: currentIndex,
-                    sourceURL: imageSource.url, isRTL: isRTL,
-                    wrap: settings.loopWithinSource
-                ) {
-                    focusedIndex = target
-                    Logger.folder.debug("Shift+A → bookmark at \(target, privacy: .public)")
-                }
-            } else if event.modifierFlags.contains(.control) {
-                // #72: Ctrl+A = jump to start (RTL: end)
-                let target = isRTL ? entries.count - 1 : 0
-                focusedIndex = target
-                Logger.folder.debug("Ctrl+A → \(isRTL ? "end" : "start")")
-            } else {
-                moveFocus(by: isRTL ? 1 : -1)  // #72: RTL-aware
-            }
-            return true
-
-        // D - next image (RTL-aware), Ctrl+D - jump to end/start, #62: Shift+D - next bookmark
-        case "d":
-            if event.modifierFlags.contains(.shift) {
-                // #62: Shift+D = next bookmark (RTL-aware)
-                if let target = NavigationHelper.navigateBookmark(
-                    direction: .forward, from: currentIndex,
-                    sourceURL: imageSource.url, isRTL: isRTL,
-                    wrap: settings.loopWithinSource
-                ) {
-                    focusedIndex = target
-                    Logger.folder.debug("Shift+D → bookmark at \(target, privacy: .public)")
-                }
-            } else if event.modifierFlags.contains(.control) {
-                // #72: Ctrl+D = jump to end (RTL: start)
-                let target = isRTL ? 0 : entries.count - 1
-                focusedIndex = target
-                Logger.folder.debug("Ctrl+D → \(isRTL ? "start" : "end")")
-            } else {
-                moveFocus(by: isRTL ? -1 : 1)  // #72: RTL-aware
-            }
-            return true
-        // S017: W - row up (Ctrl+W handled by early source navigation)
-        case "w":
+        // #169: Grid-specific pre-parser handling
+        // W/S without modifiers = vertical (column-based) navigation — bypass CommonKeyParser
+        if characters == "w" && !event.modifierFlags.contains(.control) {
             moveFocus(by: -columnCount)
             return true
-        // S017: S - row down (Ctrl+S handled by early source navigation), #62: Shift+S - bookmark
-        case "s":
-            if event.modifierFlags.contains(.shift) {
-                // #62: Shift+S = add/delete bookmark at current position
-                let entry = entries[currentIndex]
-                let defaultName = URL(fileURLWithPath: entry.path).deletingPathExtension().lastPathComponent
-                BookmarkDialogHelper.handleShiftS(
-                    sourceURL: imageSource.url,
-                    imageIndex: currentIndex,
-                    defaultName: defaultName,
-                    window: NSApp.keyWindow,
-                    onChanged: { bookmarksVersion += 1 }
-                )
-            } else {
-                moveFocus(by: columnCount)
-            }
+        }
+        if characters == "s"
+            && !event.modifierFlags.contains(.control)
+            && !event.modifierFlags.contains(.shift) {
+            moveFocus(by: columnCount)
             return true
-        
-        // #62 Phase 5: Shift+B = toggle bookmark list overlay
-        case "b":
-            if event.modifierFlags.contains(.shift) {
-                let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
-                showBookmarkList = true
-                // Set cursor to nearest bookmark to current position
-                if let nearest = bookmarks.enumerated().min(by: {
-                    abs($0.element.imageIndex - currentIndex) < abs($1.element.imageIndex - currentIndex)
-                }) {
-                    bookmarkListCursor = nearest.offset
-                } else {
-                    bookmarkListCursor = 0
-                }
-                Logger.folder.debug("Shift+B → bookmark list (\(bookmarks.count, privacy: .public) bookmarks)")
-            }
+        }
+        // b without Shift: consume silently (preserve existing behavior)
+        if characters == "b" && !event.modifierFlags.contains(.shift) {
             return true
+        }
         
-        // #72: Cmd+1-5 = jump to percentage position (RTL-aware, Cmd to avoid system shortcut conflict)
-        case "1":
-            if event.modifierFlags.contains(.command) {
-                let percent = isRTL ? 100 : 0
-                focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
-                Logger.folder.debug("Cmd+1 → \(percent, privacy: .public)%")
-                return true
-            }
+        // Route remaining character keys through CommonKeyParser
+        guard let action = CommonKeyParser.parseNavigationKey(event) else {
             return false
-        case "2":
-            if event.modifierFlags.contains(.command) {
-                let percent = isRTL ? 75 : 25
-                focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
-                Logger.folder.debug("Cmd+2 → \(percent, privacy: .public)%")
-                return true
-            }
-            return false
-        case "3":
-            if event.modifierFlags.contains(.command) {
-                focusedIndex = NavigationHelper.indexForPercent(50, totalCount: entries.count)
-                Logger.folder.debug("Cmd+3 → 50%")
-                return true
-            }
-            return false
-        case "4":
-            if event.modifierFlags.contains(.command) {
-                let percent = isRTL ? 25 : 75
-                focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
-                Logger.folder.debug("Cmd+4 → \(percent, privacy: .public)%")
-                return true
-            }
-            return false
-        case "5":
-            if event.modifierFlags.contains(.command) {
-                let percent = isRTL ? 0 : 100
-                focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
-                Logger.folder.debug("Cmd+5 → \(percent, privacy: .public)%")
-                return true
-            }
-            return false
+        }
+        return executeGridAction(action, currentIndex: currentIndex)
+    }
+    
+    /// Dispatch a parsed KeyAction in Grid View context (#169)
+    /// Called from handleKeyEvent after CommonKeyParser recognition.
+    @discardableResult
+    private func executeGridAction(_ action: KeyAction, currentIndex: Int) -> Bool {
+        switch action {
+        
+        case .navigate(let direction):
+            // Horizontal navigation (A/D): RTL-aware, step by 1
+            moveFocus(by: direction == .forward ? (isRTL ? -1 : 1) : (isRTL ? 1 : -1))
             
-        // X key - toggle selection
-        case "x":
+        case .navigateNStep(let direction):
+            // Ctrl+Opt+A/D: N-step navigation (RTL-aware)
+            let step = AppSettings.shared.navigationStepCount
+            moveFocus(by: direction == .forward ? (isRTL ? -step : step) : (isRTL ? step : -step))
+            
+        case .jumpToStart:
+            let target = isRTL ? entries.count - 1 : 0
+            focusedIndex = target
+            Logger.folder.debug("Ctrl+A → \(isRTL ? "end" : "start")")
+            
+        case .jumpToEnd:
+            let target = isRTL ? 0 : entries.count - 1
+            focusedIndex = target
+            Logger.folder.debug("Ctrl+D → \(isRTL ? "start" : "end")")
+            
+        case .jumpToPercent(let keyNum):
+            // Cmd+1–5: RTL-aware percent jump
+            let ltrPercents = [1: 0, 2: 25, 3: 50, 4: 75, 5: 100]
+            let ltrPercent = ltrPercents[keyNum] ?? 50
+            let percent = (isRTL && ltrPercent != 50) ? 100 - ltrPercent : ltrPercent
+            focusedIndex = NavigationHelper.indexForPercent(percent, totalCount: entries.count)
+            Logger.folder.debug("Cmd+\(keyNum) → \(percent, privacy: .public)%")
+            
+        case .navigateBookmark(let direction):
+            // Shift+A/D: navigate to previous/next bookmark (RTL-aware)
+            if let target = NavigationHelper.navigateBookmark(
+                direction: direction, from: currentIndex,
+                sourceURL: imageSource.url, isRTL: isRTL,
+                wrap: settings.loopWithinSource
+            ) {
+                focusedIndex = target
+                Logger.folder.debug("Shift+\(direction == .backward ? "A" : "D") → bookmark at \(target, privacy: .public)")
+            }
+            
+        case .addOrDeleteBookmark:
+            // Shift+S: add or delete bookmark at current position
             let entry = entries[currentIndex]
-            toggleSelection(entry)
-            return true
+            let defaultName = URL(fileURLWithPath: entry.path).deletingPathExtension().lastPathComponent
+            BookmarkDialogHelper.handleShiftS(
+                sourceURL: imageSource.url,
+                imageIndex: currentIndex,
+                defaultName: defaultName,
+                window: NSApp.keyWindow,
+                onChanged: { bookmarksVersion += 1 }
+            )
             
-        // #55: V key - toggle single page marker (previously: favorite)
-        case "v":
+        case .showBookmarkList:
+            // Shift+B: show bookmark list overlay
+            let bookmarks = CacheManager.shared.getBookmarks(for: imageSource.url)
+            showBookmarkList = true
+            if let nearest = bookmarks.enumerated().min(by: {
+                abs($0.element.imageIndex - currentIndex) < abs($1.element.imageIndex - currentIndex)
+            }) {
+                bookmarkListCursor = nearest.offset
+            } else {
+                bookmarkListCursor = 0
+            }
+            Logger.folder.debug("Shift+B → bookmark list (\(bookmarks.count, privacy: .public) bookmarks)")
+            
+        case .toggleFavorite:
+            // F: toggle favorite for focused item
+            guard currentIndex < entries.count else { return true }
+            let favEntry = entries[currentIndex]
+            let hash = contentHashes[favEntry.path]
+            _ = CacheManager.shared.toggleFavorite(
+                sourceURL: imageSource.url,
+                entryPath: favEntry.path,
+                contentHash: hash
+            )
+            favoritesVersion += 1
+            
+        case .enterSlideMode:
+            // Ctrl+F: open Slide Mode from current index
+            previewMode = .slideMode(index: currentIndex)
+            
+        case .exitToFiler:
+            // R: in Grid context, open Viewer Mode (R = "read" = enter viewer)
+            let startIndex = lastViewedIndex ?? currentIndex
+            previewMode = .viewer(index: startIndex)
+            
+        case .toggleReadingDirection:
+            // Ctrl+R: toggle reading direction
+            let newDirection = CacheManager.shared.toggleReadingDirection(for: imageSource.url)
+            readingDirectionVersion += 1
+            Logger.folder.debug("Reading direction toggled to: \(newDirection.displayName, privacy: .public)")
+            
+        case .toggleSelection:
+            // X: toggle selection for focused item
+            let selEntry = entries[currentIndex]
+            toggleSelection(selEntry)
+            
+        case .toggleSinglePageMarker:
+            // V: toggle single page marker
             let added = CacheManager.shared.toggleSinglePageMarker(for: imageSource.url, at: currentIndex)
             Logger.thumbnailGrid.debug("Single page marker at \(currentIndex, privacy: .public): \(added ? "ON" : "OFF")")
-            return true
             
-        // F key - open Slide Mode directly (S006)
-        // case "f":
-        //    previewMode = .slideMode(index: currentIndex)
-        //    return true
-
-        // F key - toggle favorite / Ctrl+F = Slide Mode (S010)
-        // #52: Ctrl+F opens from current (ignores bookmark)
-        case "f":
-            let hasControl = event.modifierFlags.contains(.control)
-            if hasControl {
-                // Ctrl+F = Slide Mode from current (explicit selection)
-                if let index = focusedIndex {
-                    previewMode = .slideMode(index: index)
-                }
+        case .selectAll:
+            // Cmd+A: select all / deselect all (toggle)
+            if selectedPaths.count == entries.count {
+                selectedPaths.removeAll()
             } else {
-                // F = Toggle favorite
-                if let index = focusedIndex, index < entries.count {
-                    let entry = entries[index]
-                    let hash = contentHashes[entry.path]
-                    _ = CacheManager.shared.toggleFavorite(
-                        sourceURL: imageSource.url,
-                        entryPath: entry.path,
-                        contentHash: hash
-                    )
-                    favoritesVersion += 1
-                }
+                selectedPaths = Set(entries.map { $0.path })
             }
-            return true
             
-        // S013: R key - open Viewer Mode (Reader Mode)
-        // #52: R = open from bookmark (default)
-        // #54: Ctrl+R = toggle reading direction (RTL/LTR)
-        case "r":
-            if event.modifierFlags.contains(.control) {
-                // Ctrl+R: Toggle reading direction
-                let newDirection = CacheManager.shared.toggleReadingDirection(for: imageSource.url)
-                readingDirectionVersion += 1
-                Logger.folder.debug("Reading direction toggled to: \(newDirection.displayName, privacy: .public)")
-            } else {
-                // R: Open from bookmark (last viewed), fallback to current
-                let startIndex = lastViewedIndex ?? currentIndex
-                previewMode = .viewer(index: startIndex)
-            }
-            return true
-        
-        // #72: Z - previous favorite (RTL-aware), Ctrl+Z - first/last favorite (RTL-aware)
-        case "z":
-            if event.modifierFlags.contains(.control) {
-                // Ctrl+Z = jump to first favorite (RTL: last favorite)
-                let targetFav = isRTL ? favoriteIndices.max() : favoriteIndices.min()
-                if let fav = targetFav {
-                    focusedIndex = fav
-                    Logger.folder.debug("Ctrl+Z → \(isRTL ? "last" : "first", privacy: .public) favorite at \(fav, privacy: .public)")
-                }
-            } else {
-                let targetIndex = isRTL
+        case .navigateFavorite(let direction):
+            // Z/C: navigate favorites (RTL-aware)
+            let targetIndex = direction == .backward
+                ? (isRTL
                     ? NavigationHelper.nextFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
-                    : NavigationHelper.previousFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
-                if let target = targetIndex {
-                    focusedIndex = target
-                    Logger.folder.debug("Z → favorite at \(target, privacy: .public)")
-                }
-            }
-            return true
-            
-        // #72: C - next favorite (RTL-aware), Ctrl+C - last/first favorite (RTL-aware)
-        case "c":
-            if event.modifierFlags.contains(.control) {
-                // Ctrl+C = jump to last favorite (RTL: first favorite)
-                let targetFav = isRTL ? favoriteIndices.min() : favoriteIndices.max()
-                if let fav = targetFav {
-                    focusedIndex = fav
-                    Logger.folder.debug("Ctrl+C → \(isRTL ? "first" : "last", privacy: .public) favorite at \(fav, privacy: .public)")
-                }
-            } else {
-                let targetIndex = isRTL
+                    : NavigationHelper.previousFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource))
+                : (isRTL
                     ? NavigationHelper.previousFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
-                    : NavigationHelper.nextFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource)
-                if let target = targetIndex {
-                    focusedIndex = target
-                    Logger.folder.debug("C → favorite at \(target, privacy: .public)")
-                }
+                    : NavigationHelper.nextFavoriteIndex(from: currentIndex, favoriteIndices: favoriteIndices, wrap: settings.loopWithinSource))
+            if let target = targetIndex {
+                focusedIndex = target
+                Logger.folder.debug("\(direction == .backward ? "Z" : "C") → favorite at \(target, privacy: .public)")
             }
-            return true
-        
+            
+        case .jumpToFavoriteEdge(let direction):
+            // Ctrl+Z/C: jump to first/last favorite (RTL-aware)
+            let adjusted = NavigationHelper.adjustForRTL(direction, isRTL: isRTL)
+            let targetFav = adjusted == .backward ? favoriteIndices.min() : favoriteIndices.max()
+            if let fav = targetFav {
+                focusedIndex = fav
+                Logger.folder.debug("Ctrl+\(direction == .backward ? "Z" : "C") → \(adjusted == .backward ? "first" : "last", privacy: .public) favorite at \(fav, privacy: .public)")
+            }
+            
+        case .navigateFavoriteNStep(let direction):
+            // Ctrl+Option+Z/C: N-step favorite navigation
+            if let target = NavigationHelper.navigateFavoriteNStep(
+                direction: direction, from: currentIndex,
+                favoriteIndices: favoriteIndices,
+                stepCount: AppSettings.shared.navigationStepCount,
+                isRTL: isRTL
+            ) {
+                focusedIndex = target
+            }
+            
         default:
             return false
         }
+        return true
     }
     
     private func moveFocus(by offset: Int) {
