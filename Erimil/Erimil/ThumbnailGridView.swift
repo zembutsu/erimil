@@ -900,6 +900,7 @@ struct ThumbnailGridView: View {
             
             entries = prefetched
             isLoadingSource = false
+            prewarmThumbnails(for: entries)  // #160 Phase 2
             
             SourceSwitchTiming.end("load.done(prefetch)")
             
@@ -959,6 +960,7 @@ struct ThumbnailGridView: View {
                 entries = loadedEntries
                 isLoadingSource = false
                 showLoadingSpinner = false
+                prewarmThumbnails(for: entries)  // #160 Phase 2
                 
                 SourceSwitchTiming.end("load.done")
                 
@@ -1032,6 +1034,38 @@ struct ThumbnailGridView: View {
             )
     }
     
+    // #160 Phase 2: Batch pre-warm memory cache from disk on source load.
+    // Eliminates per-cell async dispatch for the initial viewport.
+    private func prewarmThumbnails(for entries: [ImageEntry], count: Int = 20) {
+        let cache = CacheManager.shared
+        var hit = 0
+        for entry in entries.prefix(count) {
+            let fullPath: String
+            if imageSource is FolderManager {
+                fullPath = entry.path
+            } else {
+                fullPath = imageSource.url.path + "/" + entry.path
+            }
+            let pathHash = cache.pathHash(for: fullPath)
+            guard let contentHash = cache.getContentHash(for: pathHash) else { continue }
+            guard cache.getThumbnailFromMemory(for: contentHash) == nil else {
+                // Already in memory — pre-populate thumbnails dict
+                if let cached = cache.getThumbnailFromMemory(for: contentHash) {
+                    thumbnails[entry.path] = cached
+                    contentHashes[entry.path] = contentHash
+                }
+                hit += 1
+                continue
+            }
+            if let image = cache.getThumbnailFromDisk(for: contentHash) {
+                thumbnails[entry.path] = image
+                contentHashes[entry.path] = contentHash
+                hit += 1
+            }
+        }
+        Logger.thumbnailGrid.info("★PERF★ prewarm: \(hit)/\(min(entries.count, count)) hits")
+    }
+
     private func loadThumbnailIfNeeded(for entry: ImageEntry) {
         // CRITICAL: Check if this call is from a stale View instance
         // SwiftUI may trigger onAppear from old View instances with old imageSource
