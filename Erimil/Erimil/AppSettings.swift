@@ -163,6 +163,9 @@ class AppSettings: ObservableObject {
         static let metadataReadingDirection = "metadataCarryOverDirection"   // #105
         static let metadataSinglePageMarkers = "metadataCarryOverMarkers"   // #105
         static let navigationStepCount = "navigationStepCount"             // #143
+        static let autoSlideIntervalNormal = "autoSlideIntervalNormal"     // #172
+        static let autoSlideIntervalFast   = "autoSlideIntervalFast"       // #172
+        static let autoSlideIntervalTurbo  = "autoSlideIntervalTurbo"      // #172
     }
     
     // MARK: - Published Properties
@@ -290,6 +293,21 @@ class AppSettings: ObservableObject {
         didSet {
             defaults.set(navigationStepCount, forKey: Keys.navigationStepCount)
         }
+    }
+    
+    /// Auto-Slide interval for Normal mode in seconds (#172)
+    @Published var autoSlideIntervalNormal: Double {
+        didSet { defaults.set(autoSlideIntervalNormal, forKey: Keys.autoSlideIntervalNormal) }
+    }
+    
+    /// Auto-Slide interval for Fast mode in seconds (#172)
+    @Published var autoSlideIntervalFast: Double {
+        didSet { defaults.set(autoSlideIntervalFast, forKey: Keys.autoSlideIntervalFast) }
+    }
+    
+    /// Auto-Slide interval for Turbo mode in seconds (#172)
+    @Published var autoSlideIntervalTurbo: Double {
+        didSet { defaults.set(autoSlideIntervalTurbo, forKey: Keys.autoSlideIntervalTurbo) }
     }
     
     /// Build MetadataCarryOverOptions from current settings
@@ -499,6 +517,14 @@ class AppSettings: ObservableObject {
         // #143: Navigation step count (default 10)
         let savedStepCount = defaults.integer(forKey: Keys.navigationStepCount)
         self.navigationStepCount = savedStepCount > 0 ? min(max(savedStepCount, 2), 50) : 10
+        
+        // #172: Auto-Slide intervals
+        let savedNormal = defaults.double(forKey: Keys.autoSlideIntervalNormal)
+        self.autoSlideIntervalNormal = savedNormal > 0 ? savedNormal : 5.0
+        let savedFast = defaults.double(forKey: Keys.autoSlideIntervalFast)
+        self.autoSlideIntervalFast = savedFast > 0 ? savedFast : 0.5
+        let savedTurbo = defaults.double(forKey: Keys.autoSlideIntervalTurbo)
+        self.autoSlideIntervalTurbo = savedTurbo > 0 ? savedTurbo : 0.25
     }
     
     // MARK: - Helper Methods
@@ -531,5 +557,8 @@ class AppSettings: ObservableObject {
         metadataCarryOverDirection = true    // #105
         metadataCarryOverMarkers = true      // #105
         navigationStepCount = 10                 // #143
+        autoSlideIntervalNormal = 5.0            // #172
+        autoSlideIntervalFast   = 0.5            // #172
+        autoSlideIntervalTurbo  = 0.25           // #172
     }
 }
