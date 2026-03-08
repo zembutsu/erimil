@@ -907,6 +907,12 @@ class SlideWindowController {
                     return nil
                     
                 case "q":
+                    // #172: Auto-Slide running → stop only
+                    if autoSlideMode > 0 {
+                        Logger.slideWindow.debug("→ Auto-slide stop (Q)")
+                        stopAutoSlide()
+                        return nil
+                    }
                     // S010: Exit Favorites Mode OR close fullscreen
                     if isFavoritesMode {
                         Logger.slideWindow.debug("→ Exit Favorites Mode (Q)")

@@ -3242,9 +3242,7 @@ struct ViewerView: View {
             }
         }
         autoSlideWaitingForImage = true
-        // 次の advance は onImageReady で scheduleNextAutoSlideAdvance() から呼ばれる
     }
-
     
     // MARK: - Navigation (#67: Spread-aware using isShowingSpread)
     
@@ -3449,7 +3447,11 @@ struct ViewerView: View {
         switch event.keyCode {
         // Escape
         case 53:
-            stopAutoSlide()
+            // #172: Auto-Slide running → stop only
+            if autoSlideMode > 0 {
+                stopAutoSlide()
+                return true
+            }
             onIndexChange(viewerIndex)
             onClose()
             return true
@@ -3548,7 +3550,11 @@ struct ViewerView: View {
         switch characters {
         // Q - close
         case "q":
-            stopAutoSlide()
+            // #172: Auto-Slide running → stop only
+            if autoSlideMode > 0 {
+                stopAutoSlide()
+                return true
+            }
             onIndexChange(viewerIndex)
             onClose()
             return true
