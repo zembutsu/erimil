@@ -1385,12 +1385,34 @@ class SlideWindowController {
     private func advanceAutoSlide() {
         guard autoSlideMode > 0 else { return }
         let before = currentIndex
-        goToNext()
+        // Fav Mode 中は★のみ進む
+        if isFavoritesMode {
+            goToNextFavorite()
+        } else {
+            goToNext()
+        }
         if currentIndex == before {
-            // End of source with no loop → stop
-            Logger.slideWindow.debug("Auto-slide: end of source, stopping")
-            stopAutoSlide()
-            return
+            // End of source
+            if AppSettings.shared.autoSlideLoops {
+                // Loop: jump to start (or first favorite)
+                if isFavoritesMode {
+                    if let first = storedFavoriteIndices.sorted().first {
+                        currentIndex = first
+                        notifyViewOfIndexChange()
+                        Logger.slideWindow.debug("Auto-slide: loop to first favorite (\(first))")
+                    } else {
+                        stopAutoSlide(); return
+                    }
+                } else {
+                    currentIndex = 0
+                    notifyViewOfIndexChange()
+                    Logger.slideWindow.debug("Auto-slide: loop to start")
+                }
+            } else {
+                Logger.slideWindow.debug("Auto-slide: end of source, stopping")
+                stopAutoSlide()
+                return
+            }
         }
         autoSlideWaitingForImage = true
         // Next advance scheduled via imageReadyObserver on SlideWindowImageReady

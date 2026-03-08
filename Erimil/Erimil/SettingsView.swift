@@ -131,10 +131,22 @@ struct SettingsView: View {
                 HStack {
                     Text("Turbo:")
                         .frame(width: 55, alignment: .leading)
-                    Slider(value: $settings.autoSlideIntervalTurbo, in: 0.05...1.0, step: 0.05)
-                    Text(String(format: "%.2fs", settings.autoSlideIntervalTurbo))
+                    Slider(value: $settings.autoSlideIntervalTurbo, in: 0.1...3.0, step: 0.1)
+                    Text(String(format: "%.1fs", settings.autoSlideIntervalTurbo))
                         .frame(width: 45, alignment: .trailing)
                         .monospacedDigit()
+                }
+                Toggle("末尾でループ", isOn: $settings.autoSlideLoops)
+                HStack {
+                    Spacer()
+                    Button("初期値に戻す") {
+                        settings.autoSlideIntervalNormal = 5.0
+                        settings.autoSlideIntervalFast   = 0.5
+                        settings.autoSlideIntervalTurbo  = 1.5
+                        settings.autoSlideLoops          = true
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Auto-Slide")
@@ -142,6 +154,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Space×1=Normal、Space×2=Fast、Space×3=Turbo")
                     Text("Space（再押し）で停止。Oキーでオーバーレイ切替")
+                    Text("「末尾でループ」OFF時は末尾で自動停止")
                 }
                 .font(.caption)
             }
