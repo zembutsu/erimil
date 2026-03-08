@@ -31,6 +31,12 @@ class SlideWindowController {
     private var isNavigationGated: Bool = false
     private var imageReadyObserver: NSObjectProtocol?
     
+    // #172: Auto-Slide
+    private var autoSlideMode: Int = 0  // 0=off, 1=normal, 2=fast, 3=turbo
+    private var autoSlideTapTimer: DispatchWorkItem?
+    private var autoSlidePendingTaps: Int = 0
+    private var autoSlideWaitingForImage: Bool = false
+    
     /// Public getter for current index
     var getCurrentIndex: Int {
         return currentIndex
@@ -124,6 +130,7 @@ class SlideWindowController {
         showBookmarkList = false
         bookmarkListCursor = 0
         isNavigationGated = false  // #154 (reset on open, no delay needed)
+        stopAutoSlide()  // #172: reset on open
         
         // #154: Listen for image ready signal to release navigation gate
         if let existing = imageReadyObserver {
@@ -133,9 +140,15 @@ class SlideWindowController {
             forName: NSNotification.Name("SlideWindowImageReady"),
             object: nil, queue: .main
         ) { [weak self] _ in
+            guard let self = self else { return }
             // #160: Hold gate for 1 frame min — prevents key-repeat from skipping pages on cache hit
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
-                self?.isNavigationGated = false
+                self.isNavigationGated = false
+            }
+            // #172: Auto-slide — schedule next advance after image is ready
+            if self.autoSlideWaitingForImage {
+                self.autoSlideWaitingForImage = false
+                self.scheduleNextAutoSlideAdvance()
             }
         }
         
@@ -245,6 +258,7 @@ class SlideWindowController {
         // S008: Remove event monitor first
         removeEventMonitor()
         removeMouseMonitor()  // #145
+        stopAutoSlide()  // #172
         slideHostingView = nil  // #145
         
         // #154: Remove image ready observer
@@ -363,6 +377,7 @@ class SlideWindowController {
         isFavoritesMode = false  // Reset mode on source change
         showBookmarkList = false  // #62: Reset bookmark list on source change
         MetadataInspectorPanelController.shared.close()  // #140: Close inspector on source change
+        stopAutoSlide()  // #172: reset on source change
         storedOnClose = onClose
         storedImageSource = imageSource  // #54
         storedOnNextSource = onNextSource
@@ -579,10 +594,31 @@ class SlideWindowController {
             }
             return nil
             
-        // Space - toggle controls (#151: handle directly, passthrough to SlideKeyView never arrives)
+        // Space - Auto-Slide (#172; overlay toggle moved to O key)
         case 49:
-            Logger.slideWindow.debug("→ Toggle controls (Space)")
-            notifyViewOfControlsToggle()
+            if autoSlideMode > 0 {
+                Logger.slideWindow.debug("→ Auto-slide stop (Space)")
+                stopAutoSlide()
+            } else {
+                autoSlidePendingTaps += 1
+                autoSlideTapTimer?.cancel()
+                if autoSlidePendingTaps >= 3 {
+                    let taps = autoSlidePendingTaps
+                    autoSlidePendingTaps = 0
+                    Logger.slideWindow.debug("→ Auto-slide start mode=\(taps) (Space×3)")
+                    startAutoSlide(mode: min(taps, 3))
+                } else {
+                    let taps = autoSlidePendingTaps
+                    let work = DispatchWorkItem { [weak self] in
+                        guard let self = self else { return }
+                        self.autoSlidePendingTaps = 0
+                        Logger.slideWindow.debug("→ Auto-slide start mode=\(taps) (Space tap timer)")
+                        self.startAutoSlide(mode: taps)
+                    }
+                    autoSlideTapTimer = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+                }
+            }
             return nil
             
         // Tab - next favorite + enter Favorites Mode
@@ -871,6 +907,12 @@ class SlideWindowController {
                     return nil
                     
                 case "q":
+                    // #172: Auto-Slide running → stop only
+                    if autoSlideMode > 0 {
+                        Logger.slideWindow.debug("→ Auto-slide stop (Q)")
+                        stopAutoSlide()
+                        return nil
+                    }
                     // S010: Exit Favorites Mode OR close fullscreen
                     if isFavoritesMode {
                         Logger.slideWindow.debug("→ Exit Favorites Mode (Q)")
@@ -953,6 +995,12 @@ class SlideWindowController {
                     if hasCommand {
                         nudgeDeskewAngle(by: 0.1, targetRight: hasShift)
                     }
+                    return nil
+                
+                // #172: O key - toggle controls overlay (moved from Space)
+                case "o":
+                    Logger.slideWindow.debug("→ Toggle controls (O)")
+                    notifyViewOfControlsToggle()
                     return nil
                 
                 // #140: Toggle metadata inspector panel
@@ -1306,6 +1354,84 @@ class SlideWindowController {
         Logger.slideWindow.debug("Deskew nudge \(degrees > 0 ? "+" : "")\(degrees, privacy: .public)° page[\(targetIndex, privacy: .public)] → \(newAngle * 180 / CGFloat.pi, privacy: .public)°")
     }
     
+    // MARK: - #172: Auto-Slide
+    
+    private func startAutoSlide(mode: Int) {
+        autoSlideMode = mode
+        autoSlideWaitingForImage = false
+        notifyViewOfAutoSlideChange()
+        scheduleNextAutoSlideAdvance()
+        Logger.slideWindow.debug("Auto-slide started: mode=\(mode)")
+    }
+    
+    private func stopAutoSlide() {
+        guard autoSlideMode > 0 || autoSlidePendingTaps > 0 else { return }
+        autoSlideMode = 0
+        autoSlidePendingTaps = 0
+        autoSlideTapTimer?.cancel()
+        autoSlideTapTimer = nil
+        autoSlideWaitingForImage = false
+        notifyViewOfAutoSlideChange()
+        Logger.slideWindow.debug("Auto-slide stopped")
+    }
+    
+    private func scheduleNextAutoSlideAdvance() {
+        guard autoSlideMode > 0 else { return }
+        let interval: TimeInterval
+        switch autoSlideMode {
+        case 1:  interval = AppSettings.shared.autoSlideIntervalNormal
+        case 2:  interval = AppSettings.shared.autoSlideIntervalFast
+        default: interval = AppSettings.shared.autoSlideIntervalTurbo
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + interval) { [weak self] in
+            self?.advanceAutoSlide()
+        }
+    }
+    
+    private func advanceAutoSlide() {
+        guard autoSlideMode > 0 else { return }
+        let before = currentIndex
+        // Fav Mode 中は★のみ進む
+        if isFavoritesMode {
+            goToNextFavorite()
+        } else {
+            goToNext()
+        }
+        if currentIndex == before {
+            // End of source
+            if AppSettings.shared.autoSlideLoops {
+                // Loop: jump to start (or first favorite)
+                if isFavoritesMode {
+                    if let first = storedFavoriteIndices.sorted().first {
+                        currentIndex = first
+                        notifyViewOfIndexChange()
+                        Logger.slideWindow.debug("Auto-slide: loop to first favorite (\(first))")
+                    } else {
+                        stopAutoSlide(); return
+                    }
+                } else {
+                    currentIndex = 0
+                    notifyViewOfIndexChange()
+                    Logger.slideWindow.debug("Auto-slide: loop to start")
+                }
+            } else {
+                Logger.slideWindow.debug("Auto-slide: end of source, stopping")
+                stopAutoSlide()
+                return
+            }
+        }
+        autoSlideWaitingForImage = true
+        // Next advance scheduled via imageReadyObserver on SlideWindowImageReady
+    }
+    
+    private func notifyViewOfAutoSlideChange() {
+        NotificationCenter.default.post(
+            name: NSNotification.Name("SlideWindowAutoSlideChanged"),
+            object: nil,
+            userInfo: ["autoSlideMode": autoSlideMode]
+        )
+    }
+    
     // MARK: - Notifications
     
     /// Notify the view of index change via NotificationCenter
@@ -1425,6 +1551,9 @@ struct SlideWindowView: View {
     
     // #150: Reading direction re-render trigger
     @State private var readingDirectionVersion: Int = 0
+    
+    // #172: Auto-Slide display state
+    @State private var autoSlideMode: Int = 0
     
     /// #150: Effective reading direction (re-evaluated on readingDirectionVersion change)
     private var effectiveReadingDirection: ReadingDirection {
@@ -1586,6 +1715,12 @@ struct SlideWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowControlsToggle"))) { notification in
             if let level = notification.userInfo?["overlayLevel"] as? Int {
                 overlayLevel = level
+            }
+        }
+        // #172: Listen for auto-slide state changes
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("SlideWindowAutoSlideChanged"))) { notification in
+            if let mode = notification.userInfo?["autoSlideMode"] as? Int {
+                autoSlideMode = mode
             }
         }
     }
@@ -1787,6 +1922,23 @@ struct SlideWindowView: View {
             .cornerRadius(4)
         }
         
+        // AUTO-SLIDE badge (#172)
+        if autoSlideMode > 0 {
+            let labels = ["", "AUTO", "FAST", "TURBO"]
+            HStack(spacing: 4) {
+                Image(systemName: "play.fill")
+                    .font(.caption)
+                Text(labels[autoSlideMode])
+                    .font(.caption)
+                    .fontWeight(.bold)
+            }
+            .foregroundStyle(.green)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.green.opacity(0.2))
+            .cornerRadius(4)
+        }
+        
         // DESKEW indicator (PDF only)
         if isDeskewEnabled {
             HStack(spacing: 3) {
@@ -1856,6 +2008,14 @@ struct SlideWindowView: View {
                 Text("★ mode")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.3))
+                
+                Text("space")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.leading, 8)
+                Text(autoSlideMode > 0 ? "stop auto" : "auto-slide")
+                    .font(.caption)
+                    .foregroundStyle(autoSlideMode > 0 ? .green.opacity(0.7) : .white.opacity(0.3))
                 
                 Text("q")
                     .font(.caption)

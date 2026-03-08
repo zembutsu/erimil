@@ -2777,6 +2777,12 @@ struct ViewerView: View {
     
     // #154: Render gate — prevent rapid key repeat from skipping pages
     @State private var isNavigationGated: Bool = false
+
+    // #172: Auto-Slide state
+    @State private var autoSlideMode: Int = 0         // 0=off 1=normal 2=fast 3=turbo
+    @State private var autoSlidePendingTaps: Int = 0
+    @State private var autoSlideTapTimer: DispatchWorkItem?
+    @State private var autoSlideWaitingForImage: Bool = false
     
     /// #54: Effective reading direction for this source
     private var effectiveReadingDirection: ReadingDirection {
@@ -2969,6 +2975,11 @@ struct ViewerView: View {
                             // #160: Hold gate for 1 frame min — prevents key-repeat from skipping pages on cache hit
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
                                 isNavigationGated = false
+                                // #172: Auto-Slide cache-miss wait
+                                if autoSlideWaitingForImage {
+                                    autoSlideWaitingForImage = false
+                                    scheduleNextAutoSlideAdvance()
+                                }
                             }
                         }  // #154
                     )
@@ -3046,7 +3057,24 @@ struct ViewerView: View {
                 Image(systemName: "star.fill")
                     .foregroundStyle(.yellow)
             }
-            
+
+            // #172: Auto-Slide badge
+            if autoSlideMode > 0 {
+                let labels = ["", "AUTO", "FAST", "TURBO"]
+                HStack(spacing: 4) {
+                    Image(systemName: "play.fill")
+                        .font(.caption)
+                    Text(labels[autoSlideMode])
+                        .font(.caption)
+                        .fontWeight(.bold)
+                }
+                .foregroundStyle(.green)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.green.opacity(0.2))
+                .cornerRadius(4)
+            }
+
             // #101: Deskew indicator (PDF only)
             if isDeskewEnabled {
                 HStack(spacing: 3) {
@@ -3143,6 +3171,77 @@ struct ViewerView: View {
         .foregroundStyle(.white.opacity(0.5))
         .padding(.vertical, 4)
         .background(Color.black.opacity(0.6))
+    }
+
+    // MARK: - Auto-Slide (#172)
+
+    private func handleAutoSlideSpaceKey() {
+        if autoSlideMode > 0 {
+            stopAutoSlide()
+            return
+        }
+        autoSlidePendingTaps += 1
+        autoSlideTapTimer?.cancel()
+        if autoSlidePendingTaps >= 3 {
+            let taps = autoSlidePendingTaps
+            autoSlidePendingTaps = 0
+            startAutoSlide(mode: min(taps, 3))
+        } else {
+            let taps = autoSlidePendingTaps
+            let work = DispatchWorkItem {
+                autoSlidePendingTaps = 0
+                startAutoSlide(mode: min(taps, 3))
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+            autoSlideTapTimer = work
+        }
+    }
+
+    private func startAutoSlide(mode: Int) {
+        autoSlideMode = mode
+        autoSlideWaitingForImage = false
+        scheduleNextAutoSlideAdvance()
+        Logger.viewer.debug("Viewer Auto-slide started: mode=\(mode)")
+    }
+
+    private func stopAutoSlide() {
+        guard autoSlideMode > 0 || autoSlidePendingTaps > 0 else { return }
+        autoSlideMode = 0
+        autoSlidePendingTaps = 0
+        autoSlideTapTimer?.cancel()
+        autoSlideTapTimer = nil
+        autoSlideWaitingForImage = false
+        Logger.viewer.debug("Viewer Auto-slide stopped")
+    }
+
+    private func scheduleNextAutoSlideAdvance() {
+        guard autoSlideMode > 0 else { return }
+        let interval: TimeInterval
+        switch autoSlideMode {
+        case 1:  interval = AppSettings.shared.autoSlideIntervalNormal
+        case 2:  interval = AppSettings.shared.autoSlideIntervalFast
+        default: interval = AppSettings.shared.autoSlideIntervalTurbo
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + interval) {
+            advanceAutoSlide()
+        }
+    }
+
+    private func advanceAutoSlide() {
+        guard autoSlideMode > 0 else { return }
+        let before = viewerIndex
+        goToNext()
+        if viewerIndex == before {
+            if AppSettings.shared.autoSlideLoops {
+                navigateTo(0)
+                Logger.viewer.debug("Viewer Auto-slide: loop to start")
+            } else {
+                Logger.viewer.debug("Viewer Auto-slide: end of source, stopping")
+                stopAutoSlide()
+                return
+            }
+        }
+        autoSlideWaitingForImage = true
     }
     
     // MARK: - Navigation (#67: Spread-aware using isShowingSpread)
@@ -3348,12 +3447,18 @@ struct ViewerView: View {
         switch event.keyCode {
         // Escape
         case 53:
+            // #172: Auto-Slide running → stop only
+            if autoSlideMode > 0 {
+                stopAutoSlide()
+                return true
+            }
             onIndexChange(viewerIndex)
             onClose()
             return true
             
         // Return/Enter - go to Slide Mode
         case 36:
+            stopAutoSlide()
             onEnterSlideMode(viewerIndex)
             return true
             
@@ -3427,6 +3532,11 @@ struct ViewerView: View {
             }
             // Plain F handled in character switch below
             break
+
+            // Space - Auto-Slide (#172)
+            case 49:
+                handleAutoSlideSpaceKey()
+                return true
             
         default:
             break
@@ -3440,6 +3550,11 @@ struct ViewerView: View {
         switch characters {
         // Q - close
         case "q":
+            // #172: Auto-Slide running → stop only
+            if autoSlideMode > 0 {
+                stopAutoSlide()
+                return true
+            }
             onIndexChange(viewerIndex)
             onClose()
             return true

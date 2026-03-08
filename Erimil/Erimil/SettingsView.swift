@@ -110,6 +110,55 @@ struct SettingsView: View {
                 .font(.caption)
             }
 
+            // MARK: - Auto-Slide (#172)
+            Section {
+                HStack {
+                    Text("Normal:")
+                        .frame(width: 55, alignment: .leading)
+                    Slider(value: $settings.autoSlideIntervalNormal, in: 1.0...10.0, step: 0.5)
+                    Text(String(format: "%.1fs", settings.autoSlideIntervalNormal))
+                        .frame(width: 45, alignment: .trailing)
+                        .monospacedDigit()
+                }
+                HStack {
+                    Text("Fast:")
+                        .frame(width: 55, alignment: .leading)
+                    Slider(value: $settings.autoSlideIntervalFast, in: 0.1...2.0, step: 0.1)
+                    Text(String(format: "%.1fs", settings.autoSlideIntervalFast))
+                        .frame(width: 45, alignment: .trailing)
+                        .monospacedDigit()
+                }
+                HStack {
+                    Text("Turbo:")
+                        .frame(width: 55, alignment: .leading)
+                    Slider(value: $settings.autoSlideIntervalTurbo, in: 0.1...3.0, step: 0.1)
+                    Text(String(format: "%.1fs", settings.autoSlideIntervalTurbo))
+                        .frame(width: 45, alignment: .trailing)
+                        .monospacedDigit()
+                }
+                Toggle("末尾でループ", isOn: $settings.autoSlideLoops)
+                HStack {
+                    Spacer()
+                    Button("初期値に戻す") {
+                        settings.autoSlideIntervalNormal = 5.0
+                        settings.autoSlideIntervalFast   = 0.5
+                        settings.autoSlideIntervalTurbo  = 1.5
+                        settings.autoSlideLoops          = true
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Auto-Slide")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Space×1=Normal、Space×2=Fast、Space×3=Turbo")
+                    Text("Space（再押し）で停止。Oキーでオーバーレイ切替")
+                    Text("「末尾でループ」OFF時は末尾で自動停止")
+                }
+                .font(.caption)
+            }
+            
             // MARK: - Reading Direction (#54)
             Section {
                 Picker("デフォルト方向", selection: $settings.defaultReadingDirection) {
@@ -206,7 +255,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 810)
+        .frame(width: 450, height: 940)
         .navigationTitle("設定")
         .onAppear {
             updateCacheInfo()
