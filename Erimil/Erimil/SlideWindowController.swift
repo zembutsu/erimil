@@ -31,10 +31,12 @@ class SlideWindowController {
     private var isNavigationGated: Bool = false
     private var imageReadyObserver: NSObjectProtocol?
     
-    // #172: Auto-Slide
-    private var autoSlideMode: Int = 0  // 0=off, 1=normal, 2=fast, 3=turbo
+    // #172: Auto-Slide / #178: Reverse Playback
+    private var autoSlideMode: Int = 0  // 0=off, 1/2/3=forward Normal/Fast/Turbo, -1/-2/-3=reverse
     private var autoSlideTapTimer: DispatchWorkItem?
     private var autoSlidePendingTaps: Int = 0
+    private var autoSlideShiftTapTimer: DispatchWorkItem?
+    private var autoSlideShiftPendingTaps: Int = 0
     private var autoSlideWaitingForImage: Bool = false
     
     /// Public getter for current index
@@ -594,9 +596,39 @@ class SlideWindowController {
             }
             return nil
             
+        // Shift+Space - Reverse Auto-Slide (#178)
+        case 49 where event.modifierFlags.contains(.shift):
+            if autoSlideMode < 0 {
+                Logger.slideWindow.debug("→ Reverse auto-slide stop (Shift+Space)")
+                stopAutoSlide()
+            } else if autoSlideMode > 0 {
+                Logger.slideWindow.debug("→ Forward→stop (Shift+Space while forward running)")
+                stopAutoSlide()
+            } else {
+                autoSlideShiftPendingTaps += 1
+                autoSlideShiftTapTimer?.cancel()
+                if autoSlideShiftPendingTaps >= 3 {
+                    let taps = autoSlideShiftPendingTaps
+                    autoSlideShiftPendingTaps = 0
+                    Logger.slideWindow.debug("→ Reverse auto-slide start mode=\(-taps) (Shift+Space×3)")
+                    startAutoSlide(mode: -min(taps, 3))
+                } else {
+                    let taps = autoSlideShiftPendingTaps
+                    let work = DispatchWorkItem { [weak self] in
+                        guard let self = self else { return }
+                        self.autoSlideShiftPendingTaps = 0
+                        Logger.slideWindow.debug("→ Reverse auto-slide start mode=\(-taps) (Shift+Space tap timer)")
+                        self.startAutoSlide(mode: -taps)
+                    }
+                    autoSlideShiftTapTimer = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+                }
+            }
+            return nil
+
         // Space - Auto-Slide (#172; overlay toggle moved to O key)
         case 49:
-            if autoSlideMode > 0 {
+            if autoSlideMode != 0 {
                 Logger.slideWindow.debug("→ Auto-slide stop (Space)")
                 stopAutoSlide()
             } else {
@@ -907,8 +939,8 @@ class SlideWindowController {
                     return nil
                     
                 case "q":
-                    // #172: Auto-Slide running → stop only
-                    if autoSlideMode > 0 {
+                    // #172/#178: Auto-Slide running → stop only
+                    if autoSlideMode != 0 {
                         Logger.slideWindow.debug("→ Auto-slide stop (Q)")
                         stopAutoSlide()
                         return nil
@@ -1365,20 +1397,23 @@ class SlideWindowController {
     }
     
     private func stopAutoSlide() {
-        guard autoSlideMode > 0 || autoSlidePendingTaps > 0 else { return }
+        guard autoSlideMode != 0 || autoSlidePendingTaps > 0 || autoSlideShiftPendingTaps > 0 else { return }
         autoSlideMode = 0
         autoSlidePendingTaps = 0
         autoSlideTapTimer?.cancel()
         autoSlideTapTimer = nil
+        autoSlideShiftPendingTaps = 0
+        autoSlideShiftTapTimer?.cancel()
+        autoSlideShiftTapTimer = nil
         autoSlideWaitingForImage = false
         notifyViewOfAutoSlideChange()
         Logger.slideWindow.debug("Auto-slide stopped")
     }
     
     private func scheduleNextAutoSlideAdvance() {
-        guard autoSlideMode > 0 else { return }
+        guard autoSlideMode != 0 else { return }
         let interval: TimeInterval
-        switch autoSlideMode {
+        switch abs(autoSlideMode) {
         case 1:  interval = AppSettings.shared.autoSlideIntervalNormal
         case 2:  interval = AppSettings.shared.autoSlideIntervalFast
         default: interval = AppSettings.shared.autoSlideIntervalTurbo
@@ -1389,33 +1424,35 @@ class SlideWindowController {
     }
     
     private func advanceAutoSlide() {
-        guard autoSlideMode > 0 else { return }
+        guard autoSlideMode != 0 else { return }
         let before = currentIndex
+        let isReverse = autoSlideMode < 0
         // Fav Mode 中は★のみ進む
         if isFavoritesMode {
-            goToNextFavorite()
+            if isReverse { goToPreviousFavorite() } else { goToNextFavorite() }
         } else {
-            goToNext()
+            if isReverse { goToPrevious() } else { goToNext() }
         }
         if currentIndex == before {
-            // End of source
+            // End of source (forward) or start of source (reverse)
             if AppSettings.shared.autoSlideLoops {
-                // Loop: jump to start (or first favorite)
                 if isFavoritesMode {
-                    if let first = storedFavoriteIndices.sorted().first {
-                        currentIndex = first
+                    let sorted = storedFavoriteIndices.sorted()
+                    if let target = isReverse ? sorted.last : sorted.first {
+                        currentIndex = target
                         notifyViewOfIndexChange()
-                        Logger.slideWindow.debug("Auto-slide: loop to first favorite (\(first))")
+                        Logger.slideWindow.debug("Auto-slide: loop to \(isReverse ? "last" : "first") favorite (\(target))")
                     } else {
                         stopAutoSlide(); return
                     }
                 } else {
-                    currentIndex = 0
+                    let target = isReverse ? storedEntries.count - 1 : 0
+                    currentIndex = target
                     notifyViewOfIndexChange()
-                    Logger.slideWindow.debug("Auto-slide: loop to start")
+                    Logger.slideWindow.debug("Auto-slide: loop to \(isReverse ? "end" : "start")")
                 }
             } else {
-                Logger.slideWindow.debug("Auto-slide: end of source, stopping")
+                Logger.slideWindow.debug("Auto-slide: boundary reached, stopping")
                 stopAutoSlide()
                 return
             }
@@ -1922,20 +1959,24 @@ struct SlideWindowView: View {
             .cornerRadius(4)
         }
         
-        // AUTO-SLIDE badge (#172)
-        if autoSlideMode > 0 {
+        // AUTO-SLIDE badge (#172/#178)
+        if autoSlideMode != 0 {
             let labels = ["", "AUTO", "FAST", "TURBO"]
+            let absMode = abs(autoSlideMode)
+            let isReverse = autoSlideMode < 0
+            let arrowForward = ["", "▶ ", "▶▶ ", "▶▶▶ "]
+            let arrowReverse = ["", "◀ ", "◀◀ ", "◀◀◀ "]
+            let arrow = isReverse ? arrowReverse[absMode] : arrowForward[absMode]
+            let badgeColor: Color = isReverse ? .purple : .green
             HStack(spacing: 4) {
-                Image(systemName: "play.fill")
-                    .font(.caption)
-                Text(labels[autoSlideMode])
+                Text(arrow + labels[absMode])
                     .font(.caption)
                     .fontWeight(.bold)
             }
-            .foregroundStyle(.green)
+            .foregroundStyle(badgeColor)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(.green.opacity(0.2))
+            .background(badgeColor.opacity(0.2))
             .cornerRadius(4)
         }
         
@@ -2013,9 +2054,9 @@ struct SlideWindowView: View {
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.5))
                     .padding(.leading, 8)
-                Text(autoSlideMode > 0 ? "stop auto" : "auto-slide")
+                Text(autoSlideMode != 0 ? "stop auto" : "auto-slide")
                     .font(.caption)
-                    .foregroundStyle(autoSlideMode > 0 ? .green.opacity(0.7) : .white.opacity(0.3))
+                    .foregroundStyle(autoSlideMode != 0 ? .green.opacity(0.7) : .white.opacity(0.3))
                 
                 Text("q")
                     .font(.caption)

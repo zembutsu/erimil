@@ -2778,10 +2778,12 @@ struct ViewerView: View {
     // #154: Render gate — prevent rapid key repeat from skipping pages
     @State private var isNavigationGated: Bool = false
 
-    // #172: Auto-Slide state
-    @State private var autoSlideMode: Int = 0         // 0=off 1=normal 2=fast 3=turbo
+    // #172: Auto-Slide / #178: Reverse Playback
+    @State private var autoSlideMode: Int = 0         // 0=off 1/2/3=forward -1/-2/-3=reverse
     @State private var autoSlidePendingTaps: Int = 0
     @State private var autoSlideTapTimer: DispatchWorkItem?
+    @State private var autoSlideShiftPendingTaps: Int = 0
+    @State private var autoSlideShiftTapTimer: DispatchWorkItem?
     @State private var autoSlideWaitingForImage: Bool = false
     
     /// #54: Effective reading direction for this source
@@ -3058,20 +3060,24 @@ struct ViewerView: View {
                     .foregroundStyle(.yellow)
             }
 
-            // #172: Auto-Slide badge
-            if autoSlideMode > 0 {
+            // #172/#178: Auto-Slide badge
+            if autoSlideMode != 0 {
                 let labels = ["", "AUTO", "FAST", "TURBO"]
+                let absMode = abs(autoSlideMode)
+                let isReverse = autoSlideMode < 0
+                let arrowForward = ["", "▶ ", "▶▶ ", "▶▶▶ "]
+                let arrowReverse = ["", "◀ ", "◀◀ ", "◀◀◀ "]
+                let arrow = isReverse ? arrowReverse[absMode] : arrowForward[absMode]
+                let badgeColor: Color = isReverse ? .purple : .green
                 HStack(spacing: 4) {
-                    Image(systemName: "play.fill")
-                        .font(.caption)
-                    Text(labels[autoSlideMode])
+                    Text(arrow + labels[absMode])
                         .font(.caption)
                         .fontWeight(.bold)
                 }
-                .foregroundStyle(.green)
+                .foregroundStyle(badgeColor)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(.green.opacity(0.2))
+                .background(badgeColor.opacity(0.2))
                 .cornerRadius(4)
             }
 
@@ -3176,7 +3182,7 @@ struct ViewerView: View {
     // MARK: - Auto-Slide (#172)
 
     private func handleAutoSlideSpaceKey() {
-        if autoSlideMode > 0 {
+        if autoSlideMode != 0 {
             stopAutoSlide()
             return
         }
@@ -3197,6 +3203,29 @@ struct ViewerView: View {
         }
     }
 
+    private func handleAutoSlideShiftSpaceKey() {
+        if autoSlideMode != 0 {
+            // Shift+Space during any running state → stop
+            stopAutoSlide()
+            return
+        }
+        autoSlideShiftPendingTaps += 1
+        autoSlideShiftTapTimer?.cancel()
+        if autoSlideShiftPendingTaps >= 3 {
+            let taps = autoSlideShiftPendingTaps
+            autoSlideShiftPendingTaps = 0
+            startAutoSlide(mode: -min(taps, 3))
+        } else {
+            let taps = autoSlideShiftPendingTaps
+            let work = DispatchWorkItem {
+                autoSlideShiftPendingTaps = 0
+                startAutoSlide(mode: -min(taps, 3))
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+            autoSlideShiftTapTimer = work
+        }
+    }
+
     private func startAutoSlide(mode: Int) {
         autoSlideMode = mode
         autoSlideWaitingForImage = false
@@ -3205,19 +3234,22 @@ struct ViewerView: View {
     }
 
     private func stopAutoSlide() {
-        guard autoSlideMode > 0 || autoSlidePendingTaps > 0 else { return }
+        guard autoSlideMode != 0 || autoSlidePendingTaps > 0 || autoSlideShiftPendingTaps > 0 else { return }
         autoSlideMode = 0
         autoSlidePendingTaps = 0
         autoSlideTapTimer?.cancel()
         autoSlideTapTimer = nil
+        autoSlideShiftPendingTaps = 0
+        autoSlideShiftTapTimer?.cancel()
+        autoSlideShiftTapTimer = nil
         autoSlideWaitingForImage = false
         Logger.viewer.debug("Viewer Auto-slide stopped")
     }
 
     private func scheduleNextAutoSlideAdvance() {
-        guard autoSlideMode > 0 else { return }
+        guard autoSlideMode != 0 else { return }
         let interval: TimeInterval
-        switch autoSlideMode {
+        switch abs(autoSlideMode) {
         case 1:  interval = AppSettings.shared.autoSlideIntervalNormal
         case 2:  interval = AppSettings.shared.autoSlideIntervalFast
         default: interval = AppSettings.shared.autoSlideIntervalTurbo
@@ -3228,15 +3260,17 @@ struct ViewerView: View {
     }
 
     private func advanceAutoSlide() {
-        guard autoSlideMode > 0 else { return }
+        guard autoSlideMode != 0 else { return }
         let before = viewerIndex
-        goToNext()
+        let isReverse = autoSlideMode < 0
+        if isReverse { goToPrevious() } else { goToNext() }
         if viewerIndex == before {
             if AppSettings.shared.autoSlideLoops {
-                navigateTo(0)
-                Logger.viewer.debug("Viewer Auto-slide: loop to start")
+                let target = isReverse ? entries.count - 1 : 0
+                navigateTo(target)
+                Logger.viewer.debug("Viewer Auto-slide: loop to \(isReverse ? "end" : "start")")
             } else {
-                Logger.viewer.debug("Viewer Auto-slide: end of source, stopping")
+                Logger.viewer.debug("Viewer Auto-slide: boundary reached, stopping")
                 stopAutoSlide()
                 return
             }
@@ -3447,8 +3481,8 @@ struct ViewerView: View {
         switch event.keyCode {
         // Escape
         case 53:
-            // #172: Auto-Slide running → stop only
-            if autoSlideMode > 0 {
+            // #172/#178: Auto-Slide running → stop only
+            if autoSlideMode != 0 {
                 stopAutoSlide()
                 return true
             }
@@ -3533,6 +3567,11 @@ struct ViewerView: View {
             // Plain F handled in character switch below
             break
 
+            // Shift+Space - Reverse Auto-Slide (#178)
+            case 49 where event.modifierFlags.contains(.shift):
+                handleAutoSlideShiftSpaceKey()
+                return true
+
             // Space - Auto-Slide (#172)
             case 49:
                 handleAutoSlideSpaceKey()
@@ -3550,8 +3589,8 @@ struct ViewerView: View {
         switch characters {
         // Q - close
         case "q":
-            // #172: Auto-Slide running → stop only
-            if autoSlideMode > 0 {
+            // #172/#178: Auto-Slide running → stop only
+            if autoSlideMode != 0 {
                 stopAutoSlide()
                 return true
             }
