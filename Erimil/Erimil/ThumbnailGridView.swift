@@ -1291,15 +1291,6 @@ struct ThumbnailGridView: View {
             }
             return true
             
-        // Space
-        case 49:
-            if previewMode.isPresented {
-                previewMode = .none
-            } else {
-                openPreview(at: currentIndex)
-            }
-            return true
-            
         default:
             break
         }
@@ -1633,12 +1624,6 @@ struct ThumbnailGridView: View {
             contentHash: contentHash
         )
         favoritesVersion += 1  // Trigger re-render
-    }
-    
-    private func openPreview(at index: Int) {
-        guard index >= 0 && index < entries.count else { return }
-        Logger.preview.debug("Opening preview at index: \(index, privacy: .public) - \(entries[index].name)")
-        previewMode = .quickLook(index: index)
     }
     
     // MARK: - Archive Export
