@@ -62,24 +62,18 @@ struct KeyEventHandlerView: NSViewRepresentable {
 /// Preview display mode
 enum PreviewMode: Equatable {
     case none
-    case quickLook(index: Int)   // Window-based preview
     case slideMode(index: Int)   // Fullscreen presentation
     case viewer(index: Int)      // S013: Windowed viewer mode (Reader Mode)
     
     var index: Int? {
         switch self {
         case .none: return nil
-        case .quickLook(let i), .slideMode(let i), .viewer(let i): return i
+        case .slideMode(let i), .viewer(let i): return i
         }
     }
     
     var isPresented: Bool {
         self != .none
-    }
-    
-    var isQuickLook: Bool {
-        if case .quickLook = self { return true }
-        return false
     }
     
     var isSlideMode: Bool {
@@ -377,12 +371,6 @@ struct ThumbnailGridView: View {
                     )
                 }
             }
-            .sheet(isPresented: Binding(
-                get: { previewMode.isQuickLook },
-                set: { if !$0 { previewMode = .none } }
-            )) {
-                quickLookSheet
-            }
             .onChange(of: shouldReopenSlideMode) { _, newValue in
                 handleSlideModeReopen(newValue)
             }
@@ -440,28 +428,6 @@ struct ThumbnailGridView: View {
         }
     }
 
-    @ViewBuilder
-    private var quickLookSheet: some View {
-        if let index = previewMode.index {
-            ImagePreviewView(
-                imageSource: imageSource,
-                entries: entries,
-                initialIndex: index,
-                favoriteIndices: favoriteIndices,
-                onClose: { previewMode = .none },
-                onToggleFullScreen: {
-                    Logger.thumbnailGrid.debug("onToggleFullScreen called")
-                    Logger.thumbnailGrid.debug("Current previewMode: \(String(describing: previewMode), privacy: .public)")
-                    if let idx = previewMode.index {
-                        Logger.thumbnailGrid.debug("Setting previewMode to .slideMode(index: \(idx, privacy: .public))")
-                        previewMode = .slideMode(index: idx)
-                    } else {
-                        Logger.thumbnailGrid.error("ERROR: previewMode.index is nil")
-                    }
-                }
-            )
-        }
-    }
 
     private func handleEntriesChange(_ newEntries: [ImageEntry]) {
         if shouldReopenViewerMode && !newEntries.isEmpty {
@@ -1291,15 +1257,6 @@ struct ThumbnailGridView: View {
             }
             return true
             
-        // Space
-        case 49:
-            if previewMode.isPresented {
-                previewMode = .none
-            } else {
-                openPreview(at: currentIndex)
-            }
-            return true
-            
         default:
             break
         }
@@ -1633,12 +1590,6 @@ struct ThumbnailGridView: View {
             contentHash: contentHash
         )
         favoritesVersion += 1  // Trigger re-render
-    }
-    
-    private func openPreview(at index: Int) {
-        guard index >= 0 && index < entries.count else { return }
-        Logger.preview.debug("Opening preview at index: \(index, privacy: .public) - \(entries[index].name)")
-        previewMode = .quickLook(index: index)
     }
     
     // MARK: - Archive Export
