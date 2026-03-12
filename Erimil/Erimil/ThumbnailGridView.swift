@@ -1377,8 +1377,7 @@ struct ThumbnailGridView: View {
             
         case .exitToFiler:
             // R: in Grid context, open Viewer Mode (R = "read" = enter viewer)
-            let startIndex = lastViewedIndex ?? currentIndex
-            previewMode = .viewer(index: startIndex)
+            previewMode = .viewer(index: currentIndex)
             
         case .toggleReadingDirection:
             // Ctrl+R: toggle reading direction
