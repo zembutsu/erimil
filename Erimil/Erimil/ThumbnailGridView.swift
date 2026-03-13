@@ -2534,9 +2534,9 @@ struct SpreadThumbnailPairView: View {
         currentIndex == leftIndex || currentIndex == rightIndex
     }
     
-    /// Size for each thumbnail (half of pair size minus spacing)
+    /// Size for each thumbnail (half of pair size minus divider)
     private var itemSize: CGFloat {
-        (pairSize - 2) / 2  // 2px for center gap
+        floor((pairSize - 1) / 2)  // floor() ensures equal width for left/right
     }
     
     private var leftFavoriteStatus: CacheManager.FavoriteStatus {
@@ -2575,7 +2575,7 @@ struct SpreadThumbnailPairView: View {
     var body: some View {
         // HStack with two thumbnails - #116: RTL resolved internally via source reading direction
         let direction = CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
-        HStack(spacing: 2) {
+        HStack(spacing: 1) {
             // Left side (in LTR: lower index page; in RTL: higher index page)
             thumbnailView(
                 entry: leftEntry,
@@ -2584,6 +2584,11 @@ struct SpreadThumbnailPairView: View {
                 favoriteStatus: leftFavoriteStatus,
                 isSelected: isLeftSelected
             )
+            
+            // #187: 1px center divider between spread pair
+            // Rectangle()
+            //   .fill(Color.primary.opacity(0.3))
+            //   .frame(width: 2)
             
             // Right side
             thumbnailView(
@@ -2595,10 +2600,11 @@ struct SpreadThumbnailPairView: View {
             )
         }
         .environment(\.layoutDirection, direction.layoutDirection)  // #116: RTL spread inversion
+        .background(Color.black.opacity(0.5))  // #187: subtle gap color between spread pair
         .frame(width: pairSize, height: pairSize)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .stroke(isCurrent ? Color.accentColor : Color.clear, lineWidth: 2)
+                .stroke(isCurrent ? Color.accentColor : Color.clear, lineWidth: 3)
         )
         .onAppear {
             loadThumbnails()
@@ -2617,7 +2623,8 @@ struct SpreadThumbnailPairView: View {
             if let image = thumbnail {
                 Image(nsImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .aspectRatio(contentMode: .fill)
+                    .clipped()
             } else {
                 Rectangle()
                     .fill(Color.gray.opacity(0.3))
@@ -2643,7 +2650,8 @@ struct SpreadThumbnailPairView: View {
                     .stroke(overlayColor, lineWidth: 2)
             }
         }
-        .frame(width: itemSize, height: itemSize * 1.4)
+        .frame(width: itemSize, height: itemSize * 1.55)
+        .clipped()
         .contentShape(Rectangle())
         .onTapGesture {
             onSelect(index)
