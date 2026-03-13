@@ -2534,9 +2534,9 @@ struct SpreadThumbnailPairView: View {
         currentIndex == leftIndex || currentIndex == rightIndex
     }
     
-    /// Size for each thumbnail (half of pair size minus spacing)
+    /// Size for each thumbnail (half of pair size minus divider)
     private var itemSize: CGFloat {
-        (pairSize - 2) / 2  // 2px for center gap
+        floor((pairSize - 1) / 2)  // floor() ensures equal width for left/right
     }
     
     private var leftFavoriteStatus: CacheManager.FavoriteStatus {
@@ -2575,7 +2575,7 @@ struct SpreadThumbnailPairView: View {
     var body: some View {
         // HStack with two thumbnails - #116: RTL resolved internally via source reading direction
         let direction = CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
-        HStack(spacing: 2) {
+        HStack(spacing: 0) {
             // Left side (in LTR: lower index page; in RTL: higher index page)
             thumbnailView(
                 entry: leftEntry,
@@ -2584,6 +2584,11 @@ struct SpreadThumbnailPairView: View {
                 favoriteStatus: leftFavoriteStatus,
                 isSelected: isLeftSelected
             )
+            
+            // #187: 1px center divider between spread pair
+            Rectangle()
+                .fill(Color.primary.opacity(0.3))
+                .frame(width: 1)
             
             // Right side
             thumbnailView(
@@ -2617,7 +2622,8 @@ struct SpreadThumbnailPairView: View {
             if let image = thumbnail {
                 Image(nsImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .aspectRatio(contentMode: .fill)
+                    .clipped()
             } else {
                 Rectangle()
                     .fill(Color.gray.opacity(0.3))
@@ -2643,7 +2649,7 @@ struct SpreadThumbnailPairView: View {
                     .stroke(overlayColor, lineWidth: 2)
             }
         }
-        .frame(width: itemSize, height: itemSize * 1.4)
+        .frame(width: itemSize, height: itemSize * 1.55)
         .contentShape(Rectangle())
         .onTapGesture {
             onSelect(index)
