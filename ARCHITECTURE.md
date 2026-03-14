@@ -130,11 +130,14 @@ SwiftUI views for user interaction.
     - Orange bookmark icon + section name + divider line
     - Pinned section headers during scroll
   - **ThumbnailSidebarView**: Vertical/horizontal thumbnail strip (S014)
+- **ThumbnailComponents.swift**: Extracted thumbnail subviews (#175 Phase 1)
   - **SpreadThumbnailPairView**: Paired thumbnail display for spreads (#69)
-  - **ViewerView**: In-grid image viewer with thumbnail sidebar
-    - Configurable thumbnail position (left/bottom/hidden via Ctrl+T)
-    - Spread-aware navigation integrated
-    - Uses SpreadImageViewer for image display
+- **ViewerView**: In-grid image viewer with thumbnail sidebar (#175 Phase 1: separate file)
+  - Configurable thumbnail position (left/bottom/hidden via Ctrl+T)
+  - Spread-aware navigation integrated
+  - Uses SpreadImageViewer for image display
+  - Auto-Slide support (Space/Shift+Space, shared AutoSlideTapHandler)
+- **ExportConfirmationView**: Export sheet with metadata options (#105, #175 Phase 1: separate file)
 - **ThumbnailCell**: Individual thumbnail with selection overlay
 - **ImagePreviewView**: Quick Look modal preview (Enter → Slide Mode)
 - **SettingsView**: Settings panel (⌘,)
@@ -148,6 +151,10 @@ Fullscreen image viewing with Favorites Mode and source navigation.
   - Centralized key handling via `NSEvent.addLocalMonitorForEvents`
   - State sync to View via NotificationCenter
   - Empty source support with "No images" display
+  - Auto-Slide: automatic page advance with tap-counted speed (#172/#178)
+    - Space × 1/2/3 = Normal/Fast/Turbo, Shift+Space = reverse
+    - Favorites Mode: advances through ★ only
+    - Loop at source boundary (configurable)
 
 - **Keyboard Handling**:
   | Key | Normal Mode | Favorites Mode |
@@ -170,7 +177,9 @@ Fullscreen image viewing with Favorites Mode and source navigation.
   | Shift+S | Add/delete bookmark (栞) | Same |
   | Shift+A/D | Previous/Next bookmark (RTL-aware) | Same |
   | Shift+B | Bookmark list overlay | Same |
-  | Space | Toggle controls | Toggle controls |
+  | Space | Auto-Slide start/stop (#172) | Same |
+  | Shift+Space | Reverse Auto-Slide (#178) | Same |
+  | O | Toggle controls overlay | Same |
 
 - **Favorites Mode State**:
   - `isFavoritesMode: Bool` in SlideWindowController
@@ -211,6 +220,9 @@ Consolidated key handling logic shared across viewer modes.
   - `BookmarkDialogHelper`: NSAlert-based add/delete dialogs for bookmarks (#62)
   - `BookmarkListKeyHandler`: Shared key handling for bookmark list overlay (#62 Phase 5)
   - `BookmarkListOverlayView`: SwiftUI overlay for bookmark list display (#62 Phase 5)
+  - `AutoSlideTapHandler`: Shared tap-counting state machine for Auto-Slide (#175 Phase 2)
+    - Used by both ViewerView and SlideWindowController
+    - Encapsulates "tap N times within 0.3s" → mode 1-3 (Normal/Fast/Turbo)
 
 - **Mode-Specific Handlers**:
   | Mode | Handler Location | Notes |
@@ -452,10 +464,12 @@ Erimil/
 ├── ThumbnailGridView.swift      # Image grid with mode-aware UI
 │   ├── ThumbnailDisplayItem     # Enum: .single, .spread (#69)
 │   ├── ThumbnailSidebarView     # Thumbnail strip (S014)
-│   ├── SpreadThumbnailPairView  # Paired thumbnails (#69)
-│   ├── ViewerView               # In-grid viewer with thumbnail sidebar
-│   ├── ExportConfirmationView   # Export sheet with metadata options (#105)
 │   └── ThumbnailCell            # Individual thumbnail
+├── ThumbnailComponents.swift    # Extracted thumbnail subviews (#175 Phase 1)
+│   └── SpreadThumbnailPairView  # Paired thumbnails (#69)
+├── ViewerView.swift             # In-grid viewer with thumbnail sidebar (#175 Phase 1)
+│   └── ViewerKeyEventHandler    # Viewer-specific key handling
+├── ExportConfirmationView.swift # Export sheet with metadata options (#105, #175 Phase 1)
 ├── ImagePreviewView.swift       # Quick Look preview modal
 ├── SettingsView.swift           # Settings panel
 ├── SlideWindowController.swift  # Fullscreen slide mode controller
@@ -829,4 +843,4 @@ A: Aspect ratio or direction issue
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2026-02-10 (S037: os.Logger migration #94)
+> Last updated: 2026-03-14 (#175 Phase 1-2a: file split, AutoSlideTapHandler)
