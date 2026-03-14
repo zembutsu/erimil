@@ -1593,15 +1593,9 @@ struct ThumbnailGridView: View {
     // MARK: - Archive Export
     
     private func confirmExportArchive() {
-        // #105: Initialize metadata options from settings
         exportMetadataOptions = settings.defaultMetadataOptions
-        // #103: Show confirmation if favorites would be excluded
-        if affectedFavoriteCount > 0 {
-            pendingExportType = .archive
-            showFavoriteExportConfirm = true
-            return
-        }
-        executeExportArchive()
+        pendingExportType = .archive
+        showFavoriteExportConfirm = true
     }
     
     private func executeExportArchive() {
@@ -1737,15 +1731,9 @@ struct ThumbnailGridView: View {
     // MARK: - PDF Export (#100)
     
     private func confirmExportPDF() {
-        // #105: Initialize metadata options from settings
         exportMetadataOptions = settings.defaultMetadataOptions
-        // #103: Show confirmation if favorites would be excluded
-        if affectedFavoriteCount > 0 {
-            pendingExportType = .pdf
-            showFavoriteExportConfirm = true
-            return
-        }
-        executeExportPDF()
+        pendingExportType = .pdf
+        showFavoriteExportConfirm = true
     }
     
     private func executeExportPDF() {
@@ -1801,15 +1789,9 @@ struct ThumbnailGridView: View {
     }
     
     private func confirmExportPNG() {
-        // #105: Initialize metadata options from settings
         exportMetadataOptions = settings.defaultMetadataOptions
-        // #103: Show confirmation if favorites would be excluded
-        if affectedFavoriteCount > 0 {
-            pendingExportType = .png
-            showFavoriteExportConfirm = true
-            return
-        }
-        executeExportPNG()
+        pendingExportType = .png
+        showFavoriteExportConfirm = true
     }
     
     private func executeExportPNG() {
@@ -1862,15 +1844,9 @@ struct ThumbnailGridView: View {
     // MARK: - Deferred Export Execution (#103)
     
     private func confirmExportPNGZip() {
-        // #105: Initialize metadata options from settings
         exportMetadataOptions = settings.defaultMetadataOptions
-        // #103: Show confirmation if favorites would be excluded
-        if affectedFavoriteCount > 0 {
-            pendingExportType = .pngZip
-            showFavoriteExportConfirm = true
-            return
-        }
-        executeExportPNGZip()
+        pendingExportType = .pngZip
+        showFavoriteExportConfirm = true
     }
     
     private func executeExportPNGZip() {
