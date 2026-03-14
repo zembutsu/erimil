@@ -606,6 +606,17 @@ struct ThumbnailGridView: View {
                                     }
                                 }
                             }
+                            // #193: Viewer Mode → Grid復帰時のスクロール復元
+                            // GridはViewer Modeで置き換えられるため再マウントされる。
+                            // focusedIndexは既に設定済みだが .onChange は値変化時のみ発火するので
+                            // onAppearで明示的にスクロールする。
+                            .onAppear {
+                                if let index = focusedIndex {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                        scrollProxy.scrollTo(index, anchor: .center)
+                                    }
+                                }
+                            }
                         }
                     }
                     .onAppear {
