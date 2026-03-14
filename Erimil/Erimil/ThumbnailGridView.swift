@@ -574,7 +574,6 @@ struct ThumbnailGridView: View {
                                                 .id(item.index)
                                                 .onTapGesture {
                                                     focusedIndex = item.index
-                                                    toggleSelection(item.entry)
                                                 }
                                                 .onAppear {
                                                     loadThumbnailIfNeeded(for: item.entry)
