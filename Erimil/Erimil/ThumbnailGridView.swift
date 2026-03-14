@@ -915,7 +915,7 @@ struct ThumbnailGridView: View {
         
         // Show spinner only if async load takes >100ms
         let spinnerTimer = DispatchWorkItem {
-            guard isLoadingSource else { return }
+            guard loadID == newLoadID, isLoadingSource else { return }
             showLoadingSpinner = true
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: spinnerTimer)
