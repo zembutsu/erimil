@@ -673,6 +673,91 @@ struct CommonKeyParser {
     }
 }
 
+// MARK: - Auto-Slide Tap Handler (#175 Phase 2)
+
+/// Shared tap-counting state machine for Auto-Slide activation.
+/// Used by both ViewerView and SlideWindowController.
+///
+/// Encapsulates the "tap N times within 0.3s" logic:
+/// - 1 tap = Normal, 2 taps = Fast, 3 taps = Turbo
+/// - Space = forward (mode 1-3), Shift+Space = reverse (mode -1 to -3)
+class AutoSlideTapHandler {
+    
+    private var pendingTaps: Int = 0
+    private var tapTimer: DispatchWorkItem?
+    private var shiftPendingTaps: Int = 0
+    private var shiftTapTimer: DispatchWorkItem?
+    
+    /// Handle Space key for forward auto-slide.
+    /// - Parameters:
+    ///   - currentMode: Current autoSlideMode (0 = off)
+    ///   - start: Called with mode (1-3) to start forward auto-slide
+    ///   - stop: Called to stop running auto-slide
+    func handleSpace(currentMode: Int, start: @escaping (Int) -> Void, stop: @escaping () -> Void) {
+        if currentMode != 0 {
+            stop()
+            return
+        }
+        pendingTaps += 1
+        tapTimer?.cancel()
+        if pendingTaps >= 3 {
+            let taps = pendingTaps
+            pendingTaps = 0
+            start(min(taps, 3))
+        } else {
+            let taps = pendingTaps
+            let work = DispatchWorkItem { [weak self] in
+                self?.pendingTaps = 0
+                start(min(taps, 3))
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+            tapTimer = work
+        }
+    }
+    
+    /// Handle Shift+Space for reverse auto-slide.
+    /// - Parameters:
+    ///   - currentMode: Current autoSlideMode (0 = off)
+    ///   - start: Called with mode (-1 to -3) to start reverse auto-slide
+    ///   - stop: Called to stop running auto-slide
+    func handleShiftSpace(currentMode: Int, start: @escaping (Int) -> Void, stop: @escaping () -> Void) {
+        if currentMode != 0 {
+            stop()
+            return
+        }
+        shiftPendingTaps += 1
+        shiftTapTimer?.cancel()
+        if shiftPendingTaps >= 3 {
+            let taps = shiftPendingTaps
+            shiftPendingTaps = 0
+            start(-min(taps, 3))
+        } else {
+            let taps = shiftPendingTaps
+            let work = DispatchWorkItem { [weak self] in
+                self?.shiftPendingTaps = 0
+                start(-min(taps, 3))
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+            shiftTapTimer = work
+        }
+    }
+    
+    /// Cancel all pending taps and timers.
+    func reset() {
+        pendingTaps = 0
+        tapTimer?.cancel()
+        tapTimer = nil
+        shiftPendingTaps = 0
+        shiftTapTimer?.cancel()
+        shiftTapTimer = nil
+    }
+    
+    /// Whether any taps are pending (used in stop guard).
+    var hasPendingTaps: Bool {
+        pendingTaps > 0 || shiftPendingTaps > 0
+    }
+}
+
 // MARK: - Bookmark Dialog Helper (#62)
 
 /// Utility for bookmark add/delete dialogs

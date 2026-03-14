@@ -272,10 +272,7 @@ struct ViewerView: View {
 
     // #172: Auto-Slide / #178: Reverse Playback
     @State private var autoSlideMode: Int = 0         // 0=off 1/2/3=forward -1/-2/-3=reverse
-    @State private var autoSlidePendingTaps: Int = 0
-    @State private var autoSlideTapTimer: DispatchWorkItem?
-    @State private var autoSlideShiftPendingTaps: Int = 0
-    @State private var autoSlideShiftTapTimer: DispatchWorkItem?
+    @State private var autoSlideTapHandler = AutoSlideTapHandler()
     @State private var autoSlideWaitingForImage: Bool = false
     
     /// #54: Effective reading direction for this source
@@ -674,48 +671,19 @@ struct ViewerView: View {
     // MARK: - Auto-Slide (#172)
 
     private func handleAutoSlideSpaceKey() {
-        if autoSlideMode != 0 {
-            stopAutoSlide()
-            return
-        }
-        autoSlidePendingTaps += 1
-        autoSlideTapTimer?.cancel()
-        if autoSlidePendingTaps >= 3 {
-            let taps = autoSlidePendingTaps
-            autoSlidePendingTaps = 0
-            startAutoSlide(mode: min(taps, 3))
-        } else {
-            let taps = autoSlidePendingTaps
-            let work = DispatchWorkItem {
-                autoSlidePendingTaps = 0
-                startAutoSlide(mode: min(taps, 3))
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
-            autoSlideTapTimer = work
-        }
+        autoSlideTapHandler.handleSpace(
+            currentMode: autoSlideMode,
+            start: { mode in startAutoSlide(mode: mode) },
+            stop: { stopAutoSlide() }
+        )
     }
 
     private func handleAutoSlideShiftSpaceKey() {
-        if autoSlideMode != 0 {
-            // Shift+Space during any running state → stop
-            stopAutoSlide()
-            return
-        }
-        autoSlideShiftPendingTaps += 1
-        autoSlideShiftTapTimer?.cancel()
-        if autoSlideShiftPendingTaps >= 3 {
-            let taps = autoSlideShiftPendingTaps
-            autoSlideShiftPendingTaps = 0
-            startAutoSlide(mode: -min(taps, 3))
-        } else {
-            let taps = autoSlideShiftPendingTaps
-            let work = DispatchWorkItem {
-                autoSlideShiftPendingTaps = 0
-                startAutoSlide(mode: -min(taps, 3))
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
-            autoSlideShiftTapTimer = work
-        }
+        autoSlideTapHandler.handleShiftSpace(
+            currentMode: autoSlideMode,
+            start: { mode in startAutoSlide(mode: mode) },
+            stop: { stopAutoSlide() }
+        )
     }
 
     private func startAutoSlide(mode: Int) {
@@ -726,14 +694,9 @@ struct ViewerView: View {
     }
 
     private func stopAutoSlide() {
-        guard autoSlideMode != 0 || autoSlidePendingTaps > 0 || autoSlideShiftPendingTaps > 0 else { return }
+        guard autoSlideMode != 0 || autoSlideTapHandler.hasPendingTaps else { return }
         autoSlideMode = 0
-        autoSlidePendingTaps = 0
-        autoSlideTapTimer?.cancel()
-        autoSlideTapTimer = nil
-        autoSlideShiftPendingTaps = 0
-        autoSlideShiftTapTimer?.cancel()
-        autoSlideShiftTapTimer = nil
+        autoSlideTapHandler.reset()
         autoSlideWaitingForImage = false
         Logger.viewer.debug("Viewer Auto-slide stopped")
     }
@@ -1060,12 +1023,12 @@ struct ViewerView: View {
             break
 
             // Shift+Space - Reverse Auto-Slide (#178)
-            case 49 where event.modifierFlags.contains(.shift):
+            case KeyCode.space where event.modifierFlags.contains(.shift):
                 handleAutoSlideShiftSpaceKey()
                 return true
 
             // Space - Auto-Slide (#172)
-            case 49:
+            case KeyCode.space:
                 handleAutoSlideSpaceKey()
                 return true
             
