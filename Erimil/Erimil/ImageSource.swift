@@ -59,6 +59,15 @@ protocol ImageSource {
     
     /// Get full-size image for entry
     func fullImage(for entry: ImageEntry) -> NSImage?
+
+    /// Resolve file URL for entry (nil if not directly accessible)
+    func fileURL(for entry: ImageEntry) -> URL?
+    
+    /// 指定エントリの画像がアニメーション画像かどうか（軽量チェック）
+    func isAnimatedImage(for entry: ImageEntry) -> Bool
+
+    /// アニメーション全フレームをデコード。非アニメーションまたは安全上限超過時はnil。
+    func animatedImageContent(for entry: ImageEntry) -> AnimatedImageContent?
 }
 
 /// Source type for determining available actions
@@ -76,5 +85,15 @@ extension ImageSource {
     
     func thumbnail(for entry: ImageEntry) -> NSImage? {
         thumbnail(for: entry, maxSize: 120)
+    }
+
+    func isAnimatedImage(for entry: ImageEntry) -> Bool {
+        guard let url = fileURL(for: entry) else { return false }
+        return AnimatedImageContent.isAnimated(url: url)
+    }
+    
+    func animatedImageContent(for entry: ImageEntry) -> AnimatedImageContent? {
+        guard let url = fileURL(for: entry) else { return nil }
+        return AnimatedImageContent.decode(from: url)
     }
 }

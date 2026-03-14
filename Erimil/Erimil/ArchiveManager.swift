@@ -195,6 +195,22 @@ class ArchiveManager: ImageSource {
         return image
     }
     
+    // MARK: - Animated Image Support (#201)
+   
+    func fileURL(for entry: ImageEntry) -> URL? {
+        nil
+    }
+   
+    func isAnimatedImage(for entry: ImageEntry) -> Bool {
+        guard let data = extractData(for: entry) else { return false }
+        return AnimatedImageContent.isAnimated(data: data)
+    }
+   
+    func animatedImageContent(for entry: ImageEntry) -> AnimatedImageContent? {
+        guard let data = extractData(for: entry) else { return nil }
+        return AnimatedImageContent.decode(from: data)
+    }
+    
     // MARK: - Private Helpers
     
     /// Extract raw data from ZIP entry (#140: internal for MetadataExtractor access)

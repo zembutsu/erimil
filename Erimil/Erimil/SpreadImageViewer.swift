@@ -190,11 +190,13 @@ struct SpreadImageViewer: View {
     var onImageReady: ((Int) -> Void)? = nil
     
     // Double buffering: two layers, switch instantly when ready
-    @State private var bufferA: (left: NSImage?, right: NSImage?, index: Int)? = nil
-    @State private var bufferB: (left: NSImage?, right: NSImage?, index: Int)? = nil
+    @State private var bufferA: (left: NSImage?, right: NSImage?, index: Int, animated: AnimatedImageContent?)? = nil
+    @State private var bufferB: (left: NSImage?, right: NSImage?, index: Int, animated: AnimatedImageContent?)? = nil
     @State private var activeBuffer: Int = 0  // 0 = A, 1 = B
     @State private var isLoading: Bool = true
     @State private var spreadUpdateTrigger: Bool = false
+
+    @StateObject private var animationController = AnimationPlaybackController()
     
     // Convenience initializer without bindings (for backward compatibility)
     init(
@@ -338,8 +340,16 @@ struct SpreadImageViewer: View {
     }
     
     @ViewBuilder
-    private func bufferView(buffer: (left: NSImage?, right: NSImage?, index: Int)) -> some View {
-        if let left = buffer.left {
+    private func bufferView(buffer: (left: NSImage?, right: NSImage?, index: Int, animated: AnimatedImageContent?)) -> some View {
+        if let animated = buffer.animated {
+            // #201: Animated GIF — overlay on top of static first frame
+            ZStack {
+                if let left = buffer.left {
+                    singlePageView(image: left)
+                }
+                AnimatedImageOverlay(content: animated, controller: animationController)
+            }
+        } else if let left = buffer.left {
             if shouldShowSingle(atIndex: buffer.index, left: left, right: buffer.right) {
                 singlePageView(image: left)
             } else if let right = buffer.right {
@@ -452,8 +462,29 @@ struct SpreadImageViewer: View {
                 DeskewService.processIfEnabled(image: $0, sourceURL: capturedSource.url, entryPath: leftEntry.path)
             }
             
+            // #201: Try animated GIF decode (on background thread)
+            let animatedContent = capturedSource.animatedImageContent(for: leftEntry)
+            
             DispatchQueue.main.async {
                 guard currentIndex == capturedIndex else { return }
+
+                // #201: Animated image — force single page display (D005)
+                if let animated = animatedContent {
+                    withTransaction(Transaction(animation: nil)) {
+                        if loadIntoA {
+                            bufferA = (left: loadedLeft, right: nil, index: capturedIndex, animated: animated)
+                            activeBuffer = 0
+                        } else {
+                            bufferB = (left: loadedLeft, right: nil, index: capturedIndex, animated: animated)
+                            activeBuffer = 1
+                        }
+                        isLoading = false
+                        isShowingSpread = false
+                        couldBeSpreadWithPrevious = false
+                    }
+                    onImageReady?(capturedIndex)
+                    return
+                }
                 
                 // Check conditions
                 let spreadDisabled = !isSpreadEnabled
@@ -473,10 +504,10 @@ struct SpreadImageViewer: View {
                     // Single page display
                     withTransaction(Transaction(animation: nil)) {
                         if loadIntoA {
-                            bufferA = (left: loadedLeft, right: nil, index: capturedIndex)
+                            bufferA = (left: loadedLeft, right: nil, index: capturedIndex, animated: nil)
                             activeBuffer = 0
                         } else {
-                            bufferB = (left: loadedLeft, right: nil, index: capturedIndex)
+                            bufferB = (left: loadedLeft, right: nil, index: capturedIndex, animated: nil)
                             activeBuffer = 1
                         }
                         isLoading = false
@@ -513,10 +544,10 @@ struct SpreadImageViewer: View {
                             // Right is wide - show left only as single
                             withTransaction(Transaction(animation: nil)) {
                                 if loadIntoA {
-                                    bufferA = (left: loadedLeft, right: nil, index: capturedIndex)
+                                    bufferA = (left: loadedLeft, right: nil, index: capturedIndex, animated: nil)
                                     activeBuffer = 0
                                 } else {
-                                    bufferB = (left: loadedLeft, right: nil, index: capturedIndex)
+                                    bufferB = (left: loadedLeft, right: nil, index: capturedIndex, animated: nil)
                                     activeBuffer = 1
                                 }
                                 isLoading = false
@@ -529,10 +560,10 @@ struct SpreadImageViewer: View {
                             // Both are portrait - show spread
                             withTransaction(Transaction(animation: nil)) {
                                 if loadIntoA {
-                                    bufferA = (left: loadedLeft, right: loadedRight, index: capturedIndex)
+                                    bufferA = (left: loadedLeft, right: loadedRight, index: capturedIndex, animated: nil)
                                     activeBuffer = 0
                                 } else {
-                                    bufferB = (left: loadedLeft, right: loadedRight, index: capturedIndex)
+                                    bufferB = (left: loadedLeft, right: loadedRight, index: capturedIndex, animated: nil)
                                     activeBuffer = 1
                                 }
                                 isLoading = false
