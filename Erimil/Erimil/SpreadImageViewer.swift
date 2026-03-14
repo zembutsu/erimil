@@ -189,14 +189,15 @@ struct SpreadImageViewer: View {
     // #154: Callback when image buffer swap completes (render gate for rapid navigation)
     var onImageReady: ((Int) -> Void)? = nil
     
+    // #201: Animation playback controller (shared with parent for key handling)
+    var animationController: AnimationPlaybackController = AnimationPlaybackController()
+    
     // Double buffering: two layers, switch instantly when ready
     @State private var bufferA: (left: NSImage?, right: NSImage?, index: Int, animated: AnimatedImageContent?)? = nil
     @State private var bufferB: (left: NSImage?, right: NSImage?, index: Int, animated: AnimatedImageContent?)? = nil
     @State private var activeBuffer: Int = 0  // 0 = A, 1 = B
     @State private var isLoading: Bool = true
     @State private var spreadUpdateTrigger: Bool = false
-
-    @StateObject private var animationController = AnimationPlaybackController()
     
     // Convenience initializer without bindings (for backward compatibility)
     init(
@@ -205,6 +206,7 @@ struct SpreadImageViewer: View {
         currentIndex: Binding<Int>,
         favoriteIndices: Set<Int>,
         reloadTrigger: Bool = false,
+        animationController: AnimationPlaybackController = AnimationPlaybackController(),  // #201
         onImageReady: ((Int) -> Void)? = nil  // #154
     ) {
         self.imageSource = imageSource
@@ -214,6 +216,7 @@ struct SpreadImageViewer: View {
         self.reloadTrigger = reloadTrigger
         self._isShowingSpread = .constant(false)
         self._couldBeSpreadWithPrevious = .constant(false)
+        self.animationController = animationController  // #201
         self.onImageReady = onImageReady  // #154
     }
     
@@ -226,6 +229,7 @@ struct SpreadImageViewer: View {
         reloadTrigger: Bool = false,
         isShowingSpread: Binding<Bool>,
         couldBeSpreadWithPrevious: Binding<Bool>,
+        animationController: AnimationPlaybackController = AnimationPlaybackController(),  // #201
         onImageReady: ((Int) -> Void)? = nil  // #154
     ) {
         self.imageSource = imageSource
@@ -235,6 +239,7 @@ struct SpreadImageViewer: View {
         self.reloadTrigger = reloadTrigger
         self._isShowingSpread = isShowingSpread
         self._couldBeSpreadWithPrevious = couldBeSpreadWithPrevious
+        self.animationController = animationController  // #201
         self.onImageReady = onImageReady  // #154
     }
     
@@ -431,6 +436,10 @@ struct SpreadImageViewer: View {
     }
     
     private func loadImages() {
+        // #201: Stop and clear previous animation player
+        animationController.player?.pause()
+        animationController.player = nil
+        
         guard currentIndex >= 0 && currentIndex < entries.count else {
             bufferA = nil
             bufferB = nil
@@ -467,7 +476,7 @@ struct SpreadImageViewer: View {
             
             DispatchQueue.main.async {
                 guard currentIndex == capturedIndex else { return }
-
+                
                 // #201: Animated image — force single page display (D005)
                 if let animated = animatedContent {
                     withTransaction(Transaction(animation: nil)) {

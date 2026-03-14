@@ -36,18 +36,22 @@ class AnimationPlayer: NSObject, ObservableObject {
     }
 
     func play() {
-        guard !isPlaying, let hostView else { return }
+        guard !isPlaying else { return }
         isPlaying = true
-        let link = hostView.displayLink(target: self, selector: #selector(tick(_:)))
-        link.add(to: .main, forMode: .common)
-        displayLink = link
+        if let link = displayLink {
+            link.isPaused = false
+        } else {
+            guard let hostView else { return }
+            let link = hostView.displayLink(target: self, selector: #selector(tick(_:)))
+            link.add(to: .main, forMode: .common)
+            displayLink = link
+        }
     }
 
     func pause() {
         guard isPlaying else { return }
         isPlaying = false
-        displayLink?.invalidate()
-        displayLink = nil
+        displayLink?.isPaused = true
     }
 
     func togglePlay() {

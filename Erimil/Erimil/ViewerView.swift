@@ -275,6 +275,9 @@ struct ViewerView: View {
     @State private var autoSlideTapHandler = AutoSlideTapHandler()
     @State private var autoSlideWaitingForImage: Bool = false
     
+    // #201: Animation playback controller (shared with SpreadImageViewer)
+    @StateObject private var animationController = AnimationPlaybackController()
+    
     /// #54: Effective reading direction for this source
     private var effectiveReadingDirection: ReadingDirection {
         CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
@@ -462,6 +465,7 @@ struct ViewerView: View {
                         reloadTrigger: spreadUpdateTrigger,
                         isShowingSpread: $isShowingSpread,
                         couldBeSpreadWithPrevious: $couldBeSpreadWithPrevious,
+                        animationController: animationController,  // #201
                         onImageReady: { _ in
                             // #160: Hold gate for 1 frame min — prevents key-repeat from skipping pages on cache hit
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
@@ -1027,9 +1031,13 @@ struct ViewerView: View {
                 handleAutoSlideShiftSpaceKey()
                 return true
 
-            // Space - Auto-Slide (#172)
+            // Space - Auto-Slide (#172) / Animation toggle (#201)
             case KeyCode.space:
-                handleAutoSlideSpaceKey()
+                if animationController.hasAnimatedContent {
+                    animationController.togglePlay()
+                } else {
+                    handleAutoSlideSpaceKey()
+                }
                 return true
             
         default:
@@ -1358,6 +1366,13 @@ struct ViewerView: View {
                 }
             } else {
                 gatedNavigate { isRTL ? goToPreviousFavorite() : goToNextFavorite() }  // #154
+            }
+            return true
+            
+        // L - toggle animation loop (#201)
+        case "l":
+            if animationController.hasAnimatedContent {
+                animationController.toggleLoop()
             }
             return true
             
