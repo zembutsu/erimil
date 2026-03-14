@@ -33,10 +33,7 @@ class SlideWindowController {
     
     // #172: Auto-Slide / #178: Reverse Playback
     private var autoSlideMode: Int = 0  // 0=off, 1/2/3=forward Normal/Fast/Turbo, -1/-2/-3=reverse
-    private var autoSlideTapTimer: DispatchWorkItem?
-    private var autoSlidePendingTaps: Int = 0
-    private var autoSlideShiftTapTimer: DispatchWorkItem?
-    private var autoSlideShiftPendingTaps: Int = 0
+    private let autoSlideTapHandler = AutoSlideTapHandler()
     private var autoSlideWaitingForImage: Bool = false
     
     /// Public getter for current index
@@ -586,7 +583,7 @@ class SlideWindowController {
         
         switch event.keyCode {
         // Escape - dismiss inspector panel OR close fullscreen
-        case 53:
+        case KeyCode.escape:
             if MetadataInspectorPanelController.shared.isVisible {
                 Logger.slideWindow.debug("→ Close metadata inspector (Esc)")
                 MetadataInspectorPanelController.shared.close()
@@ -597,64 +594,25 @@ class SlideWindowController {
             return nil
             
         // Shift+Space - Reverse Auto-Slide (#178)
-        case 49 where event.modifierFlags.contains(.shift):
-            if autoSlideMode < 0 {
-                Logger.slideWindow.debug("→ Reverse auto-slide stop (Shift+Space)")
-                stopAutoSlide()
-            } else if autoSlideMode > 0 {
-                Logger.slideWindow.debug("→ Forward→stop (Shift+Space while forward running)")
-                stopAutoSlide()
-            } else {
-                autoSlideShiftPendingTaps += 1
-                autoSlideShiftTapTimer?.cancel()
-                if autoSlideShiftPendingTaps >= 3 {
-                    let taps = autoSlideShiftPendingTaps
-                    autoSlideShiftPendingTaps = 0
-                    Logger.slideWindow.debug("→ Reverse auto-slide start mode=\(-taps) (Shift+Space×3)")
-                    startAutoSlide(mode: -min(taps, 3))
-                } else {
-                    let taps = autoSlideShiftPendingTaps
-                    let work = DispatchWorkItem { [weak self] in
-                        guard let self = self else { return }
-                        self.autoSlideShiftPendingTaps = 0
-                        Logger.slideWindow.debug("→ Reverse auto-slide start mode=\(-taps) (Shift+Space tap timer)")
-                        self.startAutoSlide(mode: -taps)
-                    }
-                    autoSlideShiftTapTimer = work
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
-                }
-            }
+        case KeyCode.space where event.modifierFlags.contains(.shift):
+            autoSlideTapHandler.handleShiftSpace(
+                currentMode: autoSlideMode,
+                start: { [weak self] mode in self?.startAutoSlide(mode: mode) },
+                stop: { [weak self] in self?.stopAutoSlide() }
+            )
             return nil
 
         // Space - Auto-Slide (#172; overlay toggle moved to O key)
-        case 49:
-            if autoSlideMode != 0 {
-                Logger.slideWindow.debug("→ Auto-slide stop (Space)")
-                stopAutoSlide()
-            } else {
-                autoSlidePendingTaps += 1
-                autoSlideTapTimer?.cancel()
-                if autoSlidePendingTaps >= 3 {
-                    let taps = autoSlidePendingTaps
-                    autoSlidePendingTaps = 0
-                    Logger.slideWindow.debug("→ Auto-slide start mode=\(taps) (Space×3)")
-                    startAutoSlide(mode: min(taps, 3))
-                } else {
-                    let taps = autoSlidePendingTaps
-                    let work = DispatchWorkItem { [weak self] in
-                        guard let self = self else { return }
-                        self.autoSlidePendingTaps = 0
-                        Logger.slideWindow.debug("→ Auto-slide start mode=\(taps) (Space tap timer)")
-                        self.startAutoSlide(mode: taps)
-                    }
-                    autoSlideTapTimer = work
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
-                }
-            }
+        case KeyCode.space:
+            autoSlideTapHandler.handleSpace(
+                currentMode: autoSlideMode,
+                start: { [weak self] mode in self?.startAutoSlide(mode: mode) },
+                stop: { [weak self] in self?.stopAutoSlide() }
+            )
             return nil
             
         // Tab - next favorite + enter Favorites Mode
-        case 48:
+        case KeyCode.tab:
             Logger.slideWindow.debug("→ Next favorite + Favorites Mode ON (Tab)")
             if !isFavoritesMode {
                 isFavoritesMode = true
@@ -664,7 +622,7 @@ class SlideWindowController {
             return nil
             
         // Left arrow
-        case 123:
+        case KeyCode.leftArrow:
             if hasCtrlOption {
                 // #143: N-step file navigation (RTL-aware)
                 jumpNStep(direction: .backward)
@@ -685,7 +643,7 @@ class SlideWindowController {
             }
             
         // Right arrow
-        case 124:
+        case KeyCode.rightArrow:
             if hasCtrlOption {
                 // #143: N-step file navigation (RTL-aware)
                 jumpNStep(direction: .forward)
@@ -706,7 +664,7 @@ class SlideWindowController {
             }
         
         // Up arrow - always previous (#106: vertical = direction-independent)
-        case 126:
+        case KeyCode.upArrow:
             if hasCtrlOption {
                 // #143: N-step source navigation
                 jumpNStepSource(direction: .backward)
@@ -725,7 +683,7 @@ class SlideWindowController {
             }
             
         // Down arrow - always next (#106: vertical = direction-independent)
-        case 125:
+        case KeyCode.downArrow:
             if hasCtrlOption {
                 // #143: N-step source navigation
                 jumpNStepSource(direction: .forward)
@@ -745,7 +703,7 @@ class SlideWindowController {
         
         // R - exit to Viewer Mode (Reader)
         // #54: Ctrl+R = toggle reading direction
-        case 15:
+        case KeyCode.r:
             if hasControl {
                 // Ctrl+R: Toggle reading direction
                 if let source = storedImageSource {
@@ -1397,14 +1355,9 @@ class SlideWindowController {
     }
     
     private func stopAutoSlide() {
-        guard autoSlideMode != 0 || autoSlidePendingTaps > 0 || autoSlideShiftPendingTaps > 0 else { return }
+        guard autoSlideMode != 0 || autoSlideTapHandler.hasPendingTaps else { return }
         autoSlideMode = 0
-        autoSlidePendingTaps = 0
-        autoSlideTapTimer?.cancel()
-        autoSlideTapTimer = nil
-        autoSlideShiftPendingTaps = 0
-        autoSlideShiftTapTimer?.cancel()
-        autoSlideShiftTapTimer = nil
+        autoSlideTapHandler.reset()
         autoSlideWaitingForImage = false
         notifyViewOfAutoSlideChange()
         Logger.slideWindow.debug("Auto-slide stopped")
