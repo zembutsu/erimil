@@ -25,6 +25,12 @@ struct ImageEntry: Identifiable, Hashable {
         return Self.imageExtensions.contains(ext)
     }
     
+    // #201: Quick check for potentially animated image (extension-based)
+    var isAnimatedFormat: Bool {
+        let ext = (path as NSString).pathExtension.lowercased()
+        return ext == "gif"  // Phase 1: GIF only. APNG/WebP in future phases.
+    }
+    
     init(path: String, name: String? = nil, size: UInt64 = 0) {
         self.path = path
         self.name = name ?? (path as NSString).lastPathComponent
