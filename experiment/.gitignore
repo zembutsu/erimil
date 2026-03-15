@@ -1,0 +1,15 @@
+# Experiment common .gitignore
+
+# Build artifacts
+*/.build/
+*/.swiftpm/
+
+# Model files (ML models are too large for git)
+*/models/*.mlmodel
+*/models/*.mlmodelc
+*/models/*.mlpackage
+*/models/*.zip
+*/models/*.onnx
+
+# Output files
+*/output/
