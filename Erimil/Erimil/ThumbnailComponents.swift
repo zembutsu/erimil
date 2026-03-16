@@ -231,17 +231,32 @@ struct ThumbnailCell: View {
                     
                     Spacer()
                     
-                    // PROTECTED label - shown temporarily when trying to select protected item
-                    if showProtectedFeedback {
-                        Text("PROTECTED")
-                            .font(.system(size: size < 100 ? 8 : 10, weight: .bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 2)
-                            .background(Color.red.opacity(0.9))
-                            .cornerRadius(3)
-                            .padding(.bottom, 4)
-                            .transition(.opacity)
+                    HStack {
+                        // #201: Animated image badge (bottom-left)
+                        if entry.isAnimatedFormat {
+                            Text("▶")
+                                .font(.system(size: size < 100 ? 8 : 10, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(3)
+                                .background(Color.black.opacity(0.6))
+                                .cornerRadius(3)
+                                .padding(4)
+                        }
+                        
+                        Spacer()
+                        
+                        // PROTECTED label - shown temporarily when trying to select protected item
+                        if showProtectedFeedback {
+                            Text("PROTECTED")
+                                .font(.system(size: size < 100 ? 8 : 10, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(Color.red.opacity(0.9))
+                                .cornerRadius(3)
+                                .padding(.bottom, 4)
+                                .transition(.opacity)
+                        }
                     }
                 }
             }
@@ -351,6 +366,20 @@ struct ThumbnailItemView: View {
                 }
                 .padding(3)
                 Spacer()
+                
+                // #201: Animated image badge (bottom-left)
+                if entry.isAnimatedFormat {
+                    HStack {
+                        Text("▶")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(2)
+                            .background(Color.black.opacity(0.6))
+                            .cornerRadius(2)
+                            .padding(3)
+                        Spacer()
+                    }
+                }
             }
         }
         .frame(width: size, height: size)

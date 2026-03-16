@@ -187,6 +187,10 @@ class PDFManager: ImageSource {
             return image
         }
     }
+
+    func fileURL(for entry: ImageEntry) -> URL? {
+        nil
+    }
     
     // MARK: - Private Helpers
     

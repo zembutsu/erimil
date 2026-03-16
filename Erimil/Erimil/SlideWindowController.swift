@@ -36,6 +36,9 @@ class SlideWindowController {
     private let autoSlideTapHandler = AutoSlideTapHandler()
     private var autoSlideWaitingForImage: Bool = false
     
+    // #201: Animation playback controller (shared with SpreadImageViewer)
+    private let animationController = AnimationPlaybackController()
+    
     /// Public getter for current index
     var getCurrentIndex: Int {
         return currentIndex
@@ -200,7 +203,8 @@ class SlideWindowController {
                 onIndexChange?(index)
             },
             onNextSource: onNextSource,
-            onPreviousSource: onPreviousSource
+            onPreviousSource: onPreviousSource,
+            animationController: animationController  // #201
         )
         
         // Create hosting view (#145: subclass for cursor control)
@@ -425,7 +429,8 @@ class SlideWindowController {
                 onIndexChange?(index)
             },
             onNextSource: onNextSource,
-            onPreviousSource: onPreviousSource
+            onPreviousSource: onPreviousSource,
+            animationController: animationController  // #201
         )
         
         // Replace content view while keeping window state (including fullscreen)
@@ -602,13 +607,17 @@ class SlideWindowController {
             )
             return nil
 
-        // Space - Auto-Slide (#172; overlay toggle moved to O key)
+        // Space - Auto-Slide (#172; overlay toggle moved to O key) / Animation toggle (#201)
         case KeyCode.space:
-            autoSlideTapHandler.handleSpace(
-                currentMode: autoSlideMode,
-                start: { [weak self] mode in self?.startAutoSlide(mode: mode) },
-                stop: { [weak self] in self?.stopAutoSlide() }
-            )
+            if animationController.hasAnimatedContent {
+                animationController.togglePlay()
+            } else {
+                autoSlideTapHandler.handleSpace(
+                    currentMode: autoSlideMode,
+                    start: { [weak self] mode in self?.startAutoSlide(mode: mode) },
+                    stop: { [weak self] in self?.stopAutoSlide() }
+                )
+            }
             return nil
             
         // Tab - next favorite + enter Favorites Mode
@@ -1001,6 +1010,13 @@ class SlideWindowController {
                             entry: storedEntries[currentIndex],
                             parentWindow: slideWindow
                         )
+                    }
+                    return nil
+                    
+                // L - toggle animation loop (#201)
+                case "l":
+                    if animationController.hasAnimatedContent {
+                        animationController.toggleLoop()
                     }
                     return nil
                     
@@ -1522,6 +1538,7 @@ struct SlideWindowView: View {
     let onIndexChange: ((Int) -> Void)?
     let onNextSource: (() -> Void)?
     let onPreviousSource: (() -> Void)?
+    let animationController: AnimationPlaybackController  // #201
     
     @State private var currentIndex: Int = 0
     @State private var overlayLevel: Int = 0  // #151: 0=full, 1=compact, 2=clean
@@ -1571,7 +1588,8 @@ struct SlideWindowView: View {
         onExitFullScreen: @escaping () -> Void,
         onIndexChange: ((Int) -> Void)?,
         onNextSource: (() -> Void)?,
-        onPreviousSource: (() -> Void)?
+        onPreviousSource: (() -> Void)?,
+        animationController: AnimationPlaybackController  // #201
     ) {
         self.imageSource = imageSource
         self.entries = entries
@@ -1589,6 +1607,7 @@ struct SlideWindowView: View {
         self.onIndexChange = onIndexChange
         self.onNextSource = onNextSource
         self.onPreviousSource = onPreviousSource
+        self.animationController = animationController  // #201
     }
     
     var body: some View {
@@ -1606,6 +1625,7 @@ struct SlideWindowView: View {
                     reloadTrigger: isDeskewEnabled,  // #101: Force reload when deskew changes
                     isShowingSpread: $isShowingSpread,  // #115: Track for position indicator
                     couldBeSpreadWithPrevious: .constant(false),
+                    animationController: animationController,  // #201
                     onImageReady: { _ in  // #154: Release navigation gate
                         NotificationCenter.default.post(
                             name: NSNotification.Name("SlideWindowImageReady"),

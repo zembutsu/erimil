@@ -149,6 +149,10 @@ class FolderManager: ImageSource {
         return image
     }
     
+    func fileURL(for entry: ImageEntry) -> URL? {
+        URL(fileURLWithPath: entry.path)
+    }
+    
     private func resizedImage(_ image: NSImage, maxSize: CGFloat) -> NSImage {
         let originalSize = image.size
         guard originalSize.width > 0 && originalSize.height > 0 else {
