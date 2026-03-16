@@ -400,6 +400,11 @@ class CacheManager {
         saveThumbnailToDisk(image, for: contentHash)
     }
     
+    /// Save thumbnail to memory cache only (tile sheet preload — skips disk I/O)
+    func saveThumbnailToMemory(_ image: NSImage, for contentHash: String) {
+        thumbnailCache.setObject(image, forKey: contentHash as NSString, cost: estimatedBitmapCost(of: image))
+    }
+    
     // MARK: - Full Image Memory Cache (#134)
     
     /// Get full-size image from memory cache
