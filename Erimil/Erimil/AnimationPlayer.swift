@@ -62,6 +62,14 @@ class AnimationPlayer: NSObject, ObservableObject {
         loopEnabled.toggle()
     }
 
+    /// Break the CADisplayLink ↔ AnimationPlayer retain cycle.
+    /// Call from dismantleNSView or any teardown path. Safe to call multiple times.
+    func invalidate() {
+        pause()
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
     func reset() {
         pause()
         frameIndex = 0

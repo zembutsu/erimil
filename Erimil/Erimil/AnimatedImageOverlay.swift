@@ -35,7 +35,7 @@ struct AnimatedImageOverlay: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: AnimatedImageNSView, coordinator: ()) {
-        nsView.player.pause()
+        nsView.player.invalidate()
         // Controller.player will be set to nil or replaced by next overlay
     }
 }
