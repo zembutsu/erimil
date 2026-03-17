@@ -14,6 +14,7 @@
 import Foundation
 import AppKit
 import CryptoKit
+import ZIPFoundation
 import os
 
 // MARK: - TileSheetCache
@@ -64,15 +65,18 @@ class TileSheetCache {
 
     // MARK: - Archive Hash
 
-    /// Lightweight hash from file attributes (no content read).
-    /// Invalidates automatically when archive is modified.
+    /// Content-based hash from ZIP Central Directory (entry names + sizes).
+    /// Same archive contents produce the same hash regardless of file location or mtime.
     func archiveHash(for url: URL) -> String? {
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let size = attrs[.size] as? Int64,
-              let mtime = attrs[.modificationDate] as? Date else {
-            return nil
-        }
-        let raw = "\(size):\(mtime.timeIntervalSince1970)"
+        guard let archive = try? Archive(url: url, accessMode: .read) else { return nil }
+
+        let raw = archive
+            .filter { $0.type == .file }
+            .map { "\($0.path):\($0.uncompressedSize)" }
+            .sorted()
+            .joined(separator: "\n")
+
+        guard !raw.isEmpty else { return nil }
         let hash = SHA256.hash(data: Data(raw.utf8))
         return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
@@ -93,8 +97,7 @@ class TileSheetCache {
     // MARK: - Public API: Query
 
     /// Check if a tile sheet exists for the given archive.
-    func hasTileSheet(for archiveURL: URL) -> Bool {
-        guard let hash = archiveHash(for: archiveURL) else { return false }
+    func hasTileSheet(for archiveURL: URL, archiveHash hash: String) -> Bool {
         return FileManager.default.fileExists(atPath: metadataURL(for: hash).path)
     }
 
@@ -103,9 +106,8 @@ class TileSheetCache {
     /// Load all thumbnails from tile sheets into CacheManager memory cache.
     /// Call once per archive open. Returns number of thumbnails loaded.
     @discardableResult
-    func loadAllThumbnails(for archiveURL: URL) -> Int {
-        guard let hash = archiveHash(for: archiveURL),
-              let metadata = loadMetadata(for: hash) else { return 0 }
+    func loadAllThumbnails(for archiveURL: URL, archiveHash hash: String) -> Int {
+        guard let metadata = loadMetadata(for: hash) else { return 0 }
 
         let cache = CacheManager.shared
         var loadedCount = 0
@@ -150,12 +152,11 @@ class TileSheetCache {
     /// after `buildDebounceInterval` of inactivity (no new registrations).
     func registerThumbnail(
         for archiveURL: URL,
+        archiveHash hash: String,
         entryPath: String,
         contentHash: String,
         image: NSImage
     ) {
-        guard let hash = archiveHash(for: archiveURL) else { return }
-
         pendingLock.lock()
 
         // Auto-create pending build on first registration
@@ -204,8 +205,7 @@ class TileSheetCache {
     // MARK: - Public API: Invalidation
 
     /// Remove tile sheets for an archive (call when archive is modified externally).
-    func invalidate(for archiveURL: URL) {
-        guard let hash = archiveHash(for: archiveURL) else { return }
+    func invalidate(for archiveURL: URL, archiveHash hash: String) {
 
         let fm = FileManager.default
         try? fm.removeItem(at: metadataURL(for: hash))
@@ -329,7 +329,12 @@ class TileSheetCache {
             let drawW = Int(imgW * scale)
             let drawH = Int(imgH * scale)
 
-            context.draw(cgImage, in: CGRect(x: x, y: y, width: drawW, height: drawH))
+            // Local flip to cancel global context flip (otherwise image content is inverted)
+            context.saveGState()
+            context.translateBy(x: CGFloat(x), y: CGFloat(y + drawH))
+            context.scaleBy(x: 1, y: -1)
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: drawW, height: drawH))
+            context.restoreGState()
 
             tileEntries.append(TileSheetMetadata.TileEntry(
                 entryIndex: baseEntryIndex + i,
