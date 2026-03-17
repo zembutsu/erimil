@@ -7,8 +7,11 @@
 //  reducing I/O from N reads to 1 read on subsequent opens.
 //
 //  Storage: ~/Library/Application Support/Erimil/tilesheets/
-//    {archiveHash}.jpg   — tile sheet image (multiple: _0, _1, ...)
-//    {archiveHash}.json  — metadata (tile positions, content hashes)
+//    {archiveHash}.ecache  — tile sheet image (multiple: _0, _1, ...)
+//    {archiveHash}.ecmeta  — metadata (tile positions, content hashes)
+//
+//  Files use ERIM magic header to prevent Finder/Quick Look recognition.
+//  Format matches CacheManager's .ecache obfuscation pattern.
 //
 
 import Foundation
@@ -23,6 +26,9 @@ class TileSheetCache {
     static let shared = TileSheetCache()
 
     // MARK: - Configuration
+
+    /// Magic bytes for .ecache/.ecmeta format ("ERIM" header) — matches CacheManager
+    private static let ecacheMagic = Data([0x45, 0x52, 0x49, 0x4D])
 
     let tileSize: Int = 120
     let tilesPerSheet: Int = 100
@@ -84,14 +90,14 @@ class TileSheetCache {
     // MARK: - File Paths
 
     private func metadataURL(for hash: String) -> URL {
-        directory.appendingPathComponent("\(hash).json")
+        directory.appendingPathComponent("\(hash).ecmeta")
     }
 
     private func sheetImageURL(for hash: String, sheetIndex: Int) -> URL {
         if sheetIndex == 0 {
-            return directory.appendingPathComponent("\(hash).jpg")
+            return directory.appendingPathComponent("\(hash).ecache")
         }
-        return directory.appendingPathComponent("\(hash)_\(sheetIndex).jpg")
+        return directory.appendingPathComponent("\(hash)_\(sheetIndex).ecache")
     }
 
     // MARK: - Public API: Query
@@ -344,12 +350,13 @@ class TileSheetCache {
             ))
         }
 
-        // Encode as JPEG
-        guard let sheetCGImage = context.makeImage(),
-              let destination = CGImageDestinationCreateWithURL(
-                  sheetImageURL(for: archiveHash, sheetIndex: sheetIndex) as CFURL,
-                  "public.jpeg" as CFString, 1, nil
-              ) else { return nil }
+        // Encode JPEG to Data, then prepend ERIM header for Finder obfuscation
+        guard let sheetCGImage = context.makeImage() else { return nil }
+
+        let jpegData = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            jpegData, "public.jpeg" as CFString, 1, nil
+        ) else { return nil }
 
         let options: [CFString: Any] = [
             kCGImageDestinationLossyCompressionQuality: compressionQuality
@@ -358,6 +365,15 @@ class TileSheetCache {
 
         guard CGImageDestinationFinalize(destination) else {
             Logger.cache.error("TileSheet: JPEG finalize failed for sheet \(sheetIndex, privacy: .public)")
+            return nil
+        }
+
+        var output = Self.ecacheMagic
+        output.append(jpegData as Data)
+        do {
+            try output.write(to: sheetImageURL(for: archiveHash, sheetIndex: sheetIndex), options: .atomic)
+        } catch {
+            Logger.cache.error("TileSheet: write failed for sheet \(sheetIndex, privacy: .public): \(error, privacy: .public)")
             return nil
         }
 
@@ -375,23 +391,30 @@ class TileSheetCache {
 
     private func loadMetadata(for hash: String) -> TileSheetMetadata? {
         let url = metadataURL(for: hash)
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(TileSheetMetadata.self, from: data)
+        guard let raw = try? Data(contentsOf: url) else { return nil }
+        // Strip ERIM magic header (with legacy fallback for plain JSON)
+        let jsonData = raw.prefix(4) == Self.ecacheMagic ? Data(raw.dropFirst(4)) : raw
+        return try? JSONDecoder().decode(TileSheetMetadata.self, from: jsonData)
     }
 
     private func saveMetadata(_ metadata: TileSheetMetadata, for hash: String) {
         let url = metadataURL(for: hash)
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
-        guard let data = try? encoder.encode(metadata) else { return }
-        try? data.write(to: url, options: .atomic)
+        guard let jsonData = try? encoder.encode(metadata) else { return }
+        var output = Self.ecacheMagic
+        output.append(jsonData)
+        try? output.write(to: url, options: .atomic)
     }
 
     // MARK: - Sheet Image I/O
 
     private func loadSheetCGImage(hash: String, sheetIndex: Int) -> CGImage? {
         let url = sheetImageURL(for: hash, sheetIndex: sheetIndex)
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        guard let raw = try? Data(contentsOf: url) else { return nil }
+        // Strip ERIM magic header (with legacy fallback for raw JPEG)
+        let jpegData = raw.prefix(4) == Self.ecacheMagic ? Data(raw.dropFirst(4)) : raw
+        guard let source = CGImageSourceCreateWithData(jpegData as CFData, nil) else { return nil }
         return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 }

@@ -130,8 +130,11 @@ class ArchiveManager: ImageSource {
     /// Generate thumbnail for entry
     func thumbnail(for entry: ImageEntry, maxSize: CGFloat = 120) -> NSImage? {
         // #24: Tile sheet initialization (once per ArchiveManager instance)
+        // Both flags set immediately to prevent other threads from starting prefetch
+        // while this thread loads tile sheet or decides to prefetch.
         if !tileSheetInitialized {
             tileSheetInitialized = true
+            prefetchStarted = true  // Block all other threads from prefetch check
             let tileCache = TileSheetCache.shared
             if cachedArchiveHash == nil {
                 cachedArchiveHash = tileCache.archiveHash(for: url)
@@ -140,14 +143,10 @@ class ArchiveManager: ImageSource {
                 tileCache.loadAllThumbnails(for: url, archiveHash: hash)
                 tileSheetAvailable = true
                 Logger.thumbnailGrid.info("TileSheet: preloaded for \(self.url.lastPathComponent)")
+            } else {
+                // No tile sheet on disk — start background prefetch to collect all thumbnails
+                prefetchAllThumbnails()
             }
-            // No beginTracking needed — registerThumbnail auto-creates pending build
-        }
-
-        // #24: Start background prefetch for tile sheet collection (once)
-        if !tileSheetAvailable && !prefetchStarted {
-            prefetchStarted = true
-            prefetchAllThumbnails()
         }
 
         let cache = CacheManager.shared
