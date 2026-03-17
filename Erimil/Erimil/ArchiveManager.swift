@@ -126,8 +126,6 @@ class ArchiveManager: ImageSource {
     }
     
     /// Generate thumbnail for entry
-    /// Generate thumbnail for entry
-    /// Generate thumbnail for entry
     func thumbnail(for entry: ImageEntry, maxSize: CGFloat = 120) -> NSImage? {
         // #24: Tile sheet initialization (once per ArchiveManager instance)
         // Both flags set immediately to prevent other threads from starting prefetch
