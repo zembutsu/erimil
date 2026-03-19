@@ -9,12 +9,14 @@
 //  - Each PDF page treated as an ImageEntry
 //  - Lazy page rendering for performance
 //  - Uses system PDFKit (no external dependencies)
+//  - #24 S084: Tile sheet integration (same pattern as ArchiveManager)
 //
 
 import Foundation
 import AppKit
 import PDFKit
 import os
+import CryptoKit
 import ZIPFoundation
 
 class PDFManager: ImageSource {
@@ -26,6 +28,14 @@ class PDFManager: ImageSource {
     
     /// Serial queue for thread-safe access
     private let accessQueue = DispatchQueue(label: "com.erimil.pdf", qos: .userInitiated)
+    
+    // MARK: - Tile Sheet State (#24, S084)
+    
+    /// Tile sheet init + prefetch flags (consolidated block, S083 race fix pattern)
+    private var tileSheetInitialized = false
+    private var tileSheetAvailable = false
+    private var prefetchStarted = false
+    private var pdfArchiveHash: String?
     
     init(pdfURL: URL) {
         self.url = pdfURL
@@ -69,6 +79,29 @@ class PDFManager: ImageSource {
             }
             
             Logger.pdf.info("Created \(entries.count, privacy: .public) entries")
+            
+            // #24 S084: Preload tile sheet into memory cache during entry listing.
+            // This runs BEFORE any onAppear → loadThumbnailIfNeeded, ensuring the
+            // synchronous memory check (SYNC memory hit) in ThumbnailGridView hits
+            // for all tile-sheet-covered pages — no loading icon flash.
+            if !tileSheetInitialized {
+                tileSheetInitialized = true
+                prefetchStarted = true
+                if let hash = pdfHash() {
+                    pdfArchiveHash = hash
+                    let tileSheet = TileSheetCache.shared
+                    if tileSheet.hasTileSheet(for: url, archiveHash: hash) {
+                        tileSheetAvailable = true
+                        let loaded = tileSheet.loadAllThumbnails(for: url, archiveHash: hash)
+                        if loaded == 0 {
+                            tileSheetAvailable = false
+                        } else {
+                            Logger.pdf.info("TileSheet: preloaded \(loaded, privacy: .public) thumbnails for \(self.url.lastPathComponent)")
+                        }
+                    }
+                }
+            }
+            
             return entries
         }
     }
@@ -81,9 +114,42 @@ class PDFManager: ImageSource {
         let fullPath = url.path + "/" + entry.path
         let pathHash = cache.pathHash(for: fullPath)
         
-        // Check if we have cached thumbnail
+        // #24 S084: Fallback init — normally tile sheet is preloaded in listImageEntries().
+        // This block fires only if thumbnail() is called before listImageEntries() (edge case).
+        if !tileSheetInitialized {
+            tileSheetInitialized = true
+            prefetchStarted = true  // Set simultaneously to eliminate race window
+            
+            if let hash = pdfHash() {
+                pdfArchiveHash = hash
+                let tileSheet = TileSheetCache.shared
+                if tileSheet.hasTileSheet(for: url, archiveHash: hash) {
+                    // Set BEFORE loadAllThumbnails — other threads hitting cache HIT path
+                    // must not registerThumbnail while load is in progress (causes rebuild
+                    // with partial page set, overwriting complete tile sheet on disk)
+                    tileSheetAvailable = true
+                    let loaded = tileSheet.loadAllThumbnails(for: url, archiveHash: hash)
+                    if loaded == 0 {
+                        tileSheetAvailable = false  // Revert on load failure
+                    } else {
+                        Logger.pdf.info("TileSheet: preloaded for \(self.url.lastPathComponent)")
+                    }
+                }
+            }
+        }
+        
+        // Check if we have cached thumbnail (tile sheet load populates memory cache)
         if let contentHash = cache.getContentHash(for: pathHash),
            let cached = cache.getThumbnail(for: contentHash) {
+            // #24 S084: Register for tile sheet even on cache hit (individual cache may exist
+            // before tile sheet is built — without this, tile sheet never gets constructed)
+            if !tileSheetAvailable, let hash = pdfArchiveHash {
+                TileSheetCache.shared.registerThumbnail(
+                    for: url, archiveHash: hash,
+                    entryPath: entry.path, contentHash: contentHash,
+                    image: cached
+                )
+            }
             Logger.pdf.debug("Cache HIT for \(entry.name)")
             return cached
         }
@@ -115,6 +181,17 @@ class PDFManager: ImageSource {
         // Register mapping and save
         cache.registerMapping(pathHash: pathHash, contentHash: contentHash)
         cache.saveThumbnail(thumbnail, for: contentHash)
+        
+        // #24 S084: Register for deferred tile sheet build
+        if !tileSheetAvailable, let hash = pdfArchiveHash {
+            TileSheetCache.shared.registerThumbnail(
+                for: url,
+                archiveHash: hash,
+                entryPath: entry.path,
+                contentHash: contentHash,
+                image: thumbnail
+            )
+        }
         
         Logger.pdf.debug("Generated and cached thumbnail for \(entry.name)")
         return thumbnail
@@ -218,6 +295,26 @@ class PDFManager: ImageSource {
         
         // Convert 1-based page number to 0-based index
         return pageNumber - 1
+    }
+    
+    /// #24 S084: Content-based hash from PDF structure (page count + mediaBox dimensions).
+    /// Same PDF structure produces the same hash regardless of file location.
+    /// Analogous to TileSheetCache.archiveHash(for:) for ZIP archives.
+    private func pdfHash() -> String? {
+        guard let doc = openDocument() else { return nil }
+        let pageCount = doc.pageCount
+        guard pageCount > 0 else { return nil }
+        
+        var raw = "\(pageCount)"
+        for i in 0..<pageCount {
+            if let page = doc.page(at: i) {
+                let box = page.bounds(for: .mediaBox)
+                raw += ":\(Int(box.width))x\(Int(box.height))"
+            }
+        }
+        
+        let hash = SHA256.hash(data: Data(raw.utf8))
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
     
     // MARK: - Export Operations (#100)
