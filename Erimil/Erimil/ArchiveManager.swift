@@ -121,34 +121,60 @@ class ArchiveManager: ImageSource {
                 Logger.archive.debug("  ... and \(results.count - 10, privacy: .public) more")
             }
             
+            // #24 S085: Preload tile sheet into memory cache during entry listing (D005 pattern).
+            // This runs inside accessQueue.sync BEFORE any onAppear → loadThumbnailIfNeeded,
+            // ensuring the synchronous memory check (SYNC memory hit) in ThumbnailGridView
+            // hits for all tile-sheet-covered pages — no loading icon flash.
+            // Also guarantees single-thread execution (eliminates N× redundant loads).
+            // Only handles "tile sheet exists on disk" case — if no tile sheet,
+            // flags stay unset and thumbnail() fallback triggers prefetchAllThumbnails().
+            if !tileSheetInitialized {
+                let tileCache = TileSheetCache.shared
+                if cachedArchiveHash == nil {
+                    cachedArchiveHash = tileCache.archiveHash(for: url)
+                }
+                if let hash = cachedArchiveHash, tileCache.hasTileSheet(for: url, archiveHash: hash) {
+                    tileSheetInitialized = true
+                    prefetchStarted = true
+                    tileSheetAvailable = true
+                    let loaded = tileCache.loadAllThumbnails(for: url, archiveHash: hash)
+                    if loaded == 0 {
+                        tileSheetAvailable = false
+                    } else {
+                        Logger.thumbnailGrid.info("TileSheet: preloaded \(loaded, privacy: .public) thumbnails for \(self.url.lastPathComponent)")
+                    }
+                }
+            }
+            
             return results.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         }
     }
     
     /// Generate thumbnail for entry
     func thumbnail(for entry: ImageEntry, maxSize: CGFloat = 120) -> NSImage? {
-        // #24: Preload tile sheet into memory cache during entry listing (D005 pattern).
-        // Ensures ThumbnailGridView's synchronous memory check hits at onAppear time.
-        // Only handles "tile sheet exists" case — if no tile sheet on disk,
-        // thumbnail() fallback will trigger prefetchAllThumbnails().
+        // #24: Tile sheet initialization — fallback for when thumbnail() is called
+        // before listImageEntries(), or when no tile sheet exists on disk.
+        // Both flags set immediately to prevent other threads from starting prefetch
+        // while this thread loads tile sheet or decides to prefetch.
         if !tileSheetInitialized {
+            tileSheetInitialized = true
+            prefetchStarted = true  // Block all other threads from prefetch check
             let tileCache = TileSheetCache.shared
             if cachedArchiveHash == nil {
                 cachedArchiveHash = tileCache.archiveHash(for: url)
             }
             if let hash = cachedArchiveHash, tileCache.hasTileSheet(for: url, archiveHash: hash) {
-                tileSheetInitialized = true
-                prefetchStarted = true
-                tileSheetAvailable = true
+                tileSheetAvailable = true  // BEFORE load (block registerThumbnail during load)
                 let loaded = tileCache.loadAllThumbnails(for: url, archiveHash: hash)
                 if loaded == 0 {
-                    tileSheetAvailable = false
+                    tileSheetAvailable = false  // Revert on failure
                 } else {
                     Logger.thumbnailGrid.info("TileSheet: preloaded \(loaded, privacy: .public) thumbnails for \(self.url.lastPathComponent)")
                 }
+            } else {
+                // No tile sheet on disk — start background prefetch to collect all thumbnails
+                prefetchAllThumbnails()
             }
-            // If no tile sheet: leave tileSheetInitialized=false
-            // → thumbnail() handles full init + prefetchAllThumbnails()
         }
 
         let cache = CacheManager.shared
