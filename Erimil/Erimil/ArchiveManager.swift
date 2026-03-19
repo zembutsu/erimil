@@ -132,15 +132,19 @@ class ArchiveManager: ImageSource {
         // while this thread loads tile sheet or decides to prefetch.
         if !tileSheetInitialized {
             tileSheetInitialized = true
-            prefetchStarted = true  // Block all other threads from prefetch check
+            prefetchStarted = true
             let tileCache = TileSheetCache.shared
             if cachedArchiveHash == nil {
                 cachedArchiveHash = tileCache.archiveHash(for: url)
             }
             if let hash = cachedArchiveHash, tileCache.hasTileSheet(for: url, archiveHash: hash) {
-                tileCache.loadAllThumbnails(for: url, archiveHash: hash)
-                tileSheetAvailable = true
-                Logger.thumbnailGrid.info("TileSheet: preloaded for \(self.url.lastPathComponent)")
+                tileSheetAvailable = true  // ← BEFORE load (block registerThumbnail during load)
+                let loaded = tileCache.loadAllThumbnails(for: url, archiveHash: hash)
+                if loaded == 0 {
+                    tileSheetAvailable = false  // Revert on failure
+                } else {
+                    Logger.thumbnailGrid.info("TileSheet: preloaded \(loaded, privacy: .public) thumbnails for \(self.url.lastPathComponent)")
+                }
             } else {
                 // No tile sheet on disk — start background prefetch to collect all thumbnails
                 prefetchAllThumbnails()
