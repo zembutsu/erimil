@@ -127,28 +127,28 @@ class ArchiveManager: ImageSource {
     
     /// Generate thumbnail for entry
     func thumbnail(for entry: ImageEntry, maxSize: CGFloat = 120) -> NSImage? {
-        // #24: Tile sheet initialization (once per ArchiveManager instance)
-        // Both flags set immediately to prevent other threads from starting prefetch
-        // while this thread loads tile sheet or decides to prefetch.
+        // #24: Preload tile sheet into memory cache during entry listing (D005 pattern).
+        // Ensures ThumbnailGridView's synchronous memory check hits at onAppear time.
+        // Only handles "tile sheet exists" case — if no tile sheet on disk,
+        // thumbnail() fallback will trigger prefetchAllThumbnails().
         if !tileSheetInitialized {
-            tileSheetInitialized = true
-            prefetchStarted = true
             let tileCache = TileSheetCache.shared
             if cachedArchiveHash == nil {
                 cachedArchiveHash = tileCache.archiveHash(for: url)
             }
             if let hash = cachedArchiveHash, tileCache.hasTileSheet(for: url, archiveHash: hash) {
-                tileSheetAvailable = true  // ← BEFORE load (block registerThumbnail during load)
+                tileSheetInitialized = true
+                prefetchStarted = true
+                tileSheetAvailable = true
                 let loaded = tileCache.loadAllThumbnails(for: url, archiveHash: hash)
                 if loaded == 0 {
-                    tileSheetAvailable = false  // Revert on failure
+                    tileSheetAvailable = false
                 } else {
                     Logger.thumbnailGrid.info("TileSheet: preloaded \(loaded, privacy: .public) thumbnails for \(self.url.lastPathComponent)")
                 }
-            } else {
-                // No tile sheet on disk — start background prefetch to collect all thumbnails
-                prefetchAllThumbnails()
             }
+            // If no tile sheet: leave tileSheetInitialized=false
+            // → thumbnail() handles full init + prefetchAllThumbnails()
         }
 
         let cache = CacheManager.shared
