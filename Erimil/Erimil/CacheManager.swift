@@ -405,6 +405,17 @@ class CacheManager {
         thumbnailCache.setObject(image, forKey: contentHash as NSString, cost: estimatedBitmapCost(of: image))
     }
     
+    /// #207: Remove thumbnail from memory cache (preset change invalidation)
+    func removeThumbnailFromMemory(for contentHash: String) {
+        thumbnailCache.removeObject(forKey: contentHash as NSString)
+    }
+    
+    /// #207: Remove thumbnail from disk cache (preset change — force regeneration at new size)
+    func removeThumbnailFromDisk(for contentHash: String) {
+        let url = thumbnailURL(for: contentHash)
+        try? FileManager.default.removeItem(at: url)
+    }
+    
     // MARK: - Full Image Memory Cache (#134)
     
     /// Get full-size image from memory cache

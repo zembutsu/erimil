@@ -107,7 +107,7 @@ class PDFManager: ImageSource {
     }
     
     /// Generate thumbnail for a page
-    func thumbnail(for entry: ImageEntry, maxSize: CGFloat = 120) -> NSImage? {
+    func thumbnail(for entry: ImageEntry, maxSize: CGFloat = ThumbnailQualityPreset.current.maxThumbnailSize) -> NSImage? {
         let cache = CacheManager.shared
         
         // Create unique path identifier: sourceURL + entryPath
