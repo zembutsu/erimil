@@ -36,6 +36,7 @@ enum ThumbnailSizePreset: String, CaseIterable {
     case small = "small"
     case medium = "medium"
     case large = "large"
+    case extraLarge = "extraLarge"
     case custom = "custom"
     
     var displayName: String {
@@ -43,6 +44,7 @@ enum ThumbnailSizePreset: String, CaseIterable {
         case .small: return "小"
         case .medium: return "中"
         case .large: return "大"
+        case .extraLarge: return "特大"
         case .custom: return "カスタム"
         }
     }
@@ -52,6 +54,7 @@ enum ThumbnailSizePreset: String, CaseIterable {
         case .small: return 80
         case .medium: return 120
         case .large: return 180
+        case .extraLarge: return 250
         case .custom: return 120  // Default for custom, actual value from thumbnailSize
         }
     }
@@ -444,6 +447,16 @@ class AppSettings: ObservableObject {
             return thumbnailSize
         }
         return thumbnailSizePreset.size
+    }
+    
+    /// #207: Effective thumbnail size accounting for Retina display scale.
+    /// Cached at launch on main thread — safe to read from any thread
+    private(set) lazy var displayScaleFactor: CGFloat = {
+        NSScreen.main?.backingScaleFactor ?? 2.0
+    }()
+
+    var effectiveRetinaThumbnailSize: CGFloat {
+        return effectiveThumbnailSize * displayScaleFactor
     }
     
     // MARK: - Initialization

@@ -30,7 +30,7 @@ class TileSheetCache {
     /// Magic bytes for .ecache/.ecmeta format ("ERIM" header) — matches CacheManager
     private static let ecacheMagic = Data([0x45, 0x52, 0x49, 0x4D])
 
-    var tileSize: Int { ThumbnailQualityPreset.current.tileSize }
+    var tileSize: Int { Int(AppSettings.shared.effectiveRetinaThumbnailSize) }
     let tilesPerSheet: Int = 100
     let columns: Int = 10
     var compressionQuality: CGFloat { ThumbnailQualityPreset.current.compressionQuality }

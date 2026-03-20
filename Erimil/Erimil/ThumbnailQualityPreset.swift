@@ -2,9 +2,8 @@
 //  ThumbnailQualityPreset.swift
 //  Erimil
 //
-//  #207: Thumbnail quality presets for tile sheet generation
-//  Defines Low/Standard/High quality levels with corresponding
-//  tile size and JPEG compression quality parameters.
+//  #207: Thumbnail quality presets — JPEG compression quality only.
+//  Tile size is determined by ThumbnailSizePreset in AppSettings.
 //
 //  Session: S086
 //
@@ -15,25 +14,24 @@ enum ThumbnailQualityPreset: String, Codable, CaseIterable {
     case low
     case standard
     case high
-
-    var tileSize: Int {
-        switch self {
-        case .low:      return 80
-        case .standard: return 120
-        case .high:     return 180
-        }
-    }
+    case maximum
 
     var compressionQuality: CGFloat {
         switch self {
         case .low:      return 0.4
         case .standard: return 0.6
         case .high:     return 0.8
+        case .maximum:  return 0.95
         }
     }
 
-    var maxThumbnailSize: CGFloat {
-        CGFloat(tileSize)
+    var displayName: String {
+        switch self {
+        case .low:      return "低画質"
+        case .standard: return "標準"
+        case .high:     return "高画質"
+        case .maximum:  return "最高画質"
+        }
     }
 
     // MARK: - UserDefaults Storage

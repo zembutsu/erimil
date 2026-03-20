@@ -10,6 +10,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var cacheInfo: (fileCount: Int, totalSize: Int64) = (0, 0)
+    @AppStorage("thumbnailQualityPreset") private var thumbnailQualityRaw: String = ThumbnailQualityPreset.standard.rawValue
     
     var body: some View {
         Form {
@@ -17,7 +18,11 @@ struct SettingsView: View {
             Section {
                 Picker("プリセット", selection: $settings.thumbnailSizePreset) {
                     ForEach(ThumbnailSizePreset.allCases, id: \.self) { preset in
-                        Text("\(preset.displayName) (\(Int(preset.size))px)").tag(preset)
+                        if preset == .custom {
+                            Text(preset.displayName).tag(preset)
+                        } else {
+                            Text("\(preset.displayName) (\(Int(preset.size))px)").tag(preset)
+                        }
                     }
                 }
                 .pickerStyle(.radioGroup)
@@ -33,6 +38,28 @@ struct SettingsView: View {
                 }
             } header: {
                 Text("サムネイルサイズ")
+            } footer: {
+                Text("次回ソースを開いた時に反映されます。Retinaディスプレイでは自動的に高解像度で生成されます。")
+                    .font(.caption)
+            }
+            
+            // MARK: - Thumbnail Quality (#207)
+            Section {
+                Picker("画質プリセット", selection: Binding(
+                    get: { ThumbnailQualityPreset(rawValue: thumbnailQualityRaw) ?? .standard },
+                    set: { thumbnailQualityRaw = $0.rawValue }
+                )) {
+                    ForEach(ThumbnailQualityPreset.allCases, id: \.self) { preset in
+                        Text("\(preset.displayName) (JPEG \(String(format: "%.0f%%", preset.compressionQuality * 100)))")
+                            .tag(preset)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+            } header: {
+                Text("サムネイル画質")
+            } footer: {
+                Text("JPEG圧縮率を制御します。次回ソースを開いた時に反映されます。")
+                    .font(.caption)
             }
             
             // MARK: - Cache Management
@@ -255,7 +282,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 940)
+        .frame(width: 450, height: 1020)
         .navigationTitle("設定")
         .onAppear {
             updateCacheInfo()
