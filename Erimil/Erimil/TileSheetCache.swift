@@ -30,10 +30,10 @@ class TileSheetCache {
     /// Magic bytes for .ecache/.ecmeta format ("ERIM" header) — matches CacheManager
     private static let ecacheMagic = Data([0x45, 0x52, 0x49, 0x4D])
 
-    let tileSize: Int = 120
+    var tileSize: Int { Int(AppSettings.shared.effectiveRetinaThumbnailSize) }
     let tilesPerSheet: Int = 100
     let columns: Int = 10
-    var compressionQuality: CGFloat = 0.6
+    var compressionQuality: CGFloat { ThumbnailQualityPreset.current.compressionQuality }
 
     // MARK: - Storage
 
@@ -114,6 +114,23 @@ class TileSheetCache {
     @discardableResult
     func loadAllThumbnails(for archiveURL: URL, archiveHash hash: String) -> Int {
         guard let metadata = loadMetadata(for: hash) else { return 0 }
+
+        // #207: Invalidate tile sheet if preset has changed since build
+        if metadata.tileSize != tileSize ||
+           metadata.compressionQuality != Double(compressionQuality) {
+            Logger.cache.info("TileSheet: preset mismatch (stored: \(metadata.tileSize)/\(metadata.compressionQuality), current: \(self.tileSize)/\(self.compressionQuality)) — will rebuild")
+            // Evict stale thumbnails from memory and disk cache so async path
+            // regenerates at new size (not falling back to old .ecache on disk)
+            let cache = CacheManager.shared
+            for sheet in metadata.sheets {
+                for tile in sheet.entries {
+                    cache.removeThumbnailFromMemory(for: tile.contentHash)
+                    cache.removeThumbnailFromDisk(for: tile.contentHash)
+                }
+            }
+            invalidate(for: archiveURL, archiveHash: hash)
+            return 0
+        }
 
         let cache = CacheManager.shared
         var loadedCount = 0

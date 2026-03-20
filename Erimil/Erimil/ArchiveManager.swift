@@ -151,7 +151,7 @@ class ArchiveManager: ImageSource {
     }
     
     /// Generate thumbnail for entry
-    func thumbnail(for entry: ImageEntry, maxSize: CGFloat = 120) -> NSImage? {
+    func thumbnail(for entry: ImageEntry, maxSize: CGFloat = AppSettings.shared.effectiveRetinaThumbnailSize) -> NSImage? {
         // #24: Tile sheet initialization — fallback for when thumbnail() is called
         // before listImageEntries(), or when no tile sheet exists on disk.
         // Both flags set immediately to prevent other threads from starting prefetch
@@ -245,7 +245,7 @@ class ArchiveManager: ImageSource {
     private func prefetchAllThumbnails() {
         let archiveURL = self.url
         let entries = listImageEntries()
-        let maxSize: CGFloat = 120
+        let maxSize: CGFloat = AppSettings.shared.effectiveRetinaThumbnailSize
         guard let hash = cachedArchiveHash else { return }
 
         prefetchQueue.async { [weak self] in
