@@ -170,6 +170,7 @@ class AppSettings: ObservableObject {
         static let autoSlideIntervalFast   = "autoSlideIntervalFast"       // #172
         static let autoSlideIntervalTurbo  = "autoSlideIntervalTurbo"      // #172
         static let autoSlideLoops          = "autoSlideLoops"              // #172
+        static let gridSpacing             = "gridSpacing"                 // #212
     }
     
     // MARK: - Published Properties
@@ -317,6 +318,12 @@ class AppSettings: ObservableObject {
     /// Auto-Slide loops at end of source (#172, default: true = display/kiosk use)
     @Published var autoSlideLoops: Bool {
         didSet { defaults.set(autoSlideLoops, forKey: Keys.autoSlideLoops) }
+    }
+    
+    /// Grid spacing between thumbnails in pixels (#212)
+    /// Default: 8, range: 0-24
+    @Published var gridSpacing: CGFloat {
+        didSet { defaults.set(Double(gridSpacing), forKey: Keys.gridSpacing) }
     }
     
     /// Build MetadataCarryOverOptions from current settings
@@ -545,6 +552,9 @@ class AppSettings: ObservableObject {
         let savedTurbo = defaults.double(forKey: Keys.autoSlideIntervalTurbo)
         self.autoSlideIntervalTurbo = savedTurbo > 0 ? savedTurbo : 1.5
         self.autoSlideLoops = defaults.object(forKey: Keys.autoSlideLoops) == nil ? true : defaults.bool(forKey: Keys.autoSlideLoops)
+        
+        // #212: Grid spacing (default 8)
+        self.gridSpacing = defaults.object(forKey: Keys.gridSpacing) != nil ? CGFloat(defaults.double(forKey: Keys.gridSpacing)) : 8
     }
     
     // MARK: - Helper Methods
@@ -581,5 +591,6 @@ class AppSettings: ObservableObject {
         autoSlideIntervalFast   = 0.5            // #172
         autoSlideIntervalTurbo  = 1.5            // #172
         autoSlideLoops          = true           // #172
+        gridSpacing             = 8              // #212
     }
 }

@@ -43,6 +43,22 @@ struct SettingsView: View {
                     .font(.caption)
             }
             
+            // MARK: - Grid Spacing (#212)
+            Section {
+                HStack {
+                    Text("間隔:")
+                    Slider(value: $settings.gridSpacing, in: 0...24, step: 2)
+                    Text("\(Int(settings.gridSpacing))px")
+                        .frame(width: 40, alignment: .trailing)
+                        .monospacedDigit()
+                }
+            } header: {
+                Text("グリッド間隔")
+            } footer: {
+                Text("サムネイル間の余白。即座に反映されます。")
+                    .font(.caption)
+            }
+            
             // MARK: - Thumbnail Quality (#207)
             Section {
                 Picker("画質プリセット", selection: Binding(
