@@ -194,7 +194,7 @@ struct ThumbnailGridView: View {
     /// Dynamic columns based on thumbnail size
     private var columns: [GridItem] {
         let size = settings.effectiveThumbnailSize
-        return [GridItem(.adaptive(minimum: size, maximum: size + 30), spacing: 8)]
+        return [GridItem(.adaptive(minimum: size, maximum: size), spacing: settings.gridSpacing)]
     }
     
     /// #52: Last viewed index for this source (for bookmark display)
@@ -556,7 +556,7 @@ struct ThumbnailGridView: View {
                     ZStack {
                         ScrollViewReader { scrollProxy in
                             ScrollView {
-                                LazyVGrid(columns: columns, spacing: 8, pinnedViews: [.sectionHeaders]) {
+                                LazyVGrid(columns: columns, spacing: settings.gridSpacing, pinnedViews: [.sectionHeaders]) {
                                     ForEach(gridSections) { section in
                                         Section {
                                             ForEach(section.items) { item in
@@ -1141,7 +1141,7 @@ struct ThumbnailGridView: View {
     
     private func updateColumnCount(for width: CGFloat) {
         let size = settings.effectiveThumbnailSize
-        let itemWidth = size + 8  // size + spacing
+        let itemWidth = size + settings.gridSpacing  // size + spacing
         let padding: CGFloat = 32  // padding on both sides
         let availableWidth = width - padding
         let count = max(1, Int(availableWidth / itemWidth))
