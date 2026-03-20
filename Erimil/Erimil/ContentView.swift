@@ -249,6 +249,7 @@ private struct DetailContainerView: View {
     let onRequestSourceJump: (Int) -> Void
     
     var body: some View {
+        let _ = SourceSwitchTiming.mark("detail.body")
         if let imageSource = sourceSelection.currentSource {
             ThumbnailGridView(
                 imageSource: imageSource,

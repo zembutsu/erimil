@@ -250,6 +250,7 @@ struct ThumbnailGridView: View {
             isInViewerMode = newMode.isViewer
         }
         .onAppear {
+            SourceSwitchTiming.mark("grid.onAppear")
             if currentSourceURL != imageSource.url {
                 loadSource()
             }
