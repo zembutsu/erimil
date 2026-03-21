@@ -5,6 +5,49 @@ All notable changes to Erimil will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-03-21
+
+### Added
+- **Auto-Slide mode**: Automatic image slideshow with multi-speed tap control in Slide and Viewer Modes (#172)
+- **Auto-Slide reverse playback**: Shift+Space for reverse direction (#178)
+- **Animated image support (Phase 1)**: GIF playback in Viewer and Slide Modes with Space pause/resume and L key loop toggle; animated indicator badge in Grid (#201)
+- **Metadata inspector**: "i" key opens draggable/resizable NSPanel with image metadata in Viewer and Slide Modes (#140)
+- **Grid spacing setting**: Configurable thumbnail gap via Settings slider (#212)
+- **Thumbnail quality presets**: Unified thumbnail size/quality with Retina support and Settings UI (#207)
+- **N-step navigation**: Ctrl+Option jump by configurable step count for files and favorites, with Settings UI (#143)
+- **Cmd+A select/deselect all** in Grid View (#164)
+- **3-level overlay controls** in Slide Mode — Space key cycles through visibility levels (#151)
+- **Auto-hide mouse cursor** in Slide Mode (#145)
+- **Render-gated navigation**: Z/C favorite navigation waits for frame render before accepting next input (#154)
+- **R key opens Viewer** from currently focused thumbnail instead of last bookmark (#185)
+- **Spread thumbnail improvements**: Tightened pair gap with 1px center divider and focus border fix (#187)
+- **Tile-based thumbnail cache** for ZIP and PDF archives — debounce-based generation, content-based hash, Finder obfuscation (#24)
+- **Hyperscaler PoC**: CoreML Real-ESRGAN super-resolution experiment (#40)
+
+### Changed
+- **Thumbnail cache format**: Migrated to CGImageDestination + `.ecache` format for size optimization (#146)
+- **QuickLook removed**: Space key no longer opens QuickLook in Grid View; deprecated in favor of Auto-Slide (#176)
+- **ThumbnailGridView split**: Refactored into 4 files — ViewerView, ExportConfirmationView, key handling extracted (#175)
+- **Key handling consolidated**: ThumbnailGridView.handleKeyEvent integrated into CommonKeyParser (#169)
+
+### Fixed
+- **Export data loss prevention**: Block overwrite when NSSavePanel targets same filename (#161)
+- **Export empty file prevention**: Block export when all items are excluded (#163)
+- **Grid scroll tracking**: Scroll follows focus in real-time during keyboard navigation (#158)
+- **Viewer Mode spread layout**: Debounced re-evaluation + unknown aspect ratio treated as single page (#144)
+- **Ctrl+R in Slide Mode**: RTL toggle now refreshes display immediately (#150)
+- **Double-click thumbnail**: Single click sets focus only, double-click enters Viewer Mode correctly (#194)
+- **Export confirmation**: Sheet now always appears regardless of selection state (#195)
+- **Grid focus restoration**: Scroll position restored when exiting Viewer Mode (#193)
+- **Source switch spinner**: Prevent stale timer from firing after source switch (#196)
+
+### Performance
+- **Startup time 8,300× faster**: Lazy tree loading for FolderNode (16.7s → 2ms) + async CacheManager initialization (#216)
+- **Selection tap delay**: Removed selectedPaths from `.id()` to avoid view recreation; ThumbnailCoalescer reduces body re-evaluations by 95-98% (#138)
+- **PDF memory cache**: Added memory cache to PDFManager.fullImage() with double-checked locking (#165)
+- **Thumbnail disk cache**: Synchronous disk cache check in loadThumbnailIfNeeded; 1-frame navigation gate prevents key-repeat page skip (#160)
+- **Archive tile sheets**: Preload in listImageEntries, fix race condition with serial queue, fix preload block placement (#24)
+
 ## [0.3.3] - 2026-01-31
 
 ### Added
@@ -137,13 +180,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Phase | Highlights |
 |---------|------|-------|------------|
+| 0.3.4 | 2026-03-21 | Phase 2.4 | Startup 8300×, Auto-Slide, GIF playback, tile cache, metadata inspector |
 | 0.3.3 | 2026-01-31 | Phase 2.3 | PDF support, Spread view, RTL, ViewerView |
 | 0.3.2 | 2025-12-31 | Phase 2.2 | Fullscreen source navigation, F key shortcut |
 | 0.3.0 | 2025-12-16 | Phase 2.1 | UX improvements, favorites, keyboard nav |
 | 0.2.0 | 2025-12-14 | Phase 2 | Folder viewer, settings, selection modes |
 | 0.1.0 | 2025-12-13 | Phase 1 | MVP - ZIP viewer and export |
 
-[Unreleased]: https://github.com/zembutsu/erimil/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/zembutsu/erimil/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/zembutsu/erimil/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/zembutsu/erimil/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/zembutsu/erimil/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/zembutsu/erimil/compare/v0.3.0...v0.3.1
