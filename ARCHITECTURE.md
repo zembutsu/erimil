@@ -63,6 +63,7 @@ Manages PDF document viewing as image sequences.
 - **PDFManager**: ImageSource implementation for PDF documents
   - Each PDF page treated as an ImageEntry
   - Lazy page rendering for performance
+  - Memory cache with double-checked locking for `fullImage()` (#165)
   - Uses system PDFKit (no external dependencies)
   - Export: optimized PDF (_opt.pdf) with page exclusion (#100)
   - Export: individual PNG pages at 300dpi (#100)
@@ -79,6 +80,9 @@ Handles folder browsing and source discovery.
 - **FolderNode**: Model representing folder/ZIP/PDF in tree
   - `isZip`: ZIP file indicator
   - `isPdf`: PDF file indicator (S024)
+  - Children are always `nil` — tree structure lives in `SidebarView.childrenCache` (#216)
+  - Lazy loading: only root's direct children loaded on startup (1 `contentsOfDirectory` call)
+  - Deeper levels loaded on-demand via DisclosureGroup expansion
 
 ### 6. Selection Layer
 
@@ -92,6 +96,7 @@ Tracks user selections and pending changes.
 Manages thumbnails, metadata, and aspect ratio information.
 
 - **CacheManager**: Singleton for all caching operations
+  - **Async initialization**: All data loads dispatched to background queue on startup; completes in ~143ms (#216)
   - **Thumbnail cache**: contentHash → NSImage (memory, with disk persistence)
   - **Path index**: pathHash → contentHash mapping
   - **Favorites storage**: Per-source favorites with hybrid format
@@ -102,6 +107,19 @@ Manages thumbnails, metadata, and aspect ratio information.
     - `getCachedAspectRatio(for:path:)` - Retrieve cached ratio
     - `isWideImage(for:path:threshold:)` - Check if image is wide (default threshold: 1.3)
     - `clearAspectRatioCache()` - Clear on source change
+  - **Lock discipline**: JSON decode outside NSLock, lock only for assignment (#216)
+
+- **TileSheetCache**: Tile-based thumbnail cache for archives (#24)
+  - Debounce-based tile sheet generation for ZIP and PDF archives
+  - Content-based archive hash (not path-based) for cache identity
+  - Finder obfuscation for `.ecache` files
+  - Preloaded in `listImageEntries()` via serial `accessQueue.sync`
+  - Race condition prevention via serial queue pattern (D004)
+
+- **ThumbnailCoalescer**: Batch thumbnail assignment to reduce SwiftUI re-evaluations (#138)
+  - Collects thumbnail updates over a short window
+  - Applies batch update in single body re-evaluation
+  - Reduces re-evaluations by 95-98%
 
 ### 8. Spread Navigation Layer (S020/S021)
 
@@ -132,15 +150,32 @@ SwiftUI views for user interaction.
   - **ThumbnailSidebarView**: Vertical/horizontal thumbnail strip (S014)
 - **ThumbnailComponents.swift**: Extracted thumbnail subviews (#175 Phase 1)
   - **SpreadThumbnailPairView**: Paired thumbnail display for spreads (#69)
+    - `.fill` + `.clipped()` rendering with `floor()` for consistent sizing (#187)
+    - 1px gap divider between pages (#187)
+  - **Animated indicator badge**: [▶] overlay on GIF entries in Grid (#201)
 - **ViewerView**: In-grid image viewer with thumbnail sidebar (#175 Phase 1: separate file)
   - Configurable thumbnail position (left/bottom/hidden via Ctrl+T)
   - Spread-aware navigation integrated
   - Uses SpreadImageViewer for image display
   - Auto-Slide support (Space/Shift+Space, shared AutoSlideTapHandler)
+  - Animated GIF playback overlay (Space pause/resume, L loop toggle) (#201)
+  - Render-gated navigation: waits for frame render before accepting next input (#154)
 - **ExportConfirmationView**: Export sheet with metadata options (#105, #175 Phase 1: separate file)
+  - Data loss prevention: blocks overwrite of same filename (#161)
+  - Blocks export when all items are excluded (#163)
+- **MetadataInspectorPanel**: NSPanel-based draggable/resizable metadata display (#140)
+  - "i" key toggles in Viewer and Slide Modes
+  - Shows image dimensions, file size, color space, format
+  - Position and size persisted across sessions
+- **AnimatedImageContent**: Data model + CGImageSource-based GIF decoder (#201)
+- **AnimationPlayer**: CADisplayLink-based playback engine with retain cycle fix (#201)
 - **ThumbnailCell**: Individual thumbnail with selection overlay
-- **ImagePreviewView**: Quick Look modal preview (Enter → Slide Mode)
+- **ImagePreviewView**: Quick Look modal preview — *deprecated, replaced by Auto-Slide (#176)*
 - **SettingsView**: Settings panel (⌘,)
+  - Grid spacing slider (#212)
+  - Thumbnail quality presets with Retina support (#207)
+  - N-step navigation step count (#143)
+  - Auto-Slide loop setting
 
 ### 10. Slide Mode Layer
 
@@ -164,11 +199,14 @@ Fullscreen image viewing with Favorites Mode and source navigation.
   | Z/C | Previous/Next favorite (RTL-aware) | Previous/Next favorite (RTL-aware) |
   | Ctrl+A/D | Jump to first/last image | Same |
   | Ctrl+Z/C | Jump to first/last favorite | Same |
+  | Ctrl+Option+←/→ | N-step jump (configurable) (#143) | Same |
   | Cmd+1/2/3/4/5 | Jump to 0%/25%/50%/75%/100% | Same |
   | Tab | Next ★ + enter mode | Next ★ |
   | F | Toggle favorite | Toggle favorite |
   | X | Toggle selection | Toggle selection |
   | V | Toggle single page marker | Toggle single page marker |
+  | I | Toggle metadata inspector (#140) | Same |
+  | L | Toggle loop (animated GIF only) (#201) | Same |
   | Q | Exit fullscreen | Exit Favorites Mode |
   | Esc | Exit fullscreen | Exit fullscreen |
   | Ctrl+W/S, Ctrl+↑/↓ | Previous/Next source | Same |
@@ -178,6 +216,7 @@ Fullscreen image viewing with Favorites Mode and source navigation.
   | Shift+A/D | Previous/Next bookmark (RTL-aware) | Same |
   | Shift+B | Bookmark list overlay | Same |
   | Space | Auto-Slide start/stop (#172) | Same |
+  | Space (animated) | Pause/resume GIF playback (#201) | Same |
   | Shift+Space | Reverse Auto-Slide (#178) | Same |
   | O | Toggle controls overlay | Same |
 
@@ -227,10 +266,9 @@ Consolidated key handling logic shared across viewer modes.
 - **Mode-Specific Handlers**:
   | Mode | Handler Location | Notes |
   |------|-----------------|-------|
-  | Grid (Filer) | ThumbnailGridView.handleKeyEvent | RTL-aware ←/→/A/D, Z/C favorite nav, Ctrl+A/D/1-5 jump |
-  | Viewer | ViewerView.handleKeyEvent | Full navigation + Z/C + jump |
+  | Grid (Filer) | CommonKeyParser (via ThumbnailGridView) | RTL-aware nav, Z/C favorite, Ctrl+A/D/1-5 jump, Cmd+A select all (#164), render-gated Z/C (#154) |
+  | Viewer | ViewerView.handleKeyEvent | Full navigation + Z/C + jump + I metadata + L loop |
   | Slide | SlideWindowController.handleKeyEvent | Event monitor based |
-  | Quick Look | QuickLookKeyView.keyDown | NSView based |
 
 - **RTL Navigation**:
   All navigation keys (←/→, ↑/↓, A/D, W/S, Z/C, Shift+A/D) are RTL-aware.
@@ -255,7 +293,11 @@ Consolidated key handling logic shared across viewer modes.
 ```
 User selects root folder
     ↓
-SidebarView scans directory (FolderNode)
+SidebarView.reloadTree() — loads root's direct children only (1ms) (#216)
+    ↓
+Tree structure stored in SidebarView.childrenCache (not FolderNode)
+    ↓
+DisclosureGroup expansion triggers loadChildrenFor() on demand
     ↓
 User clicks ZIP, folder, or PDF row
     ↓
@@ -450,28 +492,35 @@ CacheManager.clearAspectRatioCache()
 | `thumbnailLarge` | 180px | Large preset size |
 | `maxThumbnailCacheCount` | 200 | Memory cache limit |
 | `supportedImageTypes` | jpg, jpeg, png, gif, webp, heic | Recognized image extensions |
+| `supportedAnimatedTypes` | gif | Animated image extensions (#201) |
 | `positionBarWidth` | 144px | Fixed width for position indicators |
 | `wideImageThreshold` | 1.3 | Default aspect ratio threshold for wide image detection |
 | `defaultPrefetchCount` | 3 | Default number of images to prefetch |
+| `defaultGridSpacing` | 2px | Default thumbnail grid gap (#212) |
+| `defaultNStepCount` | 10 | Default N-step navigation step (#143) |
+| `animatedFrameLimit` | 500 | Max frames for GIF playback (#201) |
 
 ## File Structure
 
 ```
 Erimil/
-├── ErimilApp.swift              # App entry point, Settings scene
+├── ErimilApp.swift              # App entry point, Settings scene, CacheManager trigger
 ├── ContentView.swift            # Main split view, owns selection state
-├── SidebarView.swift            # Folder tree navigation (Finder-style)
+├── SidebarView.swift            # Folder tree navigation (Finder-style, lazy childrenCache)
 ├── ThumbnailGridView.swift      # Image grid with mode-aware UI
 │   ├── ThumbnailDisplayItem     # Enum: .single, .spread (#69)
 │   ├── ThumbnailSidebarView     # Thumbnail strip (S014)
 │   └── ThumbnailCell            # Individual thumbnail
 ├── ThumbnailComponents.swift    # Extracted thumbnail subviews (#175 Phase 1)
-│   └── SpreadThumbnailPairView  # Paired thumbnails (#69)
+│   └── SpreadThumbnailPairView  # Paired thumbnails (#69, #187 .fill+.clipped)
 ├── ViewerView.swift             # In-grid viewer with thumbnail sidebar (#175 Phase 1)
 │   └── ViewerKeyEventHandler    # Viewer-specific key handling
 ├── ExportConfirmationView.swift # Export sheet with metadata options (#105, #175 Phase 1)
-├── ImagePreviewView.swift       # Quick Look preview modal
-├── SettingsView.swift           # Settings panel
+├── MetadataInspectorPanel.swift # NSPanel metadata display (#140)
+├── AnimatedImageContent.swift   # GIF frame data model + decoder (#201)
+├── AnimationPlayer.swift        # CADisplayLink playback engine (#201)
+├── ImagePreviewView.swift       # Quick Look preview modal (deprecated #176)
+├── SettingsView.swift           # Settings panel (grid spacing, quality, N-step, Auto-Slide)
 ├── SlideWindowController.swift  # Fullscreen slide mode controller
 │   ├── SlideWindowView          # SwiftUI view for slide content
 │   ├── ImagePositionBar         # Image position with ★/× markers
@@ -484,8 +533,14 @@ Erimil/
 ├── ArchiveManager.swift         # ZIP ImageSource implementation
 ├── FolderManager.swift          # Folder ImageSource implementation
 ├── PDFManager.swift             # PDF ImageSource implementation (S024)
-├── FolderNote.swift             # FolderNode tree node model
-├── CacheManager.swift           # Thumbnail cache, favorites, metadata copy (#105)
+├── FolderNote.swift             # FolderNode tree node model (lazy, children=nil)
+├── CacheManager.swift           # Thumbnail cache, favorites, async init (#216)
+├── TileSheetCache.swift         # Tile-based thumbnail cache for archives (#24)
+├── ThumbnailCoalescer.swift     # Batch thumbnail update coalescer (#138)
+├── KeyHandling.swift            # Centralized key handling + CommonKeyParser (#169)
+│   ├── AutoSlideTapHandler      # Shared Auto-Slide state machine (#175 Phase 2)
+│   ├── BookmarkDialogHelper     # NSAlert bookmark dialogs (#62)
+│   └── BookmarkListKeyHandler   # Bookmark list key handling (#62)
 ├── ZIPEncodingDetector.swift    # ZIP filename encoding detection
 └── AppSettings.swift            # UserDefaults wrapper, settings enums
 ```
@@ -500,6 +555,8 @@ Erimil/
 | UniformTypeIdentifiers | File type handling | System framework |
 | PDFKit | PDF rendering | System framework |
 | CryptoKit | Content hashing for cache | System framework |
+| CoreML | Super-resolution upscaling (Hyperscaler PoC) (#40) | System framework |
+| ImageIO | GIF frame extraction (CGImageSource) (#201) | System framework |
 
 ## State Management
 
@@ -518,6 +575,7 @@ ErimilApp
             │       ├── @Binding selectedFolderURL
             │       ├── @State rootNode: FolderNode?
             │       ├── @State selectedNodeURL: URL?
+            │       ├── @State childrenCache: [URL: [FolderNode]]  ← Lazy tree (#216)
             │       └── onOpenSlideMode callback  ← Double-click handler
             │
             ├── ThumbnailGridView
@@ -544,6 +602,8 @@ ErimilApp
 
 ```
 CacheManager.shared
+    ├── Async init: background load on startup (~143ms) (#216)
+    │       └── didFinishLoadingNotification for UI refresh
     ├── pathIndex: [String: String]           ← pathHash → contentHash
     ├── thumbnailCache: NSCache               ← contentHash → NSImage
     ├── sourceSettings: [String: SourceSettings]  ← Per-source settings (#54)
@@ -561,7 +621,8 @@ CacheManager.shared
     Persisted:
     ├── index.json                 ← pathIndex
     ├── favorites.json             ← Favorites data
-    └── source_settings.json       ← sourceSettings
+    ├── source_settings.json       ← sourceSettings
+    └── tilesheets/                ← Tile-based archive thumbnails (#24)
 ```
 
 #### MetadataCarryOverOptions (#105)
@@ -583,6 +644,8 @@ AppSettings.shared
     ├── @Published useDefaultOutputFolder: Bool
     ├── @Published thumbnailSizePreset: ThumbnailSizePreset
     ├── @Published thumbnailSize: CGFloat              ← Custom size value
+    ├── @Published thumbnailQuality: ThumbnailQuality  ← Quality preset with Retina (#207)
+    ├── @Published gridSpacing: CGFloat                ← Grid gap size (#212)
     ├── @Published favoriteScope: FavoriteScope       ← Content vs Source
     ├── @Published viewerThumbnailPosition: ViewerThumbnailPosition
     ├── @Published prefetchCount: Int                 ← Prefetch image count
@@ -590,6 +653,8 @@ AppSettings.shared
     ├── @Published defaultReadingDirection: ReadingDirection
     ├── @Published isSpreadModeEnabled: Bool          ← Spread view toggle
     ├── @Published spreadThreshold: Double            ← Wide image threshold
+    ├── @Published nStepCount: Int                    ← N-step navigation step (#143)
+    ├── @Published autoSlideLoop: Bool                ← Auto-Slide loop at boundary (#172)
     ├── @Published lastOpenedFolderURL: URL?          ← Restore on launch
     ├── @Published metadataCarryOverFavorites: Bool   ← Export ★ (#105)
     ├── @Published metadataCarryOverBookmarks: Bool   ← Export 栞 (#105)
@@ -759,6 +824,10 @@ Logger categories are defined in `Logger.swift` as static extensions.
 | `Viewer` | ViewerView |
 | `SpreadViewer` | Spread display |
 | `KeyHandling` | Keyboard event handling |
+| `AnimationPlayer` | GIF playback (#201) |
+| `TileSheet` | Tile-based thumbnail cache (#24) |
+| `Coalescer` | Thumbnail batch updates (#138) |
+| `Metadata` | Metadata inspector (#140) |
 
 **Log levels**
 
@@ -772,7 +841,8 @@ Logger categories are defined in `Logger.swift` as static extensions.
 
 ```bash
 ~/Library/Application Support/Erimil/
-├── cache/                      # Thumbnail cache
+├── cache/                      # Thumbnail cache (.ecache format #146)
+├── tilesheets/                 # Tile-based thumbnail cache for archives (#24)
 ├── index.json                  # Path → contentHash mapping
 ├── favorites.json              # Favorites data (hybrid format)
 ├── source_settings.json        # Per-source settings (#54)
@@ -831,11 +901,18 @@ A: Aspect ratio or direction issue
 
 ## Performance Considerations
 
+- **Startup**: Lazy tree loading (FolderNode children=nil, on-demand via childrenCache) — 16.7s → 2ms (#216)
+- **CacheManager**: Async initialization on background queue — 143ms for 105K entries, does not block main thread (#216)
 - **Large ZIPs (>1GB)**: Show warning, consider streaming approach
 - **Many Images (>1000)**: Virtualized grid, load visible thumbnails only
 - **Memory**: Thumbnail cache with size limit, LRU eviction
-- **Large PDFs**: Lazy page rendering, avoid loading all pages at once
+- **Large PDFs**: Lazy page rendering, memory cache with double-checked locking (#165)
 - **Image Prefetching**: Direction-aware prefetch reduces perceived latency
+- **Thumbnail disk cache**: Synchronous check in loadThumbnailIfNeeded eliminates async delay for cached thumbnails (#160)
+- **Tile sheets**: ZIP/PDF archives use tile-based thumbnail cache for fast subsequent opens (#24)
+- **Render-gated navigation**: Z/C favorite navigation prevents key-repeat from skipping unrendered frames (#154)
+- **ThumbnailCoalescer**: Batches thumbnail assignments to reduce SwiftUI body re-evaluations by 95-98% (#138)
+- **Sandboxed filesystem**: Recursive traversal is catastrophically expensive due to permission checks; always use lazy loading (#216)
 
 ---
 
@@ -843,4 +920,4 @@ A: Aspect ratio or direction issue
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2026-03-14 (#175 Phase 1-2a: file split, AutoSlideTapHandler)
+> Last updated: 2026-03-21 (v0.3.4: #216 lazy tree, #24 tile sheets, #201 animated, #140 metadata, #138 coalescer)

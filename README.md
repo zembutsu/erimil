@@ -26,8 +26,12 @@ and their metadata carries over to exported archives so you can build on previou
 - **Iterative Distillation**: ★ favorites with deletion protection and metadata carry-over on export
 - **Multi-Format Sources**: ZIP archives, folders, and PDFs — unified browsing
 - **Spread View**: Two-page display for books with RTL (right-to-left) support
+- **Auto-Slide Mode**: Automatic slideshow with multi-speed control and reverse playback
+- **Animated GIF Playback**: GIF files play in Viewer and Slide Modes with pause/loop control
+- **Metadata Inspector**: "i" key opens floating panel with image dimensions, format, and more
 - **PDF Page Export**: Export selected pages as optimized PDF, PNG folder, or PNG ZIP
 - **Bookmarks (栞)**: Named position markers for quick navigation within sources
+- **Tile-Based Thumbnail Cache**: Fast re-opening of archives with persistent tile sheet cache
 - **Keyboard-Driven**: Every action reachable without a mouse
 - **Privacy-First**: No telemetry, no cloud, no network — your files stay local
 
@@ -49,7 +53,7 @@ Download the latest release from [GitHub Releases](https://github.com/zembutsu/e
 
 **Selection Modes**: Toggle between Exclude Mode (mark items to remove) and Keep Mode (mark items to retain) via the toolbar or Settings.
 
-**Viewer Modes**: Press `Enter` or `R` for Viewer Mode with thumbnail sidebar, `Ctrl+F` for fullscreen Slide Mode, `Space` for Quick Look preview.
+**Viewer Modes**: Press `Enter` or `R` for Viewer Mode with thumbnail sidebar, `Ctrl+F` for fullscreen Slide Mode. Press `Space` for Auto-Slide (automatic slideshow).
 
 <details>
 <summary>📖 Full Keyboard Shortcuts Reference</summary>
@@ -65,6 +69,7 @@ All navigation keys are **RTL-aware** — they follow "physical key position = v
 | Ctrl+A / Ctrl+D | Jump to first / last image |
 | Ctrl+Z / Ctrl+C | Jump to first / last favorite |
 | Cmd+1/2/3/4/5 | Jump to 0% / 25% / 50% / 75% / 100% |
+| Ctrl+Option+←/→ | N-step jump (configurable in Settings) |
 | Ctrl+R | Toggle reading direction (LTR ↔ RTL) |
 | Shift+S | Add / delete bookmark (栞) |
 | Shift+A / Shift+D | Previous / Next bookmark |
@@ -75,20 +80,13 @@ All navigation keys are **RTL-aware** — they follow "physical key position = v
 | Key | Action |
 |-----|--------|
 | X | Toggle selection |
+| Cmd+A | Select all / Deselect all |
 | F | Toggle favorite ★ |
 | V | Toggle single page marker |
-| Space | Open Quick Look preview |
 | Enter / R | Open Viewer Mode |
 | Ctrl+F | Open Slide Mode |
 | Ctrl+W/S or Ctrl+↑/↓ | Previous / Next source |
-
-### Quick Look Preview
-
-| Key | Action |
-|-----|--------|
-| F | Switch to Slide Mode |
-| V | Toggle single page marker |
-| Q / Space / Esc / Enter | Close preview |
+| Ctrl+Option+←/→ | N-step jump (configurable) |
 
 ### Viewer Mode
 
@@ -97,7 +95,11 @@ All navigation keys are **RTL-aware** — they follow "physical key position = v
 | X | Toggle selection |
 | F | Toggle favorite ★ |
 | V | Toggle single page marker |
+| I | Toggle metadata inspector |
+| L | Toggle loop (animated GIF only) |
 | T | Cycle thumbnail position |
+| Space | Auto-Slide start/stop |
+| Shift+Space | Reverse Auto-Slide |
 | Enter | Open Slide Mode |
 | Q / R / Esc | Close (return to Filer) |
 | Ctrl+W/S or Ctrl+↑/↓ | Previous / Next source |
@@ -112,6 +114,8 @@ All navigation keys are **RTL-aware** — they follow "physical key position = v
 | F | Toggle favorite ★ | Toggle favorite ★ |
 | X | Toggle selection | Toggle selection |
 | V | Toggle single page marker | Toggle single page marker |
+| I | Toggle metadata inspector | Same |
+| L | Toggle loop (animated GIF only) | Same |
 | Q | Exit fullscreen | Exit Favorites Mode |
 | Esc | Exit fullscreen | Exit fullscreen |
 | Ctrl+W/S or Ctrl+↑/↓ | Previous/Next source | Same |
@@ -119,7 +123,9 @@ All navigation keys are **RTL-aware** — they follow "physical key position = v
 | Shift+S | Add/delete bookmark (栞) | Same |
 | Shift+A / Shift+D | Previous/Next bookmark | Same |
 | Shift+B | Bookmark list overlay | Same |
-| Space | Toggle controls | Toggle controls |
+| Space | Auto-Slide start/stop | Same |
+| Shift+Space | Reverse Auto-Slide | Same |
+| O | Toggle controls overlay | Same |
 
 ### Sidebar Navigation
 
@@ -180,16 +186,47 @@ Exported pages preserve original page numbers (e.g., `page_001.png, page_003.png
 
 **Position Jump**: `Ctrl+A/D` for first/last, `Ctrl+Z/C` for first/last favorite, `Cmd+1-5` for percentage positions. All jumps are RTL-aware.
 
+### Auto-Slide Mode
+
+Automatic slideshow with tap-counted speed control:
+
+| Action | Result |
+|--------|--------|
+| Space × 1 | Start Normal speed |
+| Space × 2 (within 0.3s) | Switch to Fast |
+| Space × 3 (within 0.3s) | Switch to Turbo |
+| Shift+Space | Reverse direction |
+| Space (while running) | Stop |
+
+Works in both Viewer and Slide Modes. In Favorites Mode, Auto-Slide advances through ★ only. Loops at source boundary (configurable in Settings).
+
+### Animated GIF Playback
+
+GIF files are played automatically in Viewer and Slide Modes. Grid thumbnails show a [▶] badge for animated entries.
+
+| Key | Action |
+|-----|--------|
+| Space | Pause / Resume playback |
+| L | Toggle loop On/Off (Off = stop after current cycle) |
+
+When an animated image is displayed, Space controls playback instead of Auto-Slide.
+
+### Metadata Inspector
+
+Press `I` in Viewer or Slide Mode to open a floating panel showing image metadata (dimensions, file size, color space, format). The panel is draggable, resizable, and remembers its position across sessions.
+
 ## Data Storage
 
 Erimil stores cache and favorites in the sandboxed container:
 
 ```
 ~/Library/Containers/jp.pocketstudio.zem.Erimil/Data/Library/Application Support/Erimil/
-├── cache/                      # Thumbnail cache (disk)
+├── cache/                      # Thumbnail cache (disk, .ecache format)
+├── tilesheets/                 # Tile-based thumbnail cache for archives
 ├── index.json                  # Path hash → content hash mapping
 ├── favorites_hybrid.json       # Favorites data
 ├── bookmarks.json              # Per-source bookmarks (栞)
+├── source_settings.json        # Per-source settings (direction, markers)
 └── last_folder_bookmark.data   # Security-scoped bookmark for folder restoration
 ```
 

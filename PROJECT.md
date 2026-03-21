@@ -51,13 +51,14 @@ These boundaries are intentional. Features that don't serve "browse → evaluate
 
 ## Current Status
 
-- **Version**: 0.3.3 (released)
-- **Phase**: Phase 2.3 (nearing completion)
+- **Version**: 0.3.4 (released)
+- **Phase**: Phase 2.4 (nearing completion)
 - **Phase 1**: ✅ Completed (2025-12-13)
 - **Phase 2**: ✅ Completed (2025-12-14)
 - **Phase 2.1**: ✅ Completed (2025-12-16)
 - **Phase 2.2**: ✅ Completed (2025-12-17)
-- **Phase 2.3**: 🔄 In Progress — core features done, refinements ongoing
+- **Phase 2.3**: ✅ Completed (2026-01-31)
+- **Phase 2.4**: ✅ Completed (2026-03-21)
 
 ## Development Principles
 
@@ -117,7 +118,7 @@ This project uses AI-assisted development following the WORKFLOW.md guidelines:
 - ✅ Position indicator (1/N) in both modes
 - ✅ Auto-hide controls in Slide Mode
 
-### Phase 2.3 (Current) - Extended Viewing
+### Phase 2.3 - ✅ Completed (2026-01-31) - Extended Viewing
 - ✅ PDF support (view PDF as image sequence)
 - ✅ Spread (two-page) view for books
 - ✅ RTL (right-to-left) reading direction
@@ -139,17 +140,44 @@ This project uses AI-assisted development following the WORKFLOW.md guidelines:
 - ✅ Selection tap delay: double-tap gesture removal (#138 partial)
 - 🔄 PDF page export — PDF/PNG (#100)
 - 🔄 Deskew display correction for scanned PDFs (#101)
-- 🔄 Bug fixes and refinements
 
-### v0.3.4 (Next Release) - UX Polish & Features
-- Selection tap delay: 50ms residual investigation (#138)
+### Phase 2.4 - ✅ Completed (2026-03-21) - Performance & Automation
+- ✅ Startup time optimization: 16.7s → 2ms via FolderNode lazy loading (#216)
+- ✅ CacheManager async initialization (#216)
+- ✅ Auto-Slide mode with multi-speed tap control (#172)
+- ✅ Auto-Slide reverse playback (#178)
+- ✅ Animated GIF playback in Viewer and Slide Modes (#201)
+- ✅ Metadata inspector panel — "i" key (#140)
+- ✅ Tile-based thumbnail cache for ZIP/PDF archives (#24)
+- ✅ Thumbnail quality presets with Retina support (#207)
+- ✅ Grid spacing setting (#212)
+- ✅ N-step navigation with Ctrl+Option (#143)
+- ✅ Cmd+A select/deselect all (#164)
+- ✅ 3-level overlay controls in Slide Mode (#151)
+- ✅ Auto-hide mouse cursor in Slide Mode (#145)
+- ✅ Render-gated navigation for favorites (#154)
+- ✅ Thumbnail cache format: .ecache with CGImageDestination (#146)
+- ✅ ThumbnailGridView refactored into 4 files (#175)
+- ✅ Key handling consolidated into CommonKeyParser (#169)
+- ✅ QuickLook deprecated in favor of Auto-Slide (#176)
+- ✅ Selection tap delay: .id() fix + ThumbnailCoalescer (#138)
+- ✅ Export data loss prevention (#161) and empty export prevention (#163)
+- ✅ Grid scroll follows focus in real-time (#158)
+- ✅ Various bug fixes (#144, #150, #165, #193, #194, #195, #196)
+- ✅ Hyperscaler PoC: CoreML Real-ESRGAN super-resolution (#40)
+
+### v0.3.5 (Next Release) - Architecture & UX
+- NSCollectionView + HSplitView migration — resolves #126, #209, #215 (#215)
 - "/" command palette replacing inline help tooltips (#139)
-- "i" key metadata inspector (#140)
 - Show non-image items in Grid view (#132)
 - Grid view filtering and sorting (#97)
 - Drag & drop files to open directly in Viewer/Slide mode (#63)
 - PDF file support enhancements (#57)
 - Extract SlideWindowController.open helper (#50)
+- Tab Key mode switching in Grid Mode (#199)
+- Individual .ecache cleanup after tile sheet build (#208)
+- Thread safety: first-writer-wins Bool flags (#210)
+- Tile sheet incremental rebuild (#211)
 
 ### Phase 3 (Next) - Curation Quality
 - Grid filtering (filename search) and sorting (name, size, date, ★)
