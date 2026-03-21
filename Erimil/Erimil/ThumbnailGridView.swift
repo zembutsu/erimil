@@ -1006,10 +1006,15 @@ struct ThumbnailGridView: View {
         let pathHash = cache.pathHash(for: fullPath)
         if let contentHash = cache.getContentHash(for: pathHash),
            let cached = cache.getThumbnailFromMemory(for: contentHash) {
-            thumbnails[entryPath] = cached
-            // #134 P4: Reuse already-resolved contentHash (was calling getContentHashForPath → redundant SHA256)
-            contentHashes[entryPath] = contentHash
-            Logger.thumbnailGrid.debug("★PERF★ SYNC memory hit: \(entryName)")
+            // S094: Buffer sync hits through coalescer — prevents N body re-evaluations
+            // for N visible cells. Direct assignment caused per-cell body storm on source switch.
+            let needsSchedule = thumbnailCoalescer.append((path: entryPath, image: cached, contentHash: contentHash))
+            if needsSchedule {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
+                    self.flushThumbnailBuffer()
+                }
+            }
+            Logger.thumbnailGrid.debug("★PERF★ SYNC memory hit (buffered): \(entryName)")
             return
         }
         
