@@ -41,7 +41,7 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
 
     func makeNSViewController(context: Context) -> WrapperViewController {
         let splitController = ErimilSplitViewController()
-        let sidebarView = makeSidebarView(sourceURL: sourceSelection.currentURL)
+        let sidebarView = makeSidebarView()
         splitController.configure(sidebarView: AnyView(sidebarView))
 
         let wrapper = WrapperViewController()
@@ -78,7 +78,7 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
 
             // --- Sidebar update (always — cheap rootView diff) ---
             // S094: Use coordinator's tracked URL, not @Observable
-            controller.updateSidebar(AnyView(makeSidebarView(sourceURL: coordinator.lastSourceURL)))
+            makeSidebarView()
 
             // S093: Detail swap removed from SwiftUI update path.
             // handleDirectSwap (via onSourceChanged) is the sole detail update path.
@@ -112,16 +112,11 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
             guard let repr = currentRepresentable else { return }
 
             if let source = source {
-                let detailView = repr.makeDetailView(imageSource: source)
+            let detailView = repr.makeDetailView(imageSource: source)
                 splitController?.detailController.updateContent(detailView)
-                // S094: Update sidebar highlight directly — no body storm
-                let sidebarView = repr.makeSidebarView(sourceURL: url)
-                splitController?.updateSidebar(AnyView(sidebarView))
                 SourceSwitchTiming.mark("direct.swap.done")
             } else {
                 splitController?.detailController.showPlaceholder()
-                let sidebarView = repr.makeSidebarView(sourceURL: nil)
-                splitController?.updateSidebar(AnyView(sidebarView))
             }
         }
     }
@@ -164,13 +159,13 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
 
     // MARK: - View Builders
 
-    func makeSidebarView(sourceURL: URL?) -> SidebarView {
+    private func makeSidebarView() -> SidebarView {
         SidebarView(
-           selectedFolderURL: $selectedFolderURL,
-           currentSourceURL: sourceURL,
-           onSourceSelect: onSourceSelect,
-           onOpenSlideMode: onOpenSlideMode,
-           reloadTrigger: folderReloadTrigger
+            selectedFolderURL: $selectedFolderURL,
+            sourceSelection: sourceSelection,
+            onSourceSelect: onSourceSelect,
+            onOpenSlideMode: onOpenSlideMode,
+            reloadTrigger: folderReloadTrigger
         )
     }
 
