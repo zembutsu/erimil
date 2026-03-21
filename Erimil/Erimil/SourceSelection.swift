@@ -89,6 +89,10 @@ class SourceSelection {
         // S050: T3 — model update complete, SwiftUI re-evaluation will follow
         SourceSwitchTiming.mark("select.done")
         
+        // S091: Save for restoration on next launch
+        AppSettings.shared.lastSelectedSourcePath = url.path
+        AppSettings.shared.lastSelectedSourceType = type.rawValue
+        
         // S090: Immediate detail swap — bypasses SwiftUI's ~350ms update cycle.
         // Called synchronously so the new view is on screen before SwiftUI even
         // detects the @Observable change.
@@ -123,6 +127,10 @@ class SourceSelection {
         currentURL = nil
         currentType = nil
         currentSource = nil
+        // S091: Clear saved source
+        AppSettings.shared.lastSelectedSourcePath = nil
+        AppSettings.shared.lastSelectedSourceType = nil
+
         onSourceChanged?(nil, nil)
         prefetchLock.lock()
         _prefetchedEntries = nil

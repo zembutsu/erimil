@@ -105,6 +105,21 @@ struct ContentView: View {
             selectedFolderURL = restoredFolder
             // Update the published property (without triggering didSet bookmark save)
             AppSettings.shared.lastOpenedFolderURL = restoredFolder
+            
+            // S091: Restore last selected source within this folder
+            if let sourcePath = AppSettings.shared.lastSelectedSourcePath,
+               let typeString = AppSettings.shared.lastSelectedSourceType,
+               let type = ImageSourceType(rawValue: typeString) {
+                let sourceURL = URL(fileURLWithPath: sourcePath)
+                if FileManager.default.fileExists(atPath: sourcePath) {
+                    Logger.content.info("Restoring last source: \(sourceURL.lastPathComponent)")
+                    sourceSelection.select(url: sourceURL, type: type)
+                } else {
+                    Logger.content.debug("Last source no longer exists, clearing: \(sourcePath)")
+                    AppSettings.shared.lastSelectedSourcePath = nil
+                    AppSettings.shared.lastSelectedSourceType = nil
+                }
+            }
         } else {
             Logger.content.debug("No folder to restore, or access denied")
         }

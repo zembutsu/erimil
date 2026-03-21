@@ -171,6 +171,8 @@ class AppSettings: ObservableObject {
         static let autoSlideIntervalTurbo  = "autoSlideIntervalTurbo"      // #172
         static let autoSlideLoops          = "autoSlideLoops"              // #172
         static let gridSpacing             = "gridSpacing"                 // #212
+        static let lastSelectedSourcePath  = "lastSelectedSourcePath"      // S091
+        static let lastSelectedSourceType  = "lastSelectedSourceType"      // S091
     }
     
     // MARK: - Published Properties
@@ -344,6 +346,32 @@ class AppSettings: ObservableObject {
                 saveSecurityScopedBookmark(for: url)
             } else {
                 defaults.removeObject(forKey: Keys.lastOpenedFolder)
+            }
+        }
+    }
+
+    // MARK: - S091: Last Selected Source (not @Published — save-only, no UI binding)
+    
+    /// Last selected source path (absolute path string)
+    var lastSelectedSourcePath: String? {
+        get { defaults.string(forKey: Keys.lastSelectedSourcePath) }
+        set {
+            if let path = newValue {
+                defaults.set(path, forKey: Keys.lastSelectedSourcePath)
+            } else {
+                defaults.removeObject(forKey: Keys.lastSelectedSourcePath)
+            }
+        }
+    }
+    
+    /// Last selected source type (ImageSourceType raw value)
+    var lastSelectedSourceType: String? {
+        get { defaults.string(forKey: Keys.lastSelectedSourceType) }
+        set {
+            if let type = newValue {
+                defaults.set(type, forKey: Keys.lastSelectedSourceType)
+            } else {
+                defaults.removeObject(forKey: Keys.lastSelectedSourceType)
             }
         }
     }
@@ -592,5 +620,7 @@ class AppSettings: ObservableObject {
         autoSlideIntervalTurbo  = 1.5            // #172
         autoSlideLoops          = true           // #172
         gridSpacing             = 8              // #212
+        lastSelectedSourcePath  = nil            // S091
+        lastSelectedSourceType  = nil            // S091
     }
 }
