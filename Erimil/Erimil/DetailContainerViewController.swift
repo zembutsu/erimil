@@ -17,12 +17,9 @@ class DetailContainerViewController: NSViewController {
         showPlaceholder()
     }
 
-    /// Replace detail content immediately.
-    /// This is the mechanism that eliminates the 350ms NavigationSplitView delay.
-    /// Each call creates a fresh NSHostingView — same safety as .id() recreation.
     func updateContent<V: View>(_ swiftUIView: V) {
         currentHostingView?.removeFromSuperview()
-        let hostingView = NSHostingView(rootView: swiftUIView)
+        let hostingView = FlexibleHostingView(rootView: swiftUIView)
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(hostingView)
         NSLayoutConstraint.activate([
@@ -33,7 +30,7 @@ class DetailContainerViewController: NSViewController {
         ])
         currentHostingView = hostingView
         
-        // Force immediate layout — may kick SwiftUI's onAppear earlier
+        // Force immediate layout
         view.layoutSubtreeIfNeeded()
     }
 
@@ -45,5 +42,13 @@ class DetailContainerViewController: NSViewController {
                 description: Text("左のツリーから選んでください")
             )
         )
+    }
+}
+
+/// NSHostingView that does not report intrinsic content size.
+/// Prevents NSSplitView from shrinking to fit content height.
+private class FlexibleHostingView<Content: View>: NSHostingView<Content> {
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
     }
 }

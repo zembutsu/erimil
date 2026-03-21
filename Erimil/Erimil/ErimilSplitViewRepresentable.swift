@@ -66,7 +66,9 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
         sourceSelection.onSourceChanged = { [weak coordinator] url, source in
             coordinator?.handleDirectSwap(url: url, source: source)
         }
-
+        print("[makeNSVC] wrapper.view.bounds: \(wrapper.view.bounds)")
+        print("[makeNSVC] splitController.view.frame: \(splitController.view.frame)")
+        
         return wrapper
     }
 
@@ -100,10 +102,7 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
         nsViewController: WrapperViewController,
         context: Context
     ) -> CGSize? {
-        return CGSize(
-            width: proposal.width ?? 800,
-            height: proposal.height ?? 600
-        )
+        return nil  // Let SwiftUI determine size from parent
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -140,20 +139,33 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
         private var splitController: ErimilSplitViewController?
 
         override func loadView() {
-            self.view = NSView()
+            self.view = FillView()
         }
 
         func embed(_ child: ErimilSplitViewController) {
             splitController = child
             addChild(child)
-            child.view.translatesAutoresizingMaskIntoConstraints = true
-            child.view.autoresizingMask = [.width, .height]
+            child.view.frame = view.bounds
             view.addSubview(child.view)
         }
+    }
 
-        override func viewDidLayout() {
-            super.viewDidLayout()
-            splitController?.view.frame = view.bounds
+    /// NSSplitView ignores Auto Layout constraints and autoresizingMask
+    /// for height when children report small intrinsicContentSize.
+    /// This forces the split view to fill parent bounds on every layout pass.
+    private class FillView: NSView {
+        override func layout() {
+            super.layout()
+            let child = subviews.first
+            print("[FillView.layout] bounds: \(bounds), child.frame before: \(child?.frame ?? .zero)")
+            child?.frame = bounds
+            print("[FillView.layout] child.frame after: \(child?.frame ?? .zero)")
+        }
+        
+        override func resizeSubviews(withOldSize oldSize: NSSize) {
+            super.resizeSubviews(withOldSize: oldSize)
+            subviews.first?.frame = bounds
+            print("[FillView.resize] bounds: \(bounds), child.frame: \(subviews.first?.frame ?? .zero)")
         }
     }
 
