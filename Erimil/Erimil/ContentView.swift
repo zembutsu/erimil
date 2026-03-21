@@ -37,14 +37,11 @@ struct ContentView: View {
     @State private var showUnsavedAlert = false
     
     var body: some View {
-        // S090: Expand @Observable properties explicitly so SwiftUI's dependency
-        // tracking fires updateNSViewController when they change.
-        let currentURL = sourceSelection.currentURL
-        let currentSource = sourceSelection.currentSource
+        // S094: @Observable tracking removed from body.
+        // Sidebar highlight + detail swap are handled directly by
+        // handleDirectSwap — no body storm on source switch.
 
         ErimilSplitViewRepresentable(
-            currentURL: currentURL,
-            currentSource: currentSource,
             sourceSelection: sourceSelection,
             selectedFolderURL: $selectedFolderURL,
             folderReloadTrigger: folderReloadTrigger,

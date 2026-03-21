@@ -17,8 +17,6 @@ import os
 
 struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
     // MARK: - Source state
-    let currentURL: URL?
-    let currentSource: (any ImageSource)?
     let sourceSelection: SourceSelection
 
     // MARK: - Sidebar params
@@ -43,7 +41,7 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
 
     func makeNSViewController(context: Context) -> WrapperViewController {
         let splitController = ErimilSplitViewController()
-        let sidebarView = makeSidebarView()
+        let sidebarView = makeSidebarView(sourceURL: sourceSelection.currentURL)
         splitController.configure(sidebarView: AnyView(sidebarView))
 
         let wrapper = WrapperViewController()
@@ -53,13 +51,12 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
         coordinator.splitController = splitController
         coordinator.currentRepresentable = self
 
-        // Show initial content
-        if let imageSource = currentSource {
+        // Show initial content (read sourceSelection directly — no tracking outside body)
+        if let imageSource = sourceSelection.currentSource {
             let detailView = makeDetailView(imageSource: imageSource)
             splitController.detailController.updateContent(detailView)
-            coordinator.lastSourceURL = currentURL
+            coordinator.lastSourceURL = sourceSelection.currentURL
         }
-
         // S090: Set up immediate source change callback.
         // Called synchronously from SourceSelection.select(), bypassing
         // SwiftUI's ~350ms @Observable → body → updateNSVC cycle.
@@ -80,7 +77,8 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
             coordinator.currentRepresentable = self
 
             // --- Sidebar update (always — cheap rootView diff) ---
-            controller.updateSidebar(AnyView(makeSidebarView()))
+            // S094: Use coordinator's tracked URL, not @Observable
+            controller.updateSidebar(AnyView(makeSidebarView(sourceURL: coordinator.lastSourceURL)))
 
             // S093: Detail swap removed from SwiftUI update path.
             // handleDirectSwap (via onSourceChanged) is the sole detail update path.
@@ -116,9 +114,14 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
             if let source = source {
                 let detailView = repr.makeDetailView(imageSource: source)
                 splitController?.detailController.updateContent(detailView)
+                // S094: Update sidebar highlight directly — no body storm
+                let sidebarView = repr.makeSidebarView(sourceURL: url)
+                splitController?.updateSidebar(AnyView(sidebarView))
                 SourceSwitchTiming.mark("direct.swap.done")
             } else {
                 splitController?.detailController.showPlaceholder()
+                let sidebarView = repr.makeSidebarView(sourceURL: nil)
+                splitController?.updateSidebar(AnyView(sidebarView))
             }
         }
     }
@@ -161,13 +164,13 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
 
     // MARK: - View Builders
 
-    private func makeSidebarView() -> SidebarView {
+    func makeSidebarView(sourceURL: URL?) -> SidebarView {
         SidebarView(
-            selectedFolderURL: $selectedFolderURL,
-            currentSourceURL: currentURL,
-            onSourceSelect: onSourceSelect,
-            onOpenSlideMode: onOpenSlideMode,
-            reloadTrigger: folderReloadTrigger
+           selectedFolderURL: $selectedFolderURL,
+           currentSourceURL: sourceURL,
+           onSourceSelect: onSourceSelect,
+           onOpenSlideMode: onOpenSlideMode,
+           reloadTrigger: folderReloadTrigger
         )
     }
 
