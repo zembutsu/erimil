@@ -62,80 +62,77 @@ class SourceSelection {
     }
     
     func select(url: URL, type: ImageSourceType) {
-        guard url != currentURL || type != currentType else {
-            Logger.content.debug("[SourceSelection] Same source, skipping: \(url.lastPathComponent)")
-            return
-        }
-        
-        SourceSwitchTiming.mark("select.start")
-        Logger.content.info("[SourceSelection] select: \(url.lastPathComponent) (type: \(String(describing: type)))")
-        
-        // Invalidate any in-flight prefetch + pending consumer
-        prefetchLock.lock()
-        _prefetchedEntries = nil
-        _prefetchedURL = nil
-        pendingConsumer = nil          // ← S092: added
-        prefetchLock.unlock()
-        
-        // Atomic update
-        currentURL = url
-        currentType = type
-        
-        let source: any ImageSource
-        switch type {
-        case .archive:
-            source = ArchiveManager(zipURL: url)
-        case .folder:
-            source = FolderManager(folderURL: url)
-        case .pdf:
-            source = PDFManager(pdfURL: url)
-        }
-        currentSource = source
-        
-        SourceSwitchTiming.mark("select.done")
-        
-        // S091: Save for restoration
-        AppSettings.shared.lastSelectedSourcePath = url.path
-        AppSettings.shared.lastSelectedSourceType = type.rawValue
-        
-        // S092: Start prefetch BEFORE onSourceChanged.
-        // onSourceChanged → loadSource → requestEntries will store pendingConsumer.
-        // When prefetch completes, it delivers entries via that consumer.
-        // Result: exactly ONE listImageEntries call per source switch.
-        let thisID = UUID()
-        prefetchID = thisID
-        SourceSwitchTiming.mark("prefetch.start")
-        
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let entries = source.listImageEntries()
-            
-            guard let self, self.prefetchID == thisID else {
-                Logger.content.debug("[SourceSelection] Prefetch stale, discarding")
+            guard url != currentURL || type != currentType else {
+                Logger.content.debug("[SourceSelection] Same source, skipping: \(url.lastPathComponent)")
                 return
             }
             
-            self.prefetchLock.lock()
-            self._prefetchedEntries = entries
-            self._prefetchedURL = url
-            let consumer = self.pendingConsumer
-            self.pendingConsumer = nil
-            self.prefetchLock.unlock()
+            SourceSwitchTiming.mark("select.start")
+            Logger.content.info("[SourceSelection] select: \(url.lastPathComponent) (type: \(String(describing: type)))")
             
-            SourceSwitchTiming.mark("prefetch.ready(\(entries.count))")
+            // Invalidate any in-flight prefetch + pending consumer
+            prefetchLock.lock()
+            _prefetchedEntries = nil
+            _prefetchedURL = nil
+            pendingConsumer = nil
+            prefetchLock.unlock()
             
-            // S092: Deliver to waiting loadSource if it's pending
-            if let consumer {
-                DispatchQueue.main.async {
-                    consumer(entries)
+            // S093: DO NOT update @Observable properties here.
+            // Updating currentURL/currentType/currentSource triggers SwiftUI body storm (~300ms)
+            // that blocks main thread and delays everything queued after it.
+            // Instead, store internally and update @Observable AFTER detail swap completes.
+            let source: any ImageSource
+            switch type {
+            case .archive:
+                source = ArchiveManager(zipURL: url)
+            case .folder:
+                source = FolderManager(folderURL: url)
+            case .pdf:
+                source = PDFManager(pdfURL: url)
+            }
+            
+            SourceSwitchTiming.mark("select.done")
+            
+            // S091: Save for restoration
+            AppSettings.shared.lastSelectedSourcePath = url.path
+            AppSettings.shared.lastSelectedSourceType = type.rawValue
+            
+            // S093: Prefetch, then swap, then update @Observable
+            let thisID = UUID()
+            prefetchID = thisID
+            SourceSwitchTiming.mark("prefetch.start")
+            
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let entries = source.listImageEntries()
+                
+                guard let self, self.prefetchID == thisID else {
+                    Logger.content.debug("[SourceSelection] Prefetch stale, discarding")
+                    return
+                }
+                
+                self.prefetchLock.lock()
+                self._prefetchedEntries = entries
+                self._prefetchedURL = url
+                let consumer = self.pendingConsumer
+                self.pendingConsumer = nil
+                self.prefetchLock.unlock()
+                
+                SourceSwitchTiming.mark("prefetch.ready(\(entries.count))")
+                
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    
+                    // S093: Direct swap FIRST (no body storm yet)
+                    SourceSwitchTiming.mark("direct.swap")
+                    self.onSourceChanged?(url, source)
+                    
+                    // S093: NOW update @Observable — body storm happens AFTER grid is loaded
+                    self.currentURL = url
+                    self.currentType = type
+                    self.currentSource = source
                 }
             }
         }
-        
-        // S090: Immediate detail swap — synchronous from select()
-        SourceSwitchTiming.mark("direct.swap")
-        onSourceChanged?(url, source)
-    }
-    
     /// Clear all selection state
     func clear() {
         currentURL = nil

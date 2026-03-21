@@ -73,29 +73,19 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
     }
 
     func updateNSViewController(_ wrapper: WrapperViewController, context: Context) {
-        guard let controller = context.coordinator.splitController else { return }
-        let coordinator = context.coordinator
+            guard let controller = context.coordinator.splitController else { return }
+            let coordinator = context.coordinator
 
-        // Keep representable reference fresh (captures current bindings)
-        coordinator.currentRepresentable = self
+            // Keep representable reference fresh (captures current bindings)
+            coordinator.currentRepresentable = self
 
-        // --- Sidebar update (always — cheap rootView diff) ---
-        controller.updateSidebar(AnyView(makeSidebarView()))
+            // --- Sidebar update (always — cheap rootView diff) ---
+            controller.updateSidebar(AnyView(makeSidebarView()))
 
-        // --- Detail: source change detection ---
-        // S090: If direct swap already handled this URL, skip.
-        // This is the ~350ms-delayed SwiftUI path — the view is already on screen.
-        if coordinator.lastSourceURL != currentURL {
-            coordinator.lastSourceURL = currentURL
-
-            if let imageSource = currentSource {
-                let detailView = makeDetailView(imageSource: imageSource)
-                controller.detailController.updateContent(detailView)
-            } else {
-                controller.detailController.showPlaceholder()
-            }
+            // S093: Detail swap removed from SwiftUI update path.
+            // handleDirectSwap (via onSourceChanged) is the sole detail update path.
+            // This eliminates the redundant ~350ms-delayed SwiftUI path.
         }
-    }
 
     func sizeThatFits(
         _ proposal: ProposedViewSize,
