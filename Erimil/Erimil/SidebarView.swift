@@ -21,18 +21,21 @@ struct SidebarView: View {
     
     @State private var rootNode: FolderNode?
     @State private var expandedNodes: Set<URL> = []  // S023: Track expanded folders
+    @State private var childrenCache: [URL: [FolderNode]] = [:]  // #216: Lazy-loaded children
     
     var body: some View {
         VStack(spacing: 0) {
             if let root = rootNode {
                 List {
-                    ForEach(root.children ?? [], id: \.url) { node in
+                    ForEach(childrenCache[root.url] ?? [], id: \.url) { node in
                         NodeTreeView(
                             node: node,
                             selectedSourceURL: currentSourceURL,
                             expandedNodes: $expandedNodes,
+                            childrenCache: childrenCache,
                             onTap: handleNodeTap,
-                            onDoubleTap: handleNodeDoubleTap
+                            onDoubleTap: handleNodeDoubleTap,
+                            onLoadChildren: loadChildrenFor
                         )
                     }
                 }
@@ -80,11 +83,13 @@ struct SidebarView: View {
             // S023: Clear expansion state only when root folder changes
             if oldValue != newValue {
                 expandedNodes.removeAll()
+                childrenCache = [:]  // #216: Clear lazy cache for new root
             }
             reloadTree()
         }
         .onChange(of: reloadTrigger) { _, _ in
             // S023: reloadTree without clearing expandedNodes
+            childrenCache = [:]  // #216: Clear lazy cache to pick up changes
             reloadTree()
         }
     }
@@ -119,11 +124,16 @@ struct SidebarView: View {
     
     private func reloadTree() {
         Logger.sidebar.debug("reloadTree called, selectedFolderURL: \(selectedFolderURL?.path ?? "nil")")
-        if let url = selectedFolderURL {
-            // Verify folder exists
-            if FileManager.default.fileExists(atPath: url.path) {
-                rootNode = FolderNode(url: url)
-                Logger.sidebar.info("rootNode created, children count: \(rootNode?.children?.count ?? 0, privacy: .public)")
+            if let url = selectedFolderURL {
+                if FileManager.default.fileExists(atPath: url.path) {
+                    let start = CFAbsoluteTimeGetCurrent()
+                    // #216: Set cache BEFORE rootNode — ensures children are available
+                    // when SwiftUI re-evaluates body on rootNode change
+                    let children = FolderNode.loadChildren(of: url)
+                    childrenCache[url] = children
+                    rootNode = FolderNode(url: url)
+                    let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+                    Logger.sidebar.info("rootNode created, children count: \(children.count, privacy: .public), took \(String(format: "%.0f", elapsed))ms")
             } else {
                 Logger.sidebar.error("ERROR: Folder does not exist: \(url.path)")
                 // Fallback to Desktop
@@ -131,7 +141,14 @@ struct SidebarView: View {
             }
         } else {
             rootNode = nil
+            childrenCache = [:]
         }
+    }
+    
+    /// #216: Load children on demand when DisclosureGroup expands
+    private func loadChildrenFor(url: URL) {
+        guard childrenCache[url] == nil else { return }
+        childrenCache[url] = FolderNode.loadChildren(of: url)
     }
     
     private func fallbackToDesktop() {
@@ -163,6 +180,7 @@ struct SidebarView: View {
             if selectedFolderURL == url {
                 Logger.sidebar.debug("Same folder selected, forcing reload")
                 rootNode = nil
+                childrenCache = [:]  // #216: Clear lazy cache
                 // S023: Don't clear expandedNodes for same folder reload
             }
             
@@ -189,8 +207,10 @@ struct NodeTreeView: View {
     let node: FolderNode
     let selectedSourceURL: URL?
     @Binding var expandedNodes: Set<URL>
+    let childrenCache: [URL: [FolderNode]]  // #216: Lazy-loaded children
     let onTap: (FolderNode) -> Void
     let onDoubleTap: (FolderNode) -> Void
+    let onLoadChildren: (URL) -> Void  // #216: Request children load on expand
     
     private var isExpanded: Binding<Bool> {
         Binding(
@@ -198,6 +218,8 @@ struct NodeTreeView: View {
             set: { newValue in
                 if newValue {
                     expandedNodes.insert(node.url)
+                    // #216: Load children on demand when expanding
+                    onLoadChildren(node.url)
                 } else {
                     expandedNodes.remove(node.url)
                 }
@@ -205,21 +227,31 @@ struct NodeTreeView: View {
         )
     }
     
+    private var effectiveChildren: [FolderNode] {
+        childrenCache[node.url] ?? []
+    }
+    
     private var hasChildren: Bool {
-        guard let children = node.children else { return false }
-        return !children.isEmpty
+        // #216: If children are loaded, check actual count.
+        // If not loaded yet, assume directories might have children (show disclosure triangle).
+        if let cached = childrenCache[node.url] {
+            return !cached.isEmpty
+        }
+        return node.isDirectory
     }
     
     var body: some View {
         if hasChildren {
             DisclosureGroup(isExpanded: isExpanded) {
-                ForEach(node.children ?? [], id: \.url) { child in
+                ForEach(effectiveChildren, id: \.url) { child in
                     NodeTreeView(
                         node: child,
                         selectedSourceURL: selectedSourceURL,
                         expandedNodes: $expandedNodes,
+                        childrenCache: childrenCache,
                         onTap: onTap,
-                        onDoubleTap: onDoubleTap
+                        onDoubleTap: onDoubleTap,
+                        onLoadChildren: onLoadChildren
                     )
                 }
             } label: {
