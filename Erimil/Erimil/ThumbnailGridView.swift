@@ -103,7 +103,7 @@ struct ThumbnailGridView: View {
     @Binding var shouldReopenSlideMode: Bool    // S005: Reopen after source switch
     @Binding var shouldReopenViewerMode: Bool   // S016: Reopen Viewer Mode after source switch
     @Binding var isInViewerMode: Bool            // S051: Report Viewer Mode state to parent
-    var consumePrefetchedEntries: (() -> [ImageEntry]?)?  // S050: Prefetch from SourceSelection
+    var requestEntries: ((@escaping ([ImageEntry]) -> Void) -> Void)?  // S092: unified prefetch
     
     @ObservedObject private var settings = AppSettings.shared
     
@@ -858,17 +858,14 @@ struct ThumbnailGridView: View {
     
     private func loadSource() {
         SourceSwitchTiming.mark("load.start")
-        // #134 P8: Cancel all pending thumbnail operations on source switch.
-        // Prevents stale work from consuming thread pool for the old source.
         thumbnailQueue.cancelAllOperations()
         pendingOperations.removeAll()
         thumbnailCoalescer.clear()
-        // Generate new load ID to invalidate any pending async operations
         let newLoadID = UUID()
         loadID = newLoadID
         currentSourceURL = imageSource.url
         
-        // Clear UI state immediately on main thread
+        // Clear UI state immediately
         thumbnails = [:]
         contentHashes = [:]
         selectedPaths = []
@@ -879,21 +876,31 @@ struct ThumbnailGridView: View {
         showLoadingSpinner = false
         
         Logger.thumbnailGrid.debug("loadSource: shouldReopenViewerMode=\(shouldReopenViewerMode), previewMode=\(String(describing: previewMode))")
-        // S050: Try prefetched entries first (NO timer needed)
-        if let prefetched = consumePrefetchedEntries?() {
-            SourceSwitchTiming.mark("prefetch.hit")
+        
+        // S092: Spinner if loading takes >100ms
+        let spinnerTimer = DispatchWorkItem {
+            guard loadID == newLoadID, isLoadingSource else { return }
+            showLoadingSpinner = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: spinnerTimer)
+        
+        // S092: Unified entry request — one listImageEntries call per source switch.
+        // Hits immediately if prefetch completed, otherwise awaits the in-flight prefetch.
+        requestEntries? { loadedEntries in
+            spinnerTimer.cancel()
+            guard loadID == newLoadID else { return }
             
-            entries = prefetched
+            SourceSwitchTiming.end("load.done(\(loadedEntries.count))")
+            
+            entries = loadedEntries
             isLoadingSource = false
-            
-            SourceSwitchTiming.end("load.done(prefetch)")
+            showLoadingSpinner = false
             
             if !entries.isEmpty {
                 focusedIndex = 0
             }
             
-            // #122: Restore Viewer Mode immediately in same synchronous block
-            // Avoids 1+ frame gap via onChange(of: entries) → handleEntriesChange
+            // #122: Restore Viewer Mode
             if shouldReopenViewerMode && !entries.isEmpty {
                 let startIndex: Int
                 if let lastIndex = CacheManager.shared.getLastPosition(for: imageSource.url) {
@@ -904,65 +911,14 @@ struct ThumbnailGridView: View {
                 previewMode = .viewer(index: startIndex)
                 shouldReopenViewerMode = false
             } else if shouldReopenViewerMode && entries.isEmpty {
-                // #131: Clear flag on empty source to avoid Color.black stuck
                 shouldReopenViewerMode = false
             }
             
+            // S005: Reopen Slide Mode
             if shouldReopenSlideMode {
-                // #131: Update Slide Mode even for empty entries (shows emptySourceView)
                 shouldReopenSlideMode = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     reopenSlideModeAfterSwitch()
-                }
-            }
-            return
-        }
-        Logger.thumbnailGrid.debug("loadSource: prefetch MISS — consumePrefetchedEntries returned nil")
-        
-        // S050: Prefetch not ready — fallback to async load
-        SourceSwitchTiming.mark("prefetch.miss")
-        
-        // Show spinner only if async load takes >100ms
-        let spinnerTimer = DispatchWorkItem {
-            guard loadID == newLoadID, isLoadingSource else { return }
-            showLoadingSpinner = true
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: spinnerTimer)
-        
-        // Capture source reference for background work
-        let source = imageSource
-
-        // Run listImageEntries off main thread (#91)
-        DispatchQueue.global(qos: .userInitiated).async {
-            let loadedEntries = source.listImageEntries()
-            
-            DispatchQueue.main.async {
-                spinnerTimer.cancel()
-                // Stale check: discard if source changed during loading
-                guard loadID == newLoadID else { return }
-                
-                entries = loadedEntries
-                isLoadingSource = false
-                showLoadingSpinner = false
-                
-                SourceSwitchTiming.end("load.done")
-                
-                if !entries.isEmpty {
-                    focusedIndex = 0
-                }
-                
-                // S005: Reopen Slide Mode if flag is set
-                // #131: Update even for empty entries (shows emptySourceView)
-                if shouldReopenSlideMode {
-                    shouldReopenSlideMode = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        reopenSlideModeAfterSwitch()
-                    }
-                }
-                
-                // #131: Clear Viewer Mode flag on empty source
-                if shouldReopenViewerMode && entries.isEmpty {
-                    shouldReopenViewerMode = false
                 }
             }
         }
@@ -1944,6 +1900,6 @@ struct ThumbnailGridView: View {
         shouldReopenSlideMode: .constant(false),
         shouldReopenViewerMode: .constant(false),
         isInViewerMode: .constant(false),
-        consumePrefetchedEntries: nil
+        requestEntries: nil
     )
 }

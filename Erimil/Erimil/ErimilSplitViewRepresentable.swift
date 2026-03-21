@@ -193,8 +193,8 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
             shouldReopenSlideMode: $shouldReopenSlideMode,
             shouldReopenViewerMode: $shouldReopenViewerMode,
             isInViewerMode: $isInViewerMode,
-            consumePrefetchedEntries: {
-                sourceSelection.consumePrefetchedEntries(for: url)
+            requestEntries: { completion in
+                sourceSelection.requestEntries(for: url, completion: completion)
             }
         )
     }

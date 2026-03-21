@@ -36,42 +36,48 @@ class SourceSelection {
     private var _prefetchedURL: URL?
     private var prefetchID: UUID?
     
-    /// Consume prefetched entries if available for the given source URL.
-    /// Thread-safe: can be called from main thread while background is writing.
-    /// Returns entries and clears the buffer, or nil if not ready/mismatched.
-    func consumePrefetchedEntries(for url: URL) -> [ImageEntry]? {
+    /// S092: Pending consumer — stored when loadSource requests entries before prefetch completes
+    private var pendingConsumer: (([ImageEntry]) -> Void)?
+    
+    /// S092: Request entries for the given URL.
+    /// If prefetch is already complete, calls completion synchronously (prefetch.hit).
+    /// Otherwise, stores completion and calls it when prefetch finishes (prefetch.await).
+    /// Completion is always called on the main thread.
+    func requestEntries(for url: URL, completion: @escaping ([ImageEntry]) -> Void) {
         prefetchLock.lock()
-        defer { prefetchLock.unlock() }
-        
-        guard let entries = _prefetchedEntries, _prefetchedURL == url else {
-            return nil
+        if let entries = _prefetchedEntries, _prefetchedURL == url {
+            // Prefetch ready — consume immediately
+            _prefetchedEntries = nil
+            _prefetchedURL = nil
+            pendingConsumer = nil
+            prefetchLock.unlock()
+            SourceSwitchTiming.mark("prefetch.hit")
+            completion(entries)
+            return
         }
-        // Consume — one-time use
-        _prefetchedEntries = nil
-        _prefetchedURL = nil
-        return entries
+        // Not ready — store callback for prefetch completion
+        pendingConsumer = completion
+        prefetchLock.unlock()
+        SourceSwitchTiming.mark("prefetch.await")
     }
     
-    /// Select a new source — atomic update, no intermediate states
     func select(url: URL, type: ImageSourceType) {
-        // Skip if same source already loaded
         guard url != currentURL || type != currentType else {
             Logger.content.debug("[SourceSelection] Same source, skipping: \(url.lastPathComponent)")
             return
         }
         
-        // S050: T2 — model update starts
         SourceSwitchTiming.mark("select.start")
-        
         Logger.content.info("[SourceSelection] select: \(url.lastPathComponent) (type: \(String(describing: type)))")
         
-        // Invalidate any in-flight prefetch
+        // Invalidate any in-flight prefetch + pending consumer
         prefetchLock.lock()
         _prefetchedEntries = nil
         _prefetchedURL = nil
+        pendingConsumer = nil          // ← S092: added
         prefetchLock.unlock()
         
-        // Atomic update — all properties set before any view re-evaluation
+        // Atomic update
         currentURL = url
         currentType = type
         
@@ -86,20 +92,16 @@ class SourceSelection {
         }
         currentSource = source
         
-        // S050: T3 — model update complete, SwiftUI re-evaluation will follow
         SourceSwitchTiming.mark("select.done")
         
-        // S091: Save for restoration on next launch
+        // S091: Save for restoration
         AppSettings.shared.lastSelectedSourcePath = url.path
         AppSettings.shared.lastSelectedSourceType = type.rawValue
         
-        // S090: Immediate detail swap — bypasses SwiftUI's ~350ms update cycle.
-        // Called synchronously so the new view is on screen before SwiftUI even
-        // detects the @Observable change.
-        SourceSwitchTiming.mark("direct.swap")
-        onSourceChanged?(url, source)
-        
-        // Start prefetch immediately — writes result via lock, not main thread queue
+        // S092: Start prefetch BEFORE onSourceChanged.
+        // onSourceChanged → loadSource → requestEntries will store pendingConsumer.
+        // When prefetch completes, it delivers entries via that consumer.
+        // Result: exactly ONE listImageEntries call per source switch.
         let thisID = UUID()
         prefetchID = thisID
         SourceSwitchTiming.mark("prefetch.start")
@@ -112,14 +114,26 @@ class SourceSelection {
                 return
             }
             
-            // Write directly via lock — available immediately to loadSource()
             self.prefetchLock.lock()
             self._prefetchedEntries = entries
             self._prefetchedURL = url
+            let consumer = self.pendingConsumer
+            self.pendingConsumer = nil
             self.prefetchLock.unlock()
             
             SourceSwitchTiming.mark("prefetch.ready(\(entries.count))")
+            
+            // S092: Deliver to waiting loadSource if it's pending
+            if let consumer {
+                DispatchQueue.main.async {
+                    consumer(entries)
+                }
+            }
         }
+        
+        // S090: Immediate detail swap — synchronous from select()
+        SourceSwitchTiming.mark("direct.swap")
+        onSourceChanged?(url, source)
     }
     
     /// Clear all selection state
@@ -135,6 +149,7 @@ class SourceSelection {
         prefetchLock.lock()
         _prefetchedEntries = nil
         _prefetchedURL = nil
+        pendingConsumer = nil          // ← S092: added
         prefetchLock.unlock()
         prefetchID = nil
     }
