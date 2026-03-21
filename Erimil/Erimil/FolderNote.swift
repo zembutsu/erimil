@@ -26,11 +26,8 @@ struct FolderNode: Identifiable, Hashable {
         self.isZip = url.pathExtension.lowercased() == "zip"
         self.isPdf = url.pathExtension.lowercased() == "pdf"
         
-        if isDirectory {
-            self.children = FolderNode.loadChildren(of: url)
-        } else {
-            self.children = nil
-        }
+        // #216: No recursive loading — children loaded on demand by SidebarView
+        self.children = nil
     }
     
     static func loadChildren(of url: URL) -> [FolderNode] {
