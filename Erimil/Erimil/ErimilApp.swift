@@ -9,6 +9,13 @@ import SwiftUI
 
 @main
 struct ErimilApp: App {
+    init() {
+        // #216: Start background loading immediately on launch.
+        // CacheManager.shared is lazy — without this, loading wouldn't start
+        // until first access (e.g., when user clicks a source).
+        _ = CacheManager.shared
+    }
+    
     var body: some Scene {
         WindowGroup {
             ContentView()

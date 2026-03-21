@@ -250,9 +250,18 @@ struct ThumbnailGridView: View {
             isInViewerMode = newMode.isViewer
         }
         .onAppear {
+            SourceSwitchTiming.mark("grid.onAppear")
             if currentSourceURL != imageSource.url {
                 loadSource()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: CacheManager.didFinishLoadingNotification)) { _ in
+            // #216: Refresh UI after background cache loading completes
+            // Favorites ★, bookmarks, and reading direction may not have been
+            // available when grid first rendered
+            favoritesVersion += 1
+            bookmarksVersion += 1
+            readingDirectionVersion += 1
         }
     }
     

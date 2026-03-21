@@ -121,6 +121,15 @@ class CacheManager {
     private var deskewAnglesBySource: [String: [String: CGFloat]] = [:]
     private let deskewLock = NSLock()
     
+    // MARK: - Async Loading (#216)
+    
+    /// Background loading coordination — flushPendingWrites waits on this
+    private let loadingGroup = DispatchGroup()
+    /// Posted on main thread when all persistent data has been loaded
+    static let didFinishLoadingNotification = Notification.Name("CacheManagerDidFinishLoading")
+    /// True after all JSON files have been loaded into memory
+    private(set) var isLoaded = false
+    
     // MARK: - Async Write Infrastructure (#87)
     
     /// Serial background queue for all JSON writes (prevents UI blocking)
@@ -163,18 +172,34 @@ class CacheManager {
         // Create directories if needed
         createDirectoriesIfNeeded()
         
-        // Load index and favorites
-        loadIndex()
-        loadFavorites()
-        
-        // Load source settings (with migration from legacy format)
-        loadSourceSettings()
-        
-        // Load bookmarks (#62)
-        loadBookmarks()
-        
-        // Load deskew angles (#101)
-        loadDeskewAngles()
+        // #216: Load all persistent data asynchronously to avoid blocking app launch
+        // With 105K index entries, synchronous loading takes ~8s on main thread.
+        // All in-memory collections start empty — readers see cache misses (functionally correct)
+        // until loading completes and notification triggers UI refresh.
+        loadingGroup.enter()
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let start = CFAbsoluteTimeGetCurrent()
+            loadIndex()
+            let t1 = CFAbsoluteTimeGetCurrent()
+            loadFavorites()
+            let t2 = CFAbsoluteTimeGetCurrent()
+            loadSourceSettings()
+            let t3 = CFAbsoluteTimeGetCurrent()
+            loadBookmarks()
+            let t4 = CFAbsoluteTimeGetCurrent()
+            loadDeskewAngles()
+            let t5 = CFAbsoluteTimeGetCurrent()
+            
+            isLoaded = true
+            loadingGroup.leave()
+            
+            Logger.cache.info("#216: Background load times — index: \(String(format: "%.0f", (t1-start)*1000))ms, favorites: \(String(format: "%.0f", (t2-t1)*1000))ms, settings: \(String(format: "%.0f", (t3-t2)*1000))ms, bookmarks: \(String(format: "%.0f", (t4-t3)*1000))ms, deskew: \(String(format: "%.0f", (t5-t4)*1000))ms, total: \(String(format: "%.0f", (t5-start)*1000))ms")
+            
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: CacheManager.didFinishLoadingNotification, object: nil)
+                Logger.cache.info("#216: Background loading complete, notified UI")
+            }
+        }
     }
     
     private func createDirectoriesIfNeeded() {
@@ -200,6 +225,11 @@ class CacheManager {
     /// Flush all pending debounced writes synchronously.
     /// Call on app termination to prevent data loss.
     func flushPendingWrites() {
+        // #216: Ensure background loading is complete before flushing writes.
+        // Prevents saving empty in-memory data over populated JSON files
+        // if app terminates during background loading.
+        loadingGroup.wait()
+        
         writeLock.lock()
         indexSaveWorkItem?.cancel()
         favoritesSaveWorkItem?.cancel()
@@ -277,8 +307,10 @@ class CacheManager {
         
         do {
             let data = try Data(contentsOf: indexFileURL)
+            // #216: Decode outside lock — lock held only for assignment (~μs instead of ~seconds)
+            let decoded = try JSONDecoder().decode([String: String].self, from: data)
             indexLock.lock()
-            pathIndex = try JSONDecoder().decode([String: String].self, from: data)
+            pathIndex = decoded
             indexLock.unlock()
             Logger.cache.info("Loaded index with \(self.pathIndex.count, privacy: .public) entries")
         } catch {
@@ -462,17 +494,21 @@ class CacheManager {
         if fm.fileExists(atPath: hybridURL.path) {
             do {
                 let data = try Data(contentsOf: hybridURL)
+                // #216: Decode and process outside lock
                 let hybrid = try JSONDecoder().decode(HybridFavoritesFile.self, from: data)
-                
-                favoritesLock.lock()
-                self.favoritesByContent = Set(hybrid.byContent.keys)
-                self.favoritesBySource = Set(hybrid.bySource.keys)
-                self.sourceToContent = [:]
+                let byContent = Set(hybrid.byContent.keys)
+                let bySource = Set(hybrid.bySource.keys)
+                var s2c: [String: String] = [:]
                 for (sourceKey, metadata) in hybrid.bySource {
                     if let cHash = metadata.contentHash {
-                        self.sourceToContent[sourceKey] = cHash
+                        s2c[sourceKey] = cHash
                     }
                 }
+                
+                favoritesLock.lock()
+                self.favoritesByContent = byContent
+                self.favoritesBySource = bySource
+                self.sourceToContent = s2c
                 favoritesLock.unlock()
                 
                 Logger.cache.info("Loaded hybrid favorites: \(self.favoritesByContent.count, privacy: .public) by content, \(self.favoritesBySource.count, privacy: .public) by source")
@@ -917,8 +953,10 @@ class CacheManager {
         if fm.fileExists(atPath: sourceSettingsFileURL.path) {
             do {
                 let data = try Data(contentsOf: sourceSettingsFileURL)
+                // #216: Decode outside lock
+                let decoded = try JSONDecoder().decode([String: SourceSettings].self, from: data)
                 settingsLock.lock()
-                sourceSettings = try JSONDecoder().decode([String: SourceSettings].self, from: data)
+                sourceSettings = decoded
                 settingsLock.unlock()
                 Logger.cache.info("Loaded source settings with \(self.sourceSettings.count, privacy: .public) entries")
                 return
@@ -931,13 +969,15 @@ class CacheManager {
         if fm.fileExists(atPath: lastPositionFileURL.path) {
             do {
                 let data = try Data(contentsOf: lastPositionFileURL)
+                // #216: Decode and process outside lock
                 let legacyPositions = try JSONDecoder().decode([String: Int].self, from: data)
+                var migrated: [String: SourceSettings] = [:]
+                for (key, position) in legacyPositions {
+                    migrated[key] = SourceSettings(lastPosition: position, readingDirection: nil)
+                }
                 
                 settingsLock.lock()
-                sourceSettings = [:]
-                for (key, position) in legacyPositions {
-                    sourceSettings[key] = SourceSettings(lastPosition: position, readingDirection: nil)
-                }
+                sourceSettings = migrated
                 settingsLock.unlock()
                 
                 Logger.cache.debug("Migrated \(legacyPositions.count, privacy: .public) entries from last_position.json")
@@ -1170,8 +1210,10 @@ class CacheManager {
         
         do {
             let data = try Data(contentsOf: bookmarksFileURL)
+            // #216: Decode outside lock
+            let decoded = try JSONDecoder().decode([String: [Bookmark]].self, from: data)
             bookmarksLock.lock()
-            bookmarksBySource = try JSONDecoder().decode([String: [Bookmark]].self, from: data)
+            bookmarksBySource = decoded
             bookmarksLock.unlock()
             let total = bookmarksBySource.values.reduce(0) { $0 + $1.count }
             Logger.cache.info("Loaded bookmarks: \(total, privacy: .public) across \(self.bookmarksBySource.count, privacy: .public) sources")
@@ -1349,8 +1391,10 @@ class CacheManager {
         
         do {
             let data = try Data(contentsOf: deskewAnglesFileURL)
+            // #216: Decode outside lock
+            let decoded = try JSONDecoder().decode([String: [String: CGFloat]].self, from: data)
             deskewLock.lock()
-            deskewAnglesBySource = try JSONDecoder().decode([String: [String: CGFloat]].self, from: data)
+            deskewAnglesBySource = decoded
             deskewLock.unlock()
             let total = deskewAnglesBySource.values.reduce(0) { $0 + $1.count }
             Logger.cache.info("Loaded deskew angles: \(total, privacy: .public) pages across \(self.deskewAnglesBySource.count, privacy: .public) sources")
