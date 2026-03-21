@@ -3,6 +3,7 @@
 //  Erimil
 //
 //  S050: @Observable model for source selection state
+//  S090: Added onSourceChanged callback for immediate detail swap (#215 Phase 1)
 //
 //  Prefetch uses NSLock for thread-safe direct write from background thread,
 //  bypassing DispatchQueue.main.async which gets blocked by SwiftUI re-evaluation.
@@ -21,6 +22,11 @@ class SourceSelection {
     
     /// Current source type
     private(set) var currentType: ImageSourceType?
+    
+    /// S090: Immediate notification callback — called synchronously from select(),
+    /// bypassing SwiftUI's ~350ms @Observable → body → updateNSViewController cycle.
+    /// Set by ErimilSplitViewRepresentable's Coordinator.
+    var onSourceChanged: ((URL?, (any ImageSource)?) -> Void)?
     
     // MARK: - Prefetch (lock-based, not main-thread-dependent)
     
@@ -83,6 +89,12 @@ class SourceSelection {
         // S050: T3 — model update complete, SwiftUI re-evaluation will follow
         SourceSwitchTiming.mark("select.done")
         
+        // S090: Immediate detail swap — bypasses SwiftUI's ~350ms update cycle.
+        // Called synchronously so the new view is on screen before SwiftUI even
+        // detects the @Observable change.
+        SourceSwitchTiming.mark("direct.swap")
+        onSourceChanged?(url, source)
+        
         // Start prefetch immediately — writes result via lock, not main thread queue
         let thisID = UUID()
         prefetchID = thisID
@@ -111,6 +123,7 @@ class SourceSelection {
         currentURL = nil
         currentType = nil
         currentSource = nil
+        onSourceChanged?(nil, nil)
         prefetchLock.lock()
         _prefetchedEntries = nil
         _prefetchedURL = nil
