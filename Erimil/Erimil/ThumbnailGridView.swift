@@ -572,8 +572,35 @@ struct ThumbnailGridView: View {
                     onCellAppear: { entry in
                         loadThumbnailIfNeeded(for: entry)
                     },
+                    onCellTap: { index in
+                        focusedIndex = index
+                    },
+                    cellStateProvider: { index, entry in
+                        ThumbnailCellState(
+                            thumbnail: thumbnails[entry.path],
+                            isSelected: selectedPaths.contains(entry.path),
+                            isFocused: focusedIndex == index,
+                            favoriteStatus: getFavoriteStatus(entry),
+                            selectionMode: settings.selectionMode,
+                            isLastViewed: index == lastViewedIndex,
+                            isAnimatedFormat: entry.isAnimatedFormat,
+                            showProtectedFeedback: protectedFeedbackPath == entry.path
+                        )
+                    },
                     updater: collectionUpdater
                 )
+                .onChange(of: focusedIndex) { _, _ in
+                    collectionUpdater.refreshVisibleCells()
+                }
+                .onChange(of: selectedPaths) { _, _ in
+                    collectionUpdater.refreshVisibleCells()
+                }
+                .onChange(of: favoritesVersion) { _, _ in
+                    collectionUpdater.refreshVisibleCells()
+                }
+                .onChange(of: settings.selectionMode) { _, _ in
+                    collectionUpdater.refreshVisibleCells()
+                }
             }
             
             // Key event handler — always present, survives branch switches

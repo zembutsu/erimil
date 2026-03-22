@@ -16,6 +16,10 @@ class ThumbnailCollectionUpdater {
     func applyBatch(_ batch: [(path: String, image: NSImage)]) {
         coordinator?.applyThumbnailBatch(batch)
     }
+    
+    func refreshVisibleCells() {
+        coordinator?.refreshVisibleCells()
+    }
 }
 
 struct ThumbnailCollectionViewBridge: NSViewRepresentable {
@@ -24,6 +28,8 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
     let itemSize: CGFloat
     let spacing: CGFloat
     var onCellAppear: ((ImageEntry) -> Void)?
+    var onCellTap: ((Int) -> Void)?
+    var cellStateProvider: ((Int, ImageEntry) -> ThumbnailCellState)?
     let updater: ThumbnailCollectionUpdater
     
     func makeNSView(context: Context) -> NSScrollView {
@@ -41,7 +47,8 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         )
         collectionView.dataSource = context.coordinator
         collectionView.delegate = context.coordinator
-        collectionView.isSelectable = false
+        collectionView.isSelectable = true
+        collectionView.allowsMultipleSelection = false
         collectionView.backgroundColors = [.clear]
         
         let scrollView = NSScrollView()
@@ -62,6 +69,8 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         let entriesChanged = coordinator.entries.map(\.path) != entries.map(\.path)
         
         coordinator.onCellAppear = onCellAppear
+        coordinator.onCellTap = onCellTap
+        coordinator.cellStateProvider = cellStateProvider
         updater.coordinator = coordinator
         
         // Update layout if size changed
@@ -92,6 +101,8 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         var entries: [ImageEntry] = []
         var thumbnails: [String: NSImage] = [:]
         var onCellAppear: ((ImageEntry) -> Void)?
+        var onCellTap: ((Int) -> Void)?
+        var cellStateProvider: ((Int, ImageEntry) -> ThumbnailCellState)?
         weak var collectionView: NSCollectionView?
         
         private var appearedPaths: Set<String> = []
@@ -109,16 +120,26 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
                 withIdentifier: ThumbnailCollectionViewItem.identifier,
                 for: indexPath
             ) as! ThumbnailCollectionViewItem
-            
+           
             let entry = entries[indexPath.item]
-            item.configure(thumbnail: thumbnails[entry.path])
-            
+           
+            if let stateProvider = cellStateProvider {
+               item.configure(state: stateProvider(indexPath.item, entry))
+            } else {
+               item.configure(thumbnail: thumbnails[entry.path])
+            }
+           
             if !appearedPaths.contains(entry.path) {
                 appearedPaths.insert(entry.path)
                 onCellAppear?(entry)
             }
-            
             return item
+        }
+        
+        func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
+            guard let indexPath = indexPaths.first else { return }
+            collectionView.deselectItems(at: indexPaths)  // Erimilは独自のフォーカス管理
+            onCellTap?(indexPath.item)
         }
         
         func resetAppearanceTracking() {
@@ -144,6 +165,18 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
                         let entry = entries[indexPath.item]
                         cell.configure(thumbnail: thumbnails[entry.path])
                     }
+                }
+            }
+        }
+        
+        func refreshVisibleCells() {
+            guard let collectionView = collectionView,
+                  let stateProvider = cellStateProvider else { return }
+            for indexPath in collectionView.indexPathsForVisibleItems() {
+                guard indexPath.item < entries.count else { continue }
+                if let cell = collectionView.item(at: indexPath) as? ThumbnailCollectionViewItem {
+                    let entry = entries[indexPath.item]
+                    cell.configure(state: stateProvider(indexPath.item, entry))
                 }
             }
         }
