@@ -218,6 +218,7 @@ struct ThumbnailGridView: View {
     }
 
     var body: some View {
+        let _ = SourceSwitchTiming.count("grid.body")
         // S051: Guard against stale entries during source switch (#121)
         // When imageSource changes, body re-evaluates BEFORE onChange fires loadSource().
         // Without this guard, ViewerView/ThumbnailSidebarView would render with
@@ -1090,6 +1091,7 @@ struct ThumbnailGridView: View {
                 thumbnailQueue.addOperation(operation)    }
     
     private func flushThumbnailBuffer() {
+        SourceSwitchTiming.mark("coalescer.flush")
         let batch = thumbnailCoalescer.flush()
         guard !batch.isEmpty else { return }
         

@@ -31,7 +31,7 @@ class DetailContainerViewController: NSViewController {
         currentHostingView = hostingView
         
         // Force immediate layout
-        view.layoutSubtreeIfNeeded()
+        //view.layoutSubtreeIfNeeded()
     }
 
     func showPlaceholder() {

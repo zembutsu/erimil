@@ -108,13 +108,15 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
         func handleDirectSwap(url: URL?, source: (any ImageSource)?) {
             guard lastSourceURL != url else { return }
             lastSourceURL = url
+            SourceSwitchTiming.mark("swap.start")  // ← NEW
 
             guard let repr = currentRepresentable else { return }
 
             if let source = source {
-            let detailView = repr.makeDetailView(imageSource: source)
+                let detailView = repr.makeDetailView(imageSource: source)
+                SourceSwitchTiming.mark("swap.detail.created")  // ← NEW
                 splitController?.detailController.updateContent(detailView)
-                SourceSwitchTiming.mark("direct.swap.done")
+                SourceSwitchTiming.mark("direct.swap.done")  // 既存（互換維持）
             } else {
                 splitController?.detailController.showPlaceholder()
             }

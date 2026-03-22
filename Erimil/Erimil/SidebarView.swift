@@ -24,6 +24,7 @@ struct SidebarView: View {
     @State private var childrenCache: [URL: [FolderNode]] = [:]  // #216: Lazy-loaded children
     
     var body: some View {
+        let _ = SourceSwitchTiming.count("sidebar.body")
         VStack(spacing: 0) {
             if let root = rootNode {
                 List {
