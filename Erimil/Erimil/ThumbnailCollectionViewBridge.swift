@@ -20,6 +20,10 @@ class ThumbnailCollectionUpdater {
     func refreshVisibleCells() {
         coordinator?.refreshVisibleCells()
     }
+    
+    func scrollToItem(at index: Int, animated: Bool = true) {
+        coordinator?.scrollToItem(at: index, animated: animated)
+    }
 }
 
 struct ThumbnailCollectionViewBridge: NSViewRepresentable {
@@ -190,6 +194,20 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
                     let entry = entries[indexPath.item]
                     cell.configure(state: stateProvider(indexPath.item, entry))
                 }
+            }
+        }
+        
+        func scrollToItem(at index: Int, animated: Bool) {
+            guard let collectionView = collectionView,
+                  index >= 0, index < entries.count else { return }
+            let indexPath = IndexPath(item: index, section: 0)
+            
+            guard let attrs = collectionView.layoutAttributesForItem(at: indexPath) else { return }
+            
+            if animated {
+                collectionView.animator().scrollToVisible(attrs.frame)
+            } else {
+                collectionView.scrollToVisible(attrs.frame)
             }
         }
     }

@@ -590,8 +590,11 @@ struct ThumbnailGridView: View {
                     },
                     updater: collectionUpdater
                 )
-                .onChange(of: focusedIndex) { _, _ in
+                .onChange(of: focusedIndex) { _, newIndex in
                     collectionUpdater.refreshVisibleCells()
+                    if let index = newIndex {
+                        collectionUpdater.scrollToItem(at: index, animated: !isKeyRepeat)
+                    }
                 }
                 .onChange(of: selectedPaths) { _, _ in
                     collectionUpdater.refreshVisibleCells()
