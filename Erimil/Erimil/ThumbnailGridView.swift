@@ -144,6 +144,8 @@ struct ThumbnailGridView: View {
     @State private var isLoadingSource: Bool = true
     @State private var showLoadingSpinner: Bool = false
     
+    @State private var collectionUpdater = ThumbnailCollectionUpdater()
+    
     // #134 P8: Batch prefetch — OperationQueue to limit concurrent thumbnail generation.
         // Per-cell onAppear dispatch caused thread pool saturation (298 concurrent tasks).
         // maxConcurrentOperationCount=4 keeps CPU busy without flooding GCD.
@@ -569,7 +571,8 @@ struct ThumbnailGridView: View {
                     spacing: settings.gridSpacing,
                     onCellAppear: { entry in
                         loadThumbnailIfNeeded(for: entry)
-                    }
+                    },
+                    updater: collectionUpdater
                 )
             }
             
@@ -1023,18 +1026,25 @@ struct ThumbnailGridView: View {
         let batch = thumbnailCoalescer.flush()
         guard !batch.isEmpty else { return }
         
+        // Direct push to NSCollectionView — no @State update, no body re-eval
+        var appKitBatch: [(path: String, image: NSImage)] = []
         var assignedCount = 0
         for item in batch {
             guard entries.contains(where: { $0.path == item.path }) else { continue }
+            // Still update @State for other consumers (Viewer Mode etc.)
             thumbnails[item.path] = item.image
             if let hash = item.contentHash {
                 contentHashes[item.path] = hash
             }
             pendingOperations.removeValue(forKey: item.path)
+            appKitBatch.append((path: item.path, image: item.image))
             assignedCount += 1
         }
         
-        Logger.thumbnailGrid.info("★PERF★ FLUSH: \(assignedCount)/\(batch.count) thumbnails assigned in single body evaluation")
+        // Push directly to visible cells
+        collectionUpdater.applyBatch(appKitBatch)
+        
+        Logger.thumbnailGrid.info("★PERF★ FLUSH: \(assignedCount)/\(batch.count) thumbnails assigned")
     }
     
     // MARK: - Keyboard Navigation
