@@ -13,7 +13,7 @@ import os
 struct SidebarView: View {
     @Binding var selectedFolderURL: URL?
     // S050: Changed from @Binding to read-only — sidebar doesn't write to source selection
-    let currentSourceURL: URL?
+    let sourceSelection: SourceSelection
     // S050: 3 callbacks (onZip/Folder/Pdf) → 1 unified callback
     let onSourceSelect: (URL, ImageSourceType) -> Void
     var onOpenSlideMode: ((URL) -> Void)?  // S010: Double-click to open Slide Mode
@@ -24,13 +24,14 @@ struct SidebarView: View {
     @State private var childrenCache: [URL: [FolderNode]] = [:]  // #216: Lazy-loaded children
     
     var body: some View {
+        let _ = SourceSwitchTiming.count("sidebar.body")
         VStack(spacing: 0) {
             if let root = rootNode {
                 List {
                     ForEach(childrenCache[root.url] ?? [], id: \.url) { node in
                         NodeTreeView(
                             node: node,
-                            selectedSourceURL: currentSourceURL,
+                            selectedSourceURL: sourceSelection.currentURL,
                             expandedNodes: $expandedNodes,
                             childrenCache: childrenCache,
                             onTap: handleNodeTap,
@@ -341,7 +342,7 @@ struct NodeRowView: View {
 #Preview {
     SidebarView(
         selectedFolderURL: .constant(nil),
-        currentSourceURL: nil,
+        sourceSelection: SourceSelection(),
         onSourceSelect: { _, _ in },
         onOpenSlideMode: { _ in },
         reloadTrigger: UUID()

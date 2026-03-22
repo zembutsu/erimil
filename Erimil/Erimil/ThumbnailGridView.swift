@@ -103,7 +103,7 @@ struct ThumbnailGridView: View {
     @Binding var shouldReopenSlideMode: Bool    // S005: Reopen after source switch
     @Binding var shouldReopenViewerMode: Bool   // S016: Reopen Viewer Mode after source switch
     @Binding var isInViewerMode: Bool            // S051: Report Viewer Mode state to parent
-    var consumePrefetchedEntries: (() -> [ImageEntry]?)?  // S050: Prefetch from SourceSelection
+    var requestEntries: ((@escaping ([ImageEntry]) -> Void) -> Void)?  // S092: unified prefetch
     
     @ObservedObject private var settings = AppSettings.shared
     
@@ -143,6 +143,8 @@ struct ThumbnailGridView: View {
     @State private var readingDirectionVersion: Int = 0
     @State private var isLoadingSource: Bool = true
     @State private var showLoadingSpinner: Bool = false
+    
+    @State private var collectionUpdater = ThumbnailCollectionUpdater()
     
     // #134 P8: Batch prefetch — OperationQueue to limit concurrent thumbnail generation.
         // Per-cell onAppear dispatch caused thread pool saturation (298 concurrent tasks).
@@ -218,6 +220,7 @@ struct ThumbnailGridView: View {
     }
 
     var body: some View {
+        let _ = SourceSwitchTiming.count("grid.body")
         // S051: Guard against stale entries during source switch (#121)
         // When imageSource changes, body re-evaluates BEFORE onChange fires loadSource().
         // Without this guard, ViewerView/ThumbnailSidebarView would render with
@@ -561,86 +564,53 @@ struct ThumbnailGridView: View {
                     description: Text("このフォルダには画像ファイルが含まれていません")
                 )
             } else {
-                GeometryReader { geometry in
-                    ZStack {
-                        ScrollViewReader { scrollProxy in
-                            ScrollView {
-                                LazyVGrid(columns: columns, spacing: settings.gridSpacing, pinnedViews: [.sectionHeaders]) {
-                                    ForEach(gridSections) { section in
-                                        Section {
-                                            ForEach(section.items) { item in
-                                                ThumbnailCell(
-                                                    entry: item.entry,
-                                                    thumbnail: thumbnails[item.entry.path],
-                                                    isSelected: selectedPaths.contains(item.entry.path),
-                                                    isFocused: focusedIndex == item.index,
-                                                    favoriteStatus: getFavoriteStatus(item.entry),
-                                                    selectionMode: settings.selectionMode,
-                                                    size: settings.effectiveThumbnailSize,
-                                                    showProtectedFeedback: protectedFeedbackPath == item.entry.path,
-                                                    isLastViewed: item.index == lastViewedIndex  // #52
-                                                )
-                                                .id(item.index)
-                                                .onTapGesture {
-                                                    focusedIndex = item.index
-                                                }
-                                                .onAppear {
-                                                    loadThumbnailIfNeeded(for: item.entry)
-                                                }
-                                            }
-                                        } header: {
-                                            if let bookmark = section.bookmark {
-                                                BookmarkDividerView(
-                                                    bookmark: bookmark,
-                                                    sourceURL: imageSource.url,
-                                                    isRTL: isRTL,
-                                                    onNameChanged: { bookmarksVersion += 1 }
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                                .padding()
-                                .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection) // #54
-                            }
-                            .onChange(of: focusedIndex) { _, newIndex in
-                                if let index = newIndex {
-                                    if isKeyRepeat {
-                                        // #158: No animation during key repeat — immediate scroll
-                                        scrollProxy.scrollTo(index, anchor: .center)
-                                    } else {
-                                        withAnimation(.easeInOut(duration: 0.2)) {
-                                            scrollProxy.scrollTo(index, anchor: .center)
-                                        }
-                                    }
-                                }
-                            }
-                            // #193: Viewer Mode → Grid復帰時のスクロール復元
-                            // GridはViewer Modeで置き換えられるため再マウントされる。
-                            // focusedIndexは既に設定済みだが .onChange は値変化時のみ発火するので
-                            // onAppearで明示的にスクロールする。
-                            .onAppear {
-                                if let index = focusedIndex {
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                        scrollProxy.scrollTo(index, anchor: .center)
-                                    }
-                                }
-                            }
-                        }
+                ThumbnailCollectionViewBridge(
+                    entries: entries,
+                    thumbnails: thumbnails,
+                    itemSize: settings.effectiveThumbnailSize,
+                    spacing: settings.gridSpacing,
+                    isRTL: effectiveReadingDirection == .rtl,
+                    sourceURL: imageSource.url,
+                    onCellAppear: { entry in
+                        loadThumbnailIfNeeded(for: entry)
+                    },
+                    onCellTap: { index in
+                        focusedIndex = index
+                    },
+                    cellStateProvider: { index, entry in
+                        ThumbnailCellState(
+                            thumbnail: thumbnails[entry.path],
+                            isSelected: selectedPaths.contains(entry.path),
+                            isFocused: focusedIndex == index,
+                            favoriteStatus: getFavoriteStatus(entry),
+                            selectionMode: settings.selectionMode,
+                            isLastViewed: index == lastViewedIndex,
+                            isAnimatedFormat: entry.isAnimatedFormat,
+                            showProtectedFeedback: protectedFeedbackPath == entry.path
+                        )
+                    },
+                    updater: collectionUpdater
+                )
+                .onChange(of: focusedIndex) { _, newIndex in
+                    collectionUpdater.refreshVisibleCells()
+                    if let index = newIndex {
+                        collectionUpdater.scrollToItem(at: index, animated: !isKeyRepeat)
                     }
-                    .onAppear {
-                        updateColumnCount(for: geometry.size.width)
-                        // Initialize focus
-                        if focusedIndex == nil && !entries.isEmpty {
-                            focusedIndex = 0
-                        }
-                    }
-                    .onChange(of: geometry.size.width) { _, newWidth in
-                        updateColumnCount(for: newWidth)
-                    }
-                    .onChange(of: settings.effectiveThumbnailSize) { _, _ in
-                        updateColumnCount(for: geometry.size.width)
-                    }
+                }
+                .onChange(of: selectedPaths) { _, _ in
+                    collectionUpdater.refreshVisibleCells()
+                }
+                .onChange(of: favoritesVersion) { _, _ in
+                    collectionUpdater.refreshVisibleCells()
+                }
+                .onChange(of: settings.selectionMode) { _, _ in
+                    collectionUpdater.refreshVisibleCells()
+                }
+                .onChange(of: readingDirectionVersion) { _, _ in
+                    collectionUpdater.refreshVisibleCells()
+                }
+                .onChange(of: bookmarksVersion) { _, _ in
+                    collectionUpdater.reloadSections()
                 }
             }
             
@@ -858,17 +828,14 @@ struct ThumbnailGridView: View {
     
     private func loadSource() {
         SourceSwitchTiming.mark("load.start")
-        // #134 P8: Cancel all pending thumbnail operations on source switch.
-        // Prevents stale work from consuming thread pool for the old source.
         thumbnailQueue.cancelAllOperations()
         pendingOperations.removeAll()
         thumbnailCoalescer.clear()
-        // Generate new load ID to invalidate any pending async operations
         let newLoadID = UUID()
         loadID = newLoadID
         currentSourceURL = imageSource.url
         
-        // Clear UI state immediately on main thread
+        // Clear UI state immediately
         thumbnails = [:]
         contentHashes = [:]
         selectedPaths = []
@@ -879,21 +846,31 @@ struct ThumbnailGridView: View {
         showLoadingSpinner = false
         
         Logger.thumbnailGrid.debug("loadSource: shouldReopenViewerMode=\(shouldReopenViewerMode), previewMode=\(String(describing: previewMode))")
-        // S050: Try prefetched entries first (NO timer needed)
-        if let prefetched = consumePrefetchedEntries?() {
-            SourceSwitchTiming.mark("prefetch.hit")
+        
+        // S092: Spinner if loading takes >100ms
+        let spinnerTimer = DispatchWorkItem {
+            guard loadID == newLoadID, isLoadingSource else { return }
+            showLoadingSpinner = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: spinnerTimer)
+        
+        // S092: Unified entry request — one listImageEntries call per source switch.
+        // Hits immediately if prefetch completed, otherwise awaits the in-flight prefetch.
+        requestEntries? { loadedEntries in
+            spinnerTimer.cancel()
+            guard loadID == newLoadID else { return }
             
-            entries = prefetched
+            SourceSwitchTiming.end("load.done(\(loadedEntries.count))")
+            
+            entries = loadedEntries
             isLoadingSource = false
-            
-            SourceSwitchTiming.end("load.done(prefetch)")
+            showLoadingSpinner = false
             
             if !entries.isEmpty {
                 focusedIndex = 0
             }
             
-            // #122: Restore Viewer Mode immediately in same synchronous block
-            // Avoids 1+ frame gap via onChange(of: entries) → handleEntriesChange
+            // #122: Restore Viewer Mode
             if shouldReopenViewerMode && !entries.isEmpty {
                 let startIndex: Int
                 if let lastIndex = CacheManager.shared.getLastPosition(for: imageSource.url) {
@@ -904,65 +881,14 @@ struct ThumbnailGridView: View {
                 previewMode = .viewer(index: startIndex)
                 shouldReopenViewerMode = false
             } else if shouldReopenViewerMode && entries.isEmpty {
-                // #131: Clear flag on empty source to avoid Color.black stuck
                 shouldReopenViewerMode = false
             }
             
+            // S005: Reopen Slide Mode
             if shouldReopenSlideMode {
-                // #131: Update Slide Mode even for empty entries (shows emptySourceView)
                 shouldReopenSlideMode = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     reopenSlideModeAfterSwitch()
-                }
-            }
-            return
-        }
-        Logger.thumbnailGrid.debug("loadSource: prefetch MISS — consumePrefetchedEntries returned nil")
-        
-        // S050: Prefetch not ready — fallback to async load
-        SourceSwitchTiming.mark("prefetch.miss")
-        
-        // Show spinner only if async load takes >100ms
-        let spinnerTimer = DispatchWorkItem {
-            guard loadID == newLoadID, isLoadingSource else { return }
-            showLoadingSpinner = true
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: spinnerTimer)
-        
-        // Capture source reference for background work
-        let source = imageSource
-
-        // Run listImageEntries off main thread (#91)
-        DispatchQueue.global(qos: .userInitiated).async {
-            let loadedEntries = source.listImageEntries()
-            
-            DispatchQueue.main.async {
-                spinnerTimer.cancel()
-                // Stale check: discard if source changed during loading
-                guard loadID == newLoadID else { return }
-                
-                entries = loadedEntries
-                isLoadingSource = false
-                showLoadingSpinner = false
-                
-                SourceSwitchTiming.end("load.done")
-                
-                if !entries.isEmpty {
-                    focusedIndex = 0
-                }
-                
-                // S005: Reopen Slide Mode if flag is set
-                // #131: Update even for empty entries (shows emptySourceView)
-                if shouldReopenSlideMode {
-                    shouldReopenSlideMode = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        reopenSlideModeAfterSwitch()
-                    }
-                }
-                
-                // #131: Clear Viewer Mode flag on empty source
-                if shouldReopenViewerMode && entries.isEmpty {
-                    shouldReopenViewerMode = false
                 }
             }
         }
@@ -1050,10 +976,15 @@ struct ThumbnailGridView: View {
         let pathHash = cache.pathHash(for: fullPath)
         if let contentHash = cache.getContentHash(for: pathHash),
            let cached = cache.getThumbnailFromMemory(for: contentHash) {
-            thumbnails[entryPath] = cached
-            // #134 P4: Reuse already-resolved contentHash (was calling getContentHashForPath → redundant SHA256)
-            contentHashes[entryPath] = contentHash
-            Logger.thumbnailGrid.debug("★PERF★ SYNC memory hit: \(entryName)")
+            // S094: Buffer sync hits through coalescer — prevents N body re-evaluations
+            // for N visible cells. Direct assignment caused per-cell body storm on source switch.
+            let needsSchedule = thumbnailCoalescer.append((path: entryPath, image: cached, contentHash: contentHash))
+            if needsSchedule {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
+                    self.flushThumbnailBuffer()
+                }
+            }
+            Logger.thumbnailGrid.debug("★PERF★ SYNC memory hit (buffered): \(entryName)")
             return
         }
         
@@ -1129,21 +1060,29 @@ struct ThumbnailGridView: View {
                 thumbnailQueue.addOperation(operation)    }
     
     private func flushThumbnailBuffer() {
+        SourceSwitchTiming.mark("coalescer.flush")
         let batch = thumbnailCoalescer.flush()
         guard !batch.isEmpty else { return }
         
+        // Direct push to NSCollectionView — no @State update, no body re-eval
+        var appKitBatch: [(path: String, image: NSImage)] = []
         var assignedCount = 0
         for item in batch {
             guard entries.contains(where: { $0.path == item.path }) else { continue }
+            // Still update @State for other consumers (Viewer Mode etc.)
             thumbnails[item.path] = item.image
             if let hash = item.contentHash {
                 contentHashes[item.path] = hash
             }
             pendingOperations.removeValue(forKey: item.path)
+            appKitBatch.append((path: item.path, image: item.image))
             assignedCount += 1
         }
         
-        Logger.thumbnailGrid.info("★PERF★ FLUSH: \(assignedCount)/\(batch.count) thumbnails assigned in single body evaluation")
+        // Push directly to visible cells
+        collectionUpdater.applyBatch(appKitBatch)
+        
+        Logger.thumbnailGrid.info("★PERF★ FLUSH: \(assignedCount)/\(batch.count) thumbnails assigned")
     }
     
     // MARK: - Keyboard Navigation
@@ -1249,10 +1188,10 @@ struct ThumbnailGridView: View {
             moveFocus(by: isRTL ? -1 : 1)
             return true
         case 126: // Up arrow
-            moveFocus(by: -columnCount)
+            moveFocus(by: -collectionUpdater.currentColumnCount())
             return true
         case 125: // Down arrow
-            moveFocus(by: columnCount)
+            moveFocus(by: collectionUpdater.currentColumnCount())
             return true
             
         // Escape
@@ -1288,13 +1227,13 @@ struct ThumbnailGridView: View {
         // #169: Grid-specific pre-parser handling
         // W/S without modifiers = vertical (column-based) navigation — bypass CommonKeyParser
         if characters == "w" && !event.modifierFlags.contains(.control) {
-            moveFocus(by: -columnCount)
+            moveFocus(by: -collectionUpdater.currentColumnCount())
             return true
         }
         if characters == "s"
             && !event.modifierFlags.contains(.control)
             && !event.modifierFlags.contains(.shift) {
-            moveFocus(by: columnCount)
+            moveFocus(by: collectionUpdater.currentColumnCount())
             return true
         }
         // b without Shift: consume silently (preserve existing behavior)
@@ -1944,6 +1883,6 @@ struct ThumbnailGridView: View {
         shouldReopenSlideMode: .constant(false),
         shouldReopenViewerMode: .constant(false),
         isInViewerMode: .constant(false),
-        consumePrefetchedEntries: nil
+        requestEntries: nil
     )
 }

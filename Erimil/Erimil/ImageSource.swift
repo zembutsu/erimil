@@ -77,7 +77,7 @@ protocol ImageSource {
 }
 
 /// Source type for determining available actions
-enum ImageSourceType {
+enum ImageSourceType: String {
     case archive    // ZIP, tar.gz, etc.
     case folder     // Directory
     case pdf        // PDF document

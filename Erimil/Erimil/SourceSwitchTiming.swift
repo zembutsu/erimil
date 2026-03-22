@@ -34,6 +34,7 @@ struct SourceSwitchTiming {
         t0 = now
         tPrev = now
         marks = [(label, now)]
+        counters = [:]
         logger.info("[TIMING] ▶ \(label) (t=0ms)")
     }
     
@@ -45,6 +46,17 @@ struct SourceSwitchTiming {
         tPrev = now
         marks.append((label, now))
         logger.info("[TIMING] · \(label): \(String(format: "%.1f", fromStart))ms (Δ\(String(format: "%.1f", delta))ms)")
+    }
+    
+    /// Track repeated evaluations (e.g., body re-evaluation count)
+    private static var counters: [String: Int] = [:]
+    static func count(_ label: String) {
+        guard t0 > 0 else { return }  // No active pipeline
+        let now = CFAbsoluteTimeGetCurrent()
+        let fromStart = (now - t0) * 1000
+        let n = (counters[label] ?? 0) + 1
+        counters[label] = n
+        logger.info("[TIMING] # \(label) ×\(n): \(String(format: "%.1f", fromStart))ms")
     }
     
     /// Record final checkpoint and print summary

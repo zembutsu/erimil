@@ -5,6 +5,7 @@
 //  Created by Masahito Zembutsu on 2025/12/13.
 //  Updated: S010 (2025-01-11) - Sidebar double-click to open Slide Mode
 //  Updated: S050 (2026-02-22) - @Observable SourceSelection model (#93)
+//  Updated: S090 (2026-03-21) - #215 Phase 1: NavigationSplitView → NSSplitViewController
 //
 
 import SwiftUI
@@ -21,10 +22,10 @@ struct ContentView: View {
     // S005: Flag to reopen Slide Mode after source switch
     @State private var shouldReopenSlideMode: Bool = false
     
-    // S010: Flag to open Slide Mode from sidebar double-click
-    @State private var shouldOpenSlideMode: Bool = false
+    // S090: shouldOpenSlideMode removed — was dead code (never set to true).
+    //       openSlideModeForSource() uses shouldReopenSlideMode instead.
     
-    // S051: Track Viewer Mode state for .id()-driven view recreation (#121)
+    // S051: Track Viewer Mode state for view recreation (#121)
     @State private var isInViewerMode: Bool = false
     
     // S016: Flag to reopen Viewer Mode after source switch
@@ -36,36 +37,42 @@ struct ContentView: View {
     @State private var showUnsavedAlert = false
     
     var body: some View {
-        let selection = sourceSelection
-        NavigationSplitView {
-            // S050: 3 callbacks → 1 unified callback + read-only URL for highlight
-            SidebarView(
-                selectedFolderURL: $selectedFolderURL,
-                currentSourceURL: sourceSelection.currentURL,
-                onSourceSelect: { url, type in
-                    handleSourceSelectionAttempt(url: url, type: type)
-                },
-                onOpenSlideMode: { url in
-                    openSlideModeForSource(url)
-                },
-                reloadTrigger: folderReloadTrigger
-            )
-        } detail: {
-            // S050: Reads sourceSelection.currentSource — only detail re-evaluates on source change
-            DetailContainerView(
-                sourceSelection: sourceSelection,
-                selectedPaths: $selectedPaths,
-                shouldReopenSlideMode: $shouldReopenSlideMode,
-                shouldReopenViewerMode: $shouldReopenViewerMode,
-                shouldOpenSlideMode: $shouldOpenSlideMode,
-                isInViewerMode: $isInViewerMode,
-                onExportSuccess: { reloadFolder() },
-                onRequestNextSource: { navigateToNextSource() },
-                onRequestPreviousSource: { navigateToPreviousSource() },
-                onRequestSourceJump: { steps in navigateToSourceBySteps(steps) }
-            )
-        }
+        // S094: @Observable tracking removed from body.
+        // Sidebar highlight + detail swap are handled directly by
+        // handleDirectSwap — no body storm on source switch.
+
+        ErimilSplitViewRepresentable(
+            sourceSelection: sourceSelection,
+            selectedFolderURL: $selectedFolderURL,
+            folderReloadTrigger: folderReloadTrigger,
+            selectedPaths: $selectedPaths,
+            shouldReopenSlideMode: $shouldReopenSlideMode,
+            shouldReopenViewerMode: $shouldReopenViewerMode,
+            isInViewerMode: $isInViewerMode,
+            onSourceSelect: { url, type in
+                handleSourceSelectionAttempt(url: url, type: type)
+            },
+            onOpenSlideMode: { url in
+                openSlideModeForSource(url)
+            },
+            onExportSuccess: { reloadFolder() },
+            onRequestNextSource: { navigateToNextSource() },
+            onRequestPreviousSource: { navigateToPreviousSource() },
+            onRequestSourceJump: { steps in navigateToSourceBySteps(steps) }
+        )
         .frame(minWidth: 800, minHeight: 600)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    NSApp.keyWindow?.firstResponder?.tryToPerform(
+                        #selector(NSSplitViewController.toggleSidebar(_:)),
+                        with: nil
+                    )
+                } label: {
+                    Image(systemName: "sidebar.leading")
+                }
+            }
+        }
         // S050: onChange × 2 chain REMOVED — model.select() handles everything atomically
         .alert("未保存の変更があります", isPresented: $showUnsavedAlert) {
             Button("保存せず移動", role: .destructive) {
@@ -95,6 +102,21 @@ struct ContentView: View {
             selectedFolderURL = restoredFolder
             // Update the published property (without triggering didSet bookmark save)
             AppSettings.shared.lastOpenedFolderURL = restoredFolder
+            
+            // S091: Restore last selected source within this folder
+            if let sourcePath = AppSettings.shared.lastSelectedSourcePath,
+               let typeString = AppSettings.shared.lastSelectedSourceType,
+               let type = ImageSourceType(rawValue: typeString) {
+                let sourceURL = URL(fileURLWithPath: sourcePath)
+                if FileManager.default.fileExists(atPath: sourcePath) {
+                    Logger.content.info("Restoring last source: \(sourceURL.lastPathComponent)")
+                    sourceSelection.select(url: sourceURL, type: type)
+                } else {
+                    Logger.content.debug("Last source no longer exists, clearing: \(sourcePath)")
+                    AppSettings.shared.lastSelectedSourcePath = nil
+                    AppSettings.shared.lastSelectedSourceType = nil
+                }
+            }
         } else {
             Logger.content.debug("No folder to restore, or access denied")
         }
@@ -117,7 +139,7 @@ struct ContentView: View {
             pendingSourceType = type
             showUnsavedAlert = true
         } else {
-            // S051: Preserve Viewer Mode across .id()-driven view recreation
+            // S051: Preserve Viewer Mode across view recreation
             if isInViewerMode {
                 shouldReopenViewerMode = true
             }
@@ -234,51 +256,9 @@ struct ContentView: View {
     }
 }
 
-// S050: Isolate detail re-evaluation from sidebar
-// Only this view re-evaluates when currentSource changes
-private struct DetailContainerView: View {
-    let sourceSelection: SourceSelection
-    @Binding var selectedPaths: Set<String>
-    @Binding var shouldReopenSlideMode: Bool
-    @Binding var shouldReopenViewerMode: Bool
-    @Binding var shouldOpenSlideMode: Bool
-    @Binding var isInViewerMode: Bool
-    let onExportSuccess: () -> Void
-    let onRequestNextSource: () -> Void
-    let onRequestPreviousSource: () -> Void
-    let onRequestSourceJump: (Int) -> Void
-    
-    var body: some View {
-        if let imageSource = sourceSelection.currentSource {
-            ThumbnailGridView(
-                imageSource: imageSource,
-                selectedPaths: $selectedPaths,
-                onExportSuccess: onExportSuccess,
-                onRequestNextSource: onRequestNextSource,
-                onRequestPreviousSource: onRequestPreviousSource,
-                onRequestSourceJump: onRequestSourceJump,
-                shouldReopenSlideMode: $shouldReopenSlideMode,
-                shouldReopenViewerMode: $shouldReopenViewerMode,
-                isInViewerMode: $isInViewerMode,
-                consumePrefetchedEntries: {
-                    sourceSelection.consumePrefetchedEntries(for: imageSource.url)
-                }
-            )
-            .id(imageSource.url)  // S051: Force view recreation on source switch (#121)
-            .onChange(of: shouldOpenSlideMode) { _, newValue in
-                if newValue {
-                    shouldOpenSlideMode = false
-                }
-            }
-        } else {
-            ContentUnavailableView(
-                "ZIPファイルまたはフォルダを選択",
-                systemImage: "archivebox",
-                description: Text("左のツリーから選んでください")
-            )
-        }
-    }
-}
+// S090: DetailContainerView struct DELETED.
+// Replaced by DetailContainerViewController (AppKit).
+// The .id(imageSource.url) pattern is replaced by NSHostingView swap.
 
 #Preview {
     ContentView()
