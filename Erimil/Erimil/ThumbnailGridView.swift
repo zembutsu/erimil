@@ -562,87 +562,15 @@ struct ThumbnailGridView: View {
                     description: Text("このフォルダには画像ファイルが含まれていません")
                 )
             } else {
-                GeometryReader { geometry in
-                    ZStack {
-                        ScrollViewReader { scrollProxy in
-                            ScrollView {
-                                LazyVGrid(columns: columns, spacing: settings.gridSpacing, pinnedViews: [.sectionHeaders]) {
-                                    ForEach(gridSections) { section in
-                                        Section {
-                                            ForEach(section.items) { item in
-                                                ThumbnailCell(
-                                                    entry: item.entry,
-                                                    thumbnail: thumbnails[item.entry.path],
-                                                    isSelected: selectedPaths.contains(item.entry.path),
-                                                    isFocused: focusedIndex == item.index,
-                                                    favoriteStatus: getFavoriteStatus(item.entry),
-                                                    selectionMode: settings.selectionMode,
-                                                    size: settings.effectiveThumbnailSize,
-                                                    showProtectedFeedback: protectedFeedbackPath == item.entry.path,
-                                                    isLastViewed: item.index == lastViewedIndex  // #52
-                                                )
-                                                .id(item.index)
-                                                .onTapGesture {
-                                                    focusedIndex = item.index
-                                                }
-                                                .onAppear {
-                                                    loadThumbnailIfNeeded(for: item.entry)
-                                                }
-                                            }
-                                        } header: {
-                                            if let bookmark = section.bookmark {
-                                                BookmarkDividerView(
-                                                    bookmark: bookmark,
-                                                    sourceURL: imageSource.url,
-                                                    isRTL: isRTL,
-                                                    onNameChanged: { bookmarksVersion += 1 }
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                                .padding()
-                                .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection) // #54
-                            }
-                            .onChange(of: focusedIndex) { _, newIndex in
-                                if let index = newIndex {
-                                    if isKeyRepeat {
-                                        // #158: No animation during key repeat — immediate scroll
-                                        scrollProxy.scrollTo(index, anchor: .center)
-                                    } else {
-                                        withAnimation(.easeInOut(duration: 0.2)) {
-                                            scrollProxy.scrollTo(index, anchor: .center)
-                                        }
-                                    }
-                                }
-                            }
-                            // #193: Viewer Mode → Grid復帰時のスクロール復元
-                            // GridはViewer Modeで置き換えられるため再マウントされる。
-                            // focusedIndexは既に設定済みだが .onChange は値変化時のみ発火するので
-                            // onAppearで明示的にスクロールする。
-                            .onAppear {
-                                if let index = focusedIndex {
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                        scrollProxy.scrollTo(index, anchor: .center)
-                                    }
-                                }
-                            }
-                        }
+                ThumbnailCollectionViewBridge(
+                    entries: entries,
+                    thumbnails: thumbnails,
+                    itemSize: settings.effectiveThumbnailSize,
+                    spacing: settings.gridSpacing,
+                    onCellAppear: { entry in
+                        loadThumbnailIfNeeded(for: entry)
                     }
-                    .onAppear {
-                        updateColumnCount(for: geometry.size.width)
-                        // Initialize focus
-                        if focusedIndex == nil && !entries.isEmpty {
-                            focusedIndex = 0
-                        }
-                    }
-                    .onChange(of: geometry.size.width) { _, newWidth in
-                        updateColumnCount(for: newWidth)
-                    }
-                    .onChange(of: settings.effectiveThumbnailSize) { _, _ in
-                        updateColumnCount(for: geometry.size.width)
-                    }
-                }
+                )
             }
             
             // Key event handler — always present, survives branch switches
