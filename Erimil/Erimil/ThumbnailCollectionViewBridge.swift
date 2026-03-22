@@ -27,6 +27,7 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
     let thumbnails: [String: NSImage]
     let itemSize: CGFloat
     let spacing: CGFloat
+    let isRTL: Bool
     var onCellAppear: ((ImageEntry) -> Void)?
     var onCellTap: ((Int) -> Void)?
     var cellStateProvider: ((Int, ImageEntry) -> ThumbnailCellState)?
@@ -41,6 +42,11 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         
         let collectionView = NSCollectionView()
         collectionView.collectionViewLayout = layout
+        if isRTL {
+            collectionView.userInterfaceLayoutDirection = .rightToLeft
+        } else {
+            collectionView.userInterfaceLayoutDirection = .leftToRight
+        }
         collectionView.register(
             ThumbnailCollectionViewItem.self,
             forItemWithIdentifier: ThumbnailCollectionViewItem.identifier
@@ -67,6 +73,12 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         let coordinator = context.coordinator
         let entriesChanged = coordinator.entries.map(\.path) != entries.map(\.path)
+        
+        let newDirection: NSUserInterfaceLayoutDirection = isRTL ? .rightToLeft : .leftToRight
+        if coordinator.collectionView?.userInterfaceLayoutDirection != newDirection {
+            coordinator.collectionView?.userInterfaceLayoutDirection = newDirection
+            coordinator.collectionView?.reloadData()
+        }
         
         coordinator.onCellAppear = onCellAppear
         coordinator.onCellTap = onCellTap
