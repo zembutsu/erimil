@@ -570,6 +570,7 @@ struct ThumbnailGridView: View {
                     itemSize: settings.effectiveThumbnailSize,
                     spacing: settings.gridSpacing,
                     isRTL: effectiveReadingDirection == .rtl,
+                    sourceURL: imageSource.url,
                     onCellAppear: { entry in
                         loadThumbnailIfNeeded(for: entry)
                     },
@@ -607,6 +608,9 @@ struct ThumbnailGridView: View {
                 }
                 .onChange(of: readingDirectionVersion) { _, _ in
                     collectionUpdater.refreshVisibleCells()
+                }
+                .onChange(of: bookmarksVersion) { _, _ in
+                    collectionUpdater.reloadSections()
                 }
             }
             

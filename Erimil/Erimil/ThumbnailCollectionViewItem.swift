@@ -219,3 +219,48 @@ class ThumbnailCollectionViewItem: NSCollectionViewItem {
         borderView.layer?.borderWidth = 0
     }
 }
+
+// MARK: - Section Header
+
+class ThumbnailSectionHeaderView: NSView, NSCollectionViewElement {
+    static let identifier = NSUserInterfaceItemIdentifier("ThumbnailSectionHeader")
+    
+    private let label = NSTextField(labelWithString: "")
+    private let divider = NSBox()
+    
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        setup()
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+    
+    private func setup() {
+        wantsLayer = true
+        
+        divider.boxType = .separator
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(divider)
+        
+        label.font = .systemFont(ofSize: 11, weight: .medium)
+        label.textColor = .secondaryLabelColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        
+        NSLayoutConstraint.activate([
+            divider.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            divider.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            divider.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
+        ])
+    }
+    
+    func configure(title: String) {
+        label.stringValue = title
+    }
+}

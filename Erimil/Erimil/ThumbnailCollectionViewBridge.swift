@@ -4,6 +4,8 @@
 //
 //  S096: #215 Phase 2 — NSViewRepresentable bridge for NSCollectionView.
 //  Step 1.5: Direct thumbnail push via ThumbnailCollectionUpdater.
+//  Step 3: Scroll-to-focused-item support.
+//  Step 4: Bookmark section headers via Coordinator-side calculation.
 //
 
 import SwiftUI
@@ -24,6 +26,10 @@ class ThumbnailCollectionUpdater {
     func scrollToItem(at index: Int, animated: Bool = true) {
         coordinator?.scrollToItem(at: index, animated: animated)
     }
+    
+    func reloadSections() {
+        coordinator?.rebuildSectionsAndReload()
+    }
 }
 
 struct ThumbnailCollectionViewBridge: NSViewRepresentable {
@@ -32,6 +38,7 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
     let itemSize: CGFloat
     let spacing: CGFloat
     let isRTL: Bool
+    let sourceURL: URL
     var onCellAppear: ((ImageEntry) -> Void)?
     var onCellTap: ((Int) -> Void)?
     var cellStateProvider: ((Int, ImageEntry) -> ThumbnailCellState)?
@@ -46,14 +53,15 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         
         let collectionView = NSCollectionView()
         collectionView.collectionViewLayout = layout
-        if isRTL {
-            collectionView.userInterfaceLayoutDirection = .rightToLeft
-        } else {
-            collectionView.userInterfaceLayoutDirection = .leftToRight
-        }
+        collectionView.userInterfaceLayoutDirection = isRTL ? .rightToLeft : .leftToRight
         collectionView.register(
             ThumbnailCollectionViewItem.self,
             forItemWithIdentifier: ThumbnailCollectionViewItem.identifier
+        )
+        collectionView.register(
+            ThumbnailSectionHeaderView.self,
+            forSupplementaryViewOfKind: NSCollectionView.elementKindSectionHeader,
+            withIdentifier: ThumbnailSectionHeaderView.identifier
         )
         collectionView.dataSource = context.coordinator
         collectionView.delegate = context.coordinator
@@ -69,6 +77,7 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         scrollView.drawsBackground = false
         
         context.coordinator.collectionView = collectionView
+        context.coordinator.sourceURL = sourceURL
         updater.coordinator = context.coordinator
         
         return scrollView
@@ -87,6 +96,7 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         coordinator.onCellAppear = onCellAppear
         coordinator.onCellTap = onCellTap
         coordinator.cellStateProvider = cellStateProvider
+        coordinator.sourceURL = sourceURL
         updater.coordinator = coordinator
         
         // Update layout if size changed
@@ -100,18 +110,19 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         }
         
         if entriesChanged {
-            // Source switch — full reload
             coordinator.entries = entries
             coordinator.thumbnails = thumbnails
             coordinator.resetAppearanceTracking()
+            coordinator.rebuildSections()
             coordinator.collectionView?.reloadData()
         }
-        // Thumbnail-only changes are handled via applyThumbnailBatch — no reloadData()
     }
     
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
+    
+    // MARK: - Coordinator
     
     class Coordinator: NSObject, NSCollectionViewDataSource, NSCollectionViewDelegateFlowLayout {
         var entries: [ImageEntry] = []
@@ -120,15 +131,88 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         var onCellTap: ((Int) -> Void)?
         var cellStateProvider: ((Int, ImageEntry) -> ThumbnailCellState)?
         weak var collectionView: NSCollectionView?
+        var sourceURL: URL?
         
+        // MARK: - Section Management
+        
+        struct SectionInfo {
+            let bookmarkName: String?   // nil = no header (pre-bookmark section)
+            let range: Range<Int>       // global entry indices
+        }
+        
+        private(set) var sections: [SectionInfo] = []
         private var appearedPaths: Set<String> = []
         
+        func rebuildSections() {
+            guard !entries.isEmpty else {
+                sections = []
+                return
+            }
+            
+            guard let sourceURL = sourceURL else {
+                sections = [SectionInfo(bookmarkName: nil, range: 0..<entries.count)]
+                return
+            }
+            
+            let bookmarks = CacheManager.shared.getBookmarks(for: sourceURL)
+            let sorted = bookmarks
+                .filter { $0.imageIndex >= 0 && $0.imageIndex < entries.count }
+                .sorted { $0.imageIndex < $1.imageIndex }
+            
+            if sorted.isEmpty {
+                sections = [SectionInfo(bookmarkName: nil, range: 0..<entries.count)]
+                return
+            }
+            
+            var result: [SectionInfo] = []
+            
+            // Pre-bookmark section (no header)
+            if let first = sorted.first, first.imageIndex > 0 {
+                result.append(SectionInfo(bookmarkName: nil, range: 0..<first.imageIndex))
+            }
+            
+            // Each bookmark starts a section
+            for (i, bm) in sorted.enumerated() {
+                let start = bm.imageIndex
+                let end = (i + 1 < sorted.count) ? sorted[i + 1].imageIndex : entries.count
+                if start < end {
+                    result.append(SectionInfo(bookmarkName: bm.name, range: start..<end))
+                }
+            }
+            
+            sections = result
+        }
+        
+        func rebuildSectionsAndReload() {
+            rebuildSections()
+            collectionView?.reloadData()
+        }
+        
+        // MARK: - Index Mapping
+        
+        private func globalIndex(for indexPath: IndexPath) -> Int {
+            guard indexPath.section < sections.count else { return indexPath.item }
+            return sections[indexPath.section].range.lowerBound + indexPath.item
+        }
+        
+        private func indexPath(forGlobalIndex index: Int) -> IndexPath? {
+            for (s, section) in sections.enumerated() {
+                if section.range.contains(index) {
+                    return IndexPath(item: index - section.range.lowerBound, section: s)
+                }
+            }
+            return nil
+        }
+        
+        // MARK: - Data Source
+        
         func numberOfSections(in collectionView: NSCollectionView) -> Int {
-            1
+            sections.count
         }
         
         func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int {
-            entries.count
+            guard section < sections.count else { return 0 }
+            return sections[section].range.count
         }
         
         func collectionView(_ collectionView: NSCollectionView, itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
@@ -136,15 +220,16 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
                 withIdentifier: ThumbnailCollectionViewItem.identifier,
                 for: indexPath
             ) as! ThumbnailCollectionViewItem
-           
-            let entry = entries[indexPath.item]
-           
+            
+            let gIdx = globalIndex(for: indexPath)
+            let entry = entries[gIdx]
+            
             if let stateProvider = cellStateProvider {
-               item.configure(state: stateProvider(indexPath.item, entry))
+                item.configure(state: stateProvider(gIdx, entry))
             } else {
-               item.configure(thumbnail: thumbnails[entry.path])
+                item.configure(thumbnail: thumbnails[entry.path])
             }
-           
+            
             if !appearedPaths.contains(entry.path) {
                 appearedPaths.insert(entry.path)
                 onCellAppear?(entry)
@@ -152,35 +237,58 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
             return item
         }
         
+        func collectionView(_ collectionView: NSCollectionView, viewForSupplementaryElementOfKind kind: NSCollectionView.SupplementaryElementKind, at indexPath: IndexPath) -> NSView {
+            guard kind == NSCollectionView.elementKindSectionHeader else {
+                return NSView()
+            }
+            let header = collectionView.makeSupplementaryView(
+                ofKind: kind,
+                withIdentifier: ThumbnailSectionHeaderView.identifier,
+                for: indexPath
+            ) as! ThumbnailSectionHeaderView
+            
+            if indexPath.section < sections.count,
+               let name = sections[indexPath.section].bookmarkName {
+                header.configure(title: "📖 \(name)")
+            } else {
+                header.configure(title: "")
+            }
+            return header
+        }
+        
+        // MARK: - Flow Layout Delegate
+        
+        func collectionView(_ collectionView: NSCollectionView, layout collectionViewLayout: NSCollectionViewLayout, referenceSizeForHeaderInSection section: Int) -> NSSize {
+            guard section < sections.count,
+                  sections[section].bookmarkName != nil else {
+                return .zero
+            }
+            return NSSize(width: collectionView.bounds.width, height: 28)
+        }
+        
+        // MARK: - Selection
+        
         func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
             guard let indexPath = indexPaths.first else { return }
-            collectionView.deselectItems(at: indexPaths)  // Erimilは独自のフォーカス管理
-            onCellTap?(indexPath.item)
+            collectionView.deselectItems(at: indexPaths)
+            onCellTap?(globalIndex(for: indexPath))
         }
         
         func resetAppearanceTracking() {
             appearedPaths.removeAll()
         }
         
-        /// Direct thumbnail update — bypasses SwiftUI body re-evaluation
+        // MARK: - Direct Updates (bypass SwiftUI)
+        
         func applyThumbnailBatch(_ batch: [(path: String, image: NSImage)]) {
             guard let collectionView = collectionView else { return }
             
-            var indexPathsToReload: [IndexPath] = []
             for item in batch {
                 thumbnails[item.path] = item.image
-                if let idx = entries.firstIndex(where: { $0.path == item.path }) {
-                    indexPathsToReload.append(IndexPath(item: idx, section: 0))
-                }
-            }
-            
-            if !indexPathsToReload.isEmpty {
-                // Directly configure visible cells without full reload
-                for indexPath in indexPathsToReload {
-                    if let cell = collectionView.item(at: indexPath) as? ThumbnailCollectionViewItem {
-                        let entry = entries[indexPath.item]
-                        cell.configure(thumbnail: thumbnails[entry.path])
-                    }
+                if let gIdx = entries.firstIndex(where: { $0.path == item.path }),
+                   let ip = indexPath(forGlobalIndex: gIdx),
+                   let cell = collectionView.item(at: ip) as? ThumbnailCollectionViewItem {
+                    cell.configure(thumbnail: item.image)
                 }
             }
         }
@@ -188,21 +296,20 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         func refreshVisibleCells() {
             guard let collectionView = collectionView,
                   let stateProvider = cellStateProvider else { return }
-            for indexPath in collectionView.indexPathsForVisibleItems() {
-                guard indexPath.item < entries.count else { continue }
-                if let cell = collectionView.item(at: indexPath) as? ThumbnailCollectionViewItem {
-                    let entry = entries[indexPath.item]
-                    cell.configure(state: stateProvider(indexPath.item, entry))
+            for ip in collectionView.indexPathsForVisibleItems() {
+                let gIdx = globalIndex(for: ip)
+                guard gIdx < entries.count else { continue }
+                if let cell = collectionView.item(at: ip) as? ThumbnailCollectionViewItem {
+                    cell.configure(state: stateProvider(gIdx, entries[gIdx]))
                 }
             }
         }
         
         func scrollToItem(at index: Int, animated: Bool) {
             guard let collectionView = collectionView,
-                  index >= 0, index < entries.count else { return }
-            let indexPath = IndexPath(item: index, section: 0)
-            
-            guard let attrs = collectionView.layoutAttributesForItem(at: indexPath) else { return }
+                  index >= 0, index < entries.count,
+                  let ip = indexPath(forGlobalIndex: index),
+                  let attrs = collectionView.layoutAttributesForItem(at: ip) else { return }
             
             if animated {
                 collectionView.animator().scrollToVisible(attrs.frame)
