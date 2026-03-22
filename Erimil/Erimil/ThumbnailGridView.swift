@@ -1188,10 +1188,10 @@ struct ThumbnailGridView: View {
             moveFocus(by: isRTL ? -1 : 1)
             return true
         case 126: // Up arrow
-            moveFocus(by: -columnCount)
+            moveFocus(by: -collectionUpdater.currentColumnCount())
             return true
         case 125: // Down arrow
-            moveFocus(by: columnCount)
+            moveFocus(by: collectionUpdater.currentColumnCount())
             return true
             
         // Escape
@@ -1227,13 +1227,13 @@ struct ThumbnailGridView: View {
         // #169: Grid-specific pre-parser handling
         // W/S without modifiers = vertical (column-based) navigation — bypass CommonKeyParser
         if characters == "w" && !event.modifierFlags.contains(.control) {
-            moveFocus(by: -columnCount)
+            moveFocus(by: -collectionUpdater.currentColumnCount())
             return true
         }
         if characters == "s"
             && !event.modifierFlags.contains(.control)
             && !event.modifierFlags.contains(.shift) {
-            moveFocus(by: columnCount)
+            moveFocus(by: collectionUpdater.currentColumnCount())
             return true
         }
         // b without Shift: consume silently (preserve existing behavior)

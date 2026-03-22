@@ -30,6 +30,10 @@ class ThumbnailCollectionUpdater {
     func reloadSections() {
         coordinator?.rebuildSectionsAndReload()
     }
+    
+    func currentColumnCount() -> Int {
+        coordinator?.currentColumnCount() ?? 4
+    }
 }
 
 struct ThumbnailCollectionViewBridge: NSViewRepresentable {
@@ -49,7 +53,7 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         layout.itemSize = NSSize(width: itemSize, height: itemSize)
         layout.minimumInteritemSpacing = spacing
         layout.minimumLineSpacing = spacing
-        layout.sectionInset = NSEdgeInsets(top: spacing, left: spacing, bottom: spacing, right: spacing)
+        layout.sectionInset = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
         
         let collectionView = NSCollectionView()
         collectionView.collectionViewLayout = layout
@@ -102,11 +106,14 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         // Update layout if size changed
         if let layout = coordinator.collectionView?.collectionViewLayout as? NSCollectionViewFlowLayout {
             let newSize = NSSize(width: itemSize, height: itemSize)
-            if layout.itemSize != newSize {
+            if layout.itemSize != newSize
+                || layout.minimumInteritemSpacing != spacing
+                || layout.minimumLineSpacing != spacing {
                 layout.itemSize = newSize
                 layout.minimumInteritemSpacing = spacing
                 layout.minimumLineSpacing = spacing
             }
+            coordinator.updateLayoutForWidth()
         }
         
         if entriesChanged {
@@ -114,6 +121,7 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
             coordinator.thumbnails = thumbnails
             coordinator.resetAppearanceTracking()
             coordinator.rebuildSections()
+            coordinator.updateLayoutForWidth()
             coordinator.collectionView?.reloadData()
         }
     }
@@ -185,6 +193,7 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         
         func rebuildSectionsAndReload() {
             rebuildSections()
+            updateLayoutForWidth()
             collectionView?.reloadData()
         }
         
@@ -315,6 +324,33 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
                 collectionView.animator().scrollToVisible(attrs.frame)
             } else {
                 collectionView.scrollToVisible(attrs.frame)
+            }
+        }
+        
+        func currentColumnCount() -> Int {
+            guard let cv = collectionView,
+                  let layout = cv.collectionViewLayout as? NSCollectionViewFlowLayout else { return 4 }
+            let available = cv.visibleRect.width - layout.sectionInset.left - layout.sectionInset.right
+            let itemWidth = layout.itemSize.width + layout.minimumInteritemSpacing
+            return max(1, Int(available / itemWidth))
+        }
+        
+        func updateLayoutForWidth() {
+            guard let cv = collectionView,
+                  let layout = cv.collectionViewLayout as? NSCollectionViewFlowLayout else { return }
+            let itemW = layout.itemSize.width
+            let interitem = layout.minimumInteritemSpacing
+            let totalWidth = cv.visibleRect.width
+            guard totalWidth > 0 else { return }
+            
+            // LazyVGrid .adaptive replication: pack as many as fit, absorb remainder into margins
+            let columns = max(1, Int((totalWidth + interitem) / (itemW + interitem)))
+            let usedWidth = CGFloat(columns) * itemW + CGFloat(columns - 1) * interitem
+            let margin = max(0, (totalWidth - usedWidth) / 2)
+            
+            let newInset = NSEdgeInsets(top: 8, left: margin, bottom: 8, right: margin)
+            if layout.sectionInset.left != newInset.left {
+                layout.sectionInset = newInset
             }
         }
     }
