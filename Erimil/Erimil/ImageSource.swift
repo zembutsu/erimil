@@ -74,6 +74,8 @@ protocol ImageSource {
 
     /// アニメーション全フレームをデコード。非アニメーションまたは安全上限超過時はnil。
     func animatedImageContent(for entry: ImageEntry) -> AnimatedImageContent?
+    
+    func registerThumbnailForTileSheet(for entry: ImageEntry, contentHash: String, image: NSImage)
 }
 
 /// Source type for determining available actions
@@ -101,5 +103,9 @@ extension ImageSource {
     func animatedImageContent(for entry: ImageEntry) -> AnimatedImageContent? {
         guard let url = fileURL(for: entry) else { return nil }
         return AnimatedImageContent.decode(from: url)
+    }
+    
+    func registerThumbnailForTileSheet(for entry: ImageEntry, contentHash: String, image: NSImage) {
+        // Default: no-op (FolderManager etc.)
     }
 }

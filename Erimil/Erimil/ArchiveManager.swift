@@ -240,6 +240,14 @@ class ArchiveManager: ImageSource {
         return thumbnail
     }
     
+    func registerThumbnailForTileSheet(for entry: ImageEntry, contentHash: String, image: NSImage) {
+        guard !tileSheetAvailable, let hash = cachedArchiveHash else { return }
+        TileSheetCache.shared.registerThumbnail(
+            for: url, archiveHash: hash, entryPath: entry.path,
+            contentHash: contentHash, image: image
+        )
+    }
+    
     /// #24: Background prefetch — collect all thumbnails for tile sheet build.
     /// Runs on utility queue. Uses existing cache when available, generates otherwise.
     private func prefetchAllThumbnails() {

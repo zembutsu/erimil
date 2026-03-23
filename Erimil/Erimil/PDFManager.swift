@@ -197,6 +197,14 @@ class PDFManager: ImageSource {
         return thumbnail
     }
     
+    func registerThumbnailForTileSheet(for entry: ImageEntry, contentHash: String, image: NSImage) {
+        guard !tileSheetAvailable, let hash = pdfArchiveHash else { return }
+        TileSheetCache.shared.registerThumbnail(
+            for: url, archiveHash: hash, entryPath: entry.path,
+            contentHash: contentHash, image: image
+        )
+    }
+    
     /// Get full-size image for a page
     func fullImage(for entry: ImageEntry) -> NSImage? {
         // #165: Check memory cache first (prevents redundant render on SwiftUI re-evaluation)
