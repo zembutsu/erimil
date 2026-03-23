@@ -259,9 +259,16 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
             }
             
             if !appearedPaths.contains(entry.path) {
-                appearedPaths.insert(entry.path)
-                onCellAppear?(entry)
-            }
+                            appearedPaths.insert(entry.path)
+                            onCellAppear?(entry)
+                            
+                            // Sync cache hit: applyBatch updated coordinator.thumbnails
+                            // but collectionView.item(at:) couldn't find cell during creation.
+                            // Re-configure directly since we still hold the item reference.
+                            if let image = thumbnails[entry.path] {
+                                item.configure(thumbnail: image)
+                            }
+                        }
             return item
         }
         
