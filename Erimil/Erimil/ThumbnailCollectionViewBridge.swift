@@ -84,6 +84,22 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         context.coordinator.sourceURL = sourceURL
         updater.coordinator = context.coordinator
         
+        // Observe frame changes for adaptive sectionInset (#221)
+        context.coordinator.frameObservation = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: collectionView,
+            queue: .main
+        ) { [weak coordinator = context.coordinator] _ in
+            guard let coordinator = coordinator,
+                  let cv = coordinator.collectionView else { return }
+            let newWidth = cv.visibleRect.width
+            if newWidth > 0 && newWidth != coordinator.lastKnownWidth {
+                coordinator.lastKnownWidth = newWidth
+                coordinator.updateLayoutForWidth()
+            }
+        }
+        collectionView.postsFrameChangedNotifications = true
+        
         return scrollView
     }
     
@@ -150,6 +166,9 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         
         private(set) var sections: [SectionInfo] = []
         private var appearedPaths: Set<String> = []
+        
+        var frameObservation: NSObjectProtocol?
+        var lastKnownWidth: CGFloat = 0
         
         func rebuildSections() {
             guard !entries.isEmpty else {
@@ -351,6 +370,12 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
             let newInset = NSEdgeInsets(top: 8, left: margin, bottom: 8, right: margin)
             if layout.sectionInset.left != newInset.left {
                 layout.sectionInset = newInset
+            }
+        }
+        
+        deinit {
+            if let obs = frameObservation {
+                NotificationCenter.default.removeObserver(obs)
             }
         }
     }
