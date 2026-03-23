@@ -363,12 +363,19 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
             guard totalWidth > 0 else { return }
             
             // LazyVGrid .adaptive replication: pack as many as fit, absorb remainder into margins
-            let columns = max(1, Int((totalWidth + interitem) / (itemW + interitem)))
+            let edgePadding: CGFloat = 8
+            let availableWidth = totalWidth - edgePadding * 2
+            let columns = max(1, Int((availableWidth + interitem) / (itemW + interitem)))
             let usedWidth = CGFloat(columns) * itemW + CGFloat(columns - 1) * interitem
-            let margin = max(0, (totalWidth - usedWidth) / 2)
-            
-            let newInset = NSEdgeInsets(top: 8, left: margin, bottom: 8, right: margin)
-            if layout.sectionInset.left != newInset.left {
+            let remainder = max(0, availableWidth - usedWidth)
+            let isRTL = cv.userInterfaceLayoutDirection == .rightToLeft
+            let newInset = NSEdgeInsets(
+                top: 8,
+                left: isRTL ? remainder + edgePadding : edgePadding,
+                bottom: 8,
+                right: isRTL ? edgePadding : remainder + edgePadding
+            )
+            if layout.sectionInset.left != newInset.left || layout.sectionInset.right != newInset.right {
                 layout.sectionInset = newInset
             }
         }
