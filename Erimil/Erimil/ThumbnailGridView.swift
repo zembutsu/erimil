@@ -971,20 +971,25 @@ struct ThumbnailGridView: View {
             fullPath = imageSource.url.path + "/" + entry.path
         }
         
-        // #134 P1: Synchronous memory cache check — avoid async dispatch + ProgressView flash
+        // #134 P1: Synchronous memory cache check
         let cache = CacheManager.shared
         let pathHash = cache.pathHash(for: fullPath)
         if let contentHash = cache.getContentHash(for: pathHash),
            let cached = cache.getThumbnailFromMemory(for: contentHash) {
-            // S094: Buffer sync hits through coalescer — prevents N body re-evaluations
-            // for N visible cells. Direct assignment caused per-cell body storm on source switch.
-            let needsSchedule = thumbnailCoalescer.append((path: entryPath, image: cached, contentHash: contentHash))
-            if needsSchedule {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
-                    self.flushThumbnailBuffer()
-                }
-            }
-            Logger.thumbnailGrid.debug("★PERF★ SYNC memory hit (buffered): \(entryName)")
+            thumbnails[entryPath] = cached
+            contentHashes[entryPath] = contentHash
+            collectionUpdater.applyBatch([(path: entryPath, image: cached)])
+            Logger.thumbnailGrid.debug("★PERF★ SYNC memory hit (immediate): \(entryName)")
+            return
+        }
+        
+        // #221: Sync disk cache check
+        if let contentHash = cache.getContentHash(for: pathHash),
+           let diskCached = cache.getThumbnailFromDisk(for: contentHash) {
+            thumbnails[entryPath] = diskCached
+            contentHashes[entryPath] = contentHash
+            collectionUpdater.applyBatch([(path: entryPath, image: diskCached)])
+            Logger.thumbnailGrid.debug("★PERF★ SYNC disk hit (immediate): \(entryName)")
             return
         }
         

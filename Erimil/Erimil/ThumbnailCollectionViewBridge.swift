@@ -84,6 +84,22 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         context.coordinator.sourceURL = sourceURL
         updater.coordinator = context.coordinator
         
+        // Observe frame changes for adaptive sectionInset (#221)
+        context.coordinator.frameObservation = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: collectionView,
+            queue: .main
+        ) { [weak coordinator = context.coordinator] _ in
+            guard let coordinator = coordinator,
+                  let cv = coordinator.collectionView else { return }
+            let newWidth = cv.visibleRect.width
+            if newWidth > 0 && newWidth != coordinator.lastKnownWidth {
+                coordinator.lastKnownWidth = newWidth
+                coordinator.updateLayoutForWidth()
+            }
+        }
+        collectionView.postsFrameChangedNotifications = true
+        
         return scrollView
     }
     
@@ -150,6 +166,9 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         
         private(set) var sections: [SectionInfo] = []
         private var appearedPaths: Set<String> = []
+        
+        var frameObservation: NSObjectProtocol?
+        var lastKnownWidth: CGFloat = 0
         
         func rebuildSections() {
             guard !entries.isEmpty else {
@@ -240,9 +259,16 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
             }
             
             if !appearedPaths.contains(entry.path) {
-                appearedPaths.insert(entry.path)
-                onCellAppear?(entry)
-            }
+                            appearedPaths.insert(entry.path)
+                            onCellAppear?(entry)
+                            
+                            // Sync cache hit: applyBatch updated coordinator.thumbnails
+                            // but collectionView.item(at:) couldn't find cell during creation.
+                            // Re-configure directly since we still hold the item reference.
+                            if let image = thumbnails[entry.path] {
+                                item.configure(thumbnail: image)
+                            }
+                        }
             return item
         }
         
@@ -344,13 +370,26 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
             guard totalWidth > 0 else { return }
             
             // LazyVGrid .adaptive replication: pack as many as fit, absorb remainder into margins
-            let columns = max(1, Int((totalWidth + interitem) / (itemW + interitem)))
+            let edgePadding: CGFloat = 8
+            let availableWidth = totalWidth - edgePadding * 2
+            let columns = max(1, Int((availableWidth + interitem) / (itemW + interitem)))
             let usedWidth = CGFloat(columns) * itemW + CGFloat(columns - 1) * interitem
-            let margin = max(0, (totalWidth - usedWidth) / 2)
-            
-            let newInset = NSEdgeInsets(top: 8, left: margin, bottom: 8, right: margin)
-            if layout.sectionInset.left != newInset.left {
+            let remainder = max(0, availableWidth - usedWidth)
+            let isRTL = cv.userInterfaceLayoutDirection == .rightToLeft
+            let newInset = NSEdgeInsets(
+                top: 8,
+                left: isRTL ? remainder + edgePadding : edgePadding,
+                bottom: 8,
+                right: isRTL ? edgePadding : remainder + edgePadding
+            )
+            if layout.sectionInset.left != newInset.left || layout.sectionInset.right != newInset.right {
                 layout.sectionInset = newInset
+            }
+        }
+        
+        deinit {
+            if let obs = frameObservation {
+                NotificationCenter.default.removeObserver(obs)
             }
         }
     }
