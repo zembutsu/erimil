@@ -263,6 +263,22 @@ class TileSheetCache {
             self?.buildTileSheets(build)
         }
     }
+    
+    /// Finalize pending build immediately (cancel debounce timer).
+    /// Called when prefetch completes — all entries are registered.
+    func finalizeBuild(for hash: String) {
+        pendingLock.lock()
+        guard let build = pendingBuilds.removeValue(forKey: hash) else {
+            pendingLock.unlock()
+            return
+        }
+        build.buildWorkItem?.cancel()
+        pendingLock.unlock()
+
+        buildQueue.async { [weak self] in
+            self?.buildTileSheets(build)
+        }
+    }
 
     private func buildTileSheets(_ build: PendingBuild) {
         // Sort by entryPath (same order as ArchiveManager.listImageEntries)

@@ -990,6 +990,7 @@ struct ThumbnailGridView: View {
             contentHashes[entryPath] = contentHash
             collectionUpdater.applyBatch([(path: entryPath, image: diskCached)])
             Logger.thumbnailGrid.debug("★PERF★ SYNC disk hit (immediate): \(entryName)")
+            imageSource.registerThumbnailForTileSheet(for: entry, contentHash: contentHash, image: diskCached)
             return
         }
         
