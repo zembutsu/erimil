@@ -303,6 +303,7 @@ class ArchiveManager: ImageSource {
             }
 
             Logger.cache.info("TileSheet prefetch: completed \(entries.count, privacy: .public) entries")
+            TileSheetCache.shared.finalizeBuild(for: hash)
         }
     }
     
