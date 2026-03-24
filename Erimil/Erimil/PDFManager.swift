@@ -36,6 +36,8 @@ class PDFManager: ImageSource {
     private var tileSheetAvailable = false
     private var prefetchStarted = false
     private var pdfArchiveHash: String?
+    private let prefetchQueue = DispatchQueue(label: "com.erimil.pdf.prefetch", qos: .utility)
+    private let prefetchPageLimit = 500
     
     init(pdfURL: URL) {
         self.url = pdfURL
@@ -95,9 +97,17 @@ class PDFManager: ImageSource {
                         let loaded = tileSheet.loadAllThumbnails(for: url, archiveHash: hash)
                         if loaded == 0 {
                             tileSheetAvailable = false
+                            prefetchAllThumbnails(entries: entries)
                         } else {
                             Logger.pdf.info("TileSheet: preloaded \(loaded, privacy: .public) thumbnails for \(self.url.lastPathComponent)")
+                            if loaded < entries.count {
+                                tileSheetAvailable = false
+                                Logger.pdf.info("TileSheet: partial coverage (\(loaded)/\(entries.count)) — starting prefetch")
+                                prefetchAllThumbnails(entries: entries)
+                            }
                         }
+                    } else {
+                        prefetchAllThumbnails(entries: entries)
                     }
                 }
             }
@@ -303,6 +313,61 @@ class PDFManager: ImageSource {
         
         // Convert 1-based page number to 0-based index
         return pageNumber - 1
+    }
+    
+    // MARK: - Tile Sheet Prefetch (#223)
+    /// #223: entries passed as parameter to avoid accessQueue deadlock when called from listImageEntries().
+    private func prefetchAllThumbnails(entries: [ImageEntry]) {
+        let pdfURL = self.url
+        let maxSize: CGFloat = AppSettings.shared.effectiveRetinaThumbnailSize
+        guard let hash = pdfArchiveHash else { return }
+        let limit = min(entries.count, prefetchPageLimit)
+
+        prefetchQueue.async { [weak self] in
+            guard let self = self else { return }
+            let cache = CacheManager.shared
+            let tileCache = TileSheetCache.shared
+
+            Logger.pdf.info("TileSheet prefetch: starting \(limit, privacy: .public)/\(entries.count, privacy: .public) pages for \(pdfURL.lastPathComponent)")
+
+            for i in 0..<limit {
+                let entry = entries[i]
+                let fullPath = pdfURL.path + "/" + entry.path
+                let pathHash = cache.pathHash(for: fullPath)
+
+                // Try existing cache first
+                if let contentHash = cache.getContentHash(for: pathHash),
+                   let cached = cache.getThumbnail(for: contentHash) {
+                    tileCache.registerThumbnail(
+                        for: pdfURL, archiveHash: hash, entryPath: entry.path,
+                        contentHash: contentHash, image: cached
+                    )
+                    continue
+                }
+
+                // Cache miss — render page
+                guard let pageIndex = self.pageIndex(from: entry.path),
+                      let doc = self.openDocument(),
+                      let page = doc.page(at: pageIndex) else { continue }
+
+                let pageRect = page.bounds(for: .mediaBox)
+                let scale = min(maxSize / pageRect.width, maxSize / pageRect.height, 1.0)
+                let thumbnailSize = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
+                let thumbnail = page.thumbnail(of: thumbnailSize, for: .mediaBox)
+
+                let contentHash = pathHash
+                cache.registerMapping(pathHash: pathHash, contentHash: contentHash)
+                cache.saveThumbnail(thumbnail, for: contentHash)
+
+                tileCache.registerThumbnail(
+                    for: pdfURL, archiveHash: hash, entryPath: entry.path,
+                    contentHash: contentHash, image: thumbnail
+                )
+            }
+
+            Logger.pdf.info("TileSheet prefetch: completed \(limit, privacy: .public) pages")
+            tileCache.finalizeBuild(for: hash)
+        }
     }
     
     /// #24 S084: Content-based hash from PDF structure (page count + mediaBox dimensions).

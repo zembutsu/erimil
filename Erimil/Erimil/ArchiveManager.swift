@@ -129,20 +129,30 @@ class ArchiveManager: ImageSource {
             // Only handles "tile sheet exists on disk" case — if no tile sheet,
             // flags stay unset and thumbnail() fallback triggers prefetchAllThumbnails().
             if !tileSheetInitialized {
+                tileSheetInitialized = true
+                prefetchStarted = true
                 let tileCache = TileSheetCache.shared
                 if cachedArchiveHash == nil {
                     cachedArchiveHash = tileCache.archiveHash(for: url)
                 }
                 if let hash = cachedArchiveHash, tileCache.hasTileSheet(for: url, archiveHash: hash) {
-                    tileSheetInitialized = true
-                    prefetchStarted = true
                     tileSheetAvailable = true
                     let loaded = tileCache.loadAllThumbnails(for: url, archiveHash: hash)
                     if loaded == 0 {
                         tileSheetAvailable = false
+                        prefetchAllThumbnails(entries: results)
                     } else {
                         Logger.thumbnailGrid.info("TileSheet: preloaded \(loaded, privacy: .public) thumbnails for \(self.url.lastPathComponent)")
+                        if loaded < results.count {
+                            // Partial coverage — prefetch remaining entries
+                            tileSheetAvailable = false
+                            Logger.cache.info("TileSheet: partial coverage (\(loaded)/\(results.count)) — starting prefetch")
+                            prefetchAllThumbnails(entries: results)
+                        }
                     }
+                } else {
+                    // No tile sheet — full prefetch
+                    prefetchAllThumbnails(entries: results)
                 }
             }
             
@@ -173,7 +183,7 @@ class ArchiveManager: ImageSource {
                 }
             } else {
                 // No tile sheet on disk — start background prefetch to collect all thumbnails
-                prefetchAllThumbnails()
+                prefetchAllThumbnails(entries: listImageEntries())
             }
         }
 
@@ -250,9 +260,9 @@ class ArchiveManager: ImageSource {
     
     /// #24: Background prefetch — collect all thumbnails for tile sheet build.
     /// Runs on utility queue. Uses existing cache when available, generates otherwise.
-    private func prefetchAllThumbnails() {
+    /// #223: entries passed as parameter to avoid accessQueue deadlock when called from listImageEntries().
+    private func prefetchAllThumbnails(entries: [ImageEntry]) {
         let archiveURL = self.url
-        let entries = listImageEntries()
         let maxSize: CGFloat = AppSettings.shared.effectiveRetinaThumbnailSize
         guard let hash = cachedArchiveHash else { return }
 
