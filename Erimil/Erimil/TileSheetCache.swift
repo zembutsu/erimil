@@ -3,8 +3,10 @@
 //  Erimil
 //
 //  #24: Tile sheet thumbnail cache for ZIP archives
-//  Combines N individual thumbnails into a single JPEG tile sheet,
+//  Combines N individual thumbnails into a single tile sheet image,
 //  reducing I/O from N reads to 1 read on subsequent opens.
+//
+//  #224: PNG lossless support — format-aware encoding and invalidation.
 //
 //  Storage: ~/Library/Application Support/Erimil/tilesheets/
 //    {archiveHash}.ecache  — tile sheet image (multiple: _0, _1, ...)
@@ -34,6 +36,7 @@ class TileSheetCache {
     let tilesPerSheet: Int = 100
     let columns: Int = 10
     var compressionQuality: CGFloat { ThumbnailQualityPreset.current.compressionQuality }
+    var imageFormat: String { ThumbnailQualityPreset.current.imageFormat }
 
     // MARK: - Storage
 
@@ -115,10 +118,11 @@ class TileSheetCache {
     func loadAllThumbnails(for archiveURL: URL, archiveHash hash: String) -> Int {
         guard let metadata = loadMetadata(for: hash) else { return 0 }
 
-        // #207: Invalidate tile sheet if preset has changed since build
+        // #207/#224: Invalidate tile sheet if preset has changed since build
         if metadata.tileSize != tileSize ||
-           metadata.compressionQuality != Double(compressionQuality) {
-            Logger.cache.info("TileSheet: preset mismatch (stored: \(metadata.tileSize)/\(metadata.compressionQuality), current: \(self.tileSize)/\(self.compressionQuality)) — will rebuild")
+           metadata.compressionQuality != Double(compressionQuality) ||
+           metadata.imageFormat != imageFormat {
+            Logger.cache.info("TileSheet: preset mismatch (stored: \(metadata.tileSize)/\(metadata.compressionQuality)/\(metadata.imageFormat), current: \(self.tileSize)/\(self.compressionQuality)/\(self.imageFormat)) — will rebuild")
             // Evict stale thumbnails from memory and disk cache so async path
             // regenerates at new size (not falling back to old .ecache on disk)
             let cache = CacheManager.shared
@@ -313,12 +317,13 @@ class TileSheetCache {
             archiveHash: build.archiveHash,
             tileSize: tileSize,
             compressionQuality: Double(compressionQuality),
+            imageFormat: imageFormat,
             sheets: sheets
         )
         saveMetadata(metadata, for: build.archiveHash)
 
         let totalTiles = sheets.reduce(0) { $0 + $1.entries.count }
-        Logger.cache.info("TileSheet: built \(sheets.count, privacy: .public) sheet(s), \(totalTiles, privacy: .public) tiles for \(build.archiveURL.lastPathComponent)")
+        Logger.cache.info("TileSheet: built \(sheets.count, privacy: .public) sheet(s), \(totalTiles, privacy: .public) tiles [\(self.imageFormat)] for \(build.archiveURL.lastPathComponent)")
     }
 
     private func buildSingleSheet(
@@ -383,26 +388,34 @@ class TileSheetCache {
             ))
         }
 
-        // Encode JPEG to Data, then prepend ERIM header for Finder obfuscation
+        // Encode to image data, then prepend ERIM header for Finder obfuscation
         guard let sheetCGImage = context.makeImage() else { return nil }
 
-        let jpegData = NSMutableData()
+        let usePNG = ThumbnailQualityPreset.current.isPNG
+        let uti = usePNG ? "public.png" as CFString : "public.jpeg" as CFString
+
+        let encodedData = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(
-            jpegData, "public.jpeg" as CFString, 1, nil
+            encodedData, uti, 1, nil
         ) else { return nil }
 
-        let options: [CFString: Any] = [
-            kCGImageDestinationLossyCompressionQuality: compressionQuality
-        ]
-        CGImageDestinationAddImage(destination, sheetCGImage, options as CFDictionary)
+        if usePNG {
+            // PNG: no compression quality option needed (lossless by format)
+            CGImageDestinationAddImage(destination, sheetCGImage, nil)
+        } else {
+            let options: [CFString: Any] = [
+                kCGImageDestinationLossyCompressionQuality: compressionQuality
+            ]
+            CGImageDestinationAddImage(destination, sheetCGImage, options as CFDictionary)
+        }
 
         guard CGImageDestinationFinalize(destination) else {
-            Logger.cache.error("TileSheet: JPEG finalize failed for sheet \(sheetIndex, privacy: .public)")
+            Logger.cache.error("TileSheet: \(usePNG ? "PNG" : "JPEG") finalize failed for sheet \(sheetIndex, privacy: .public)")
             return nil
         }
 
         var output = Self.ecacheMagic
-        output.append(jpegData as Data)
+        output.append(encodedData as Data)
         do {
             try output.write(to: sheetImageURL(for: archiveHash, sheetIndex: sheetIndex), options: .atomic)
         } catch {
@@ -445,9 +458,9 @@ class TileSheetCache {
     private func loadSheetCGImage(hash: String, sheetIndex: Int) -> CGImage? {
         let url = sheetImageURL(for: hash, sheetIndex: sheetIndex)
         guard let raw = try? Data(contentsOf: url) else { return nil }
-        // Strip ERIM magic header (with legacy fallback for raw JPEG)
-        let jpegData = raw.prefix(4) == Self.ecacheMagic ? Data(raw.dropFirst(4)) : raw
-        guard let source = CGImageSourceCreateWithData(jpegData as CFData, nil) else { return nil }
+        // Strip ERIM magic header (with legacy fallback for raw image data)
+        let imageData = raw.prefix(4) == Self.ecacheMagic ? Data(raw.dropFirst(4)) : raw
+        guard let source = CGImageSourceCreateWithData(imageData as CFData, nil) else { return nil }
         return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 }
@@ -477,6 +490,7 @@ struct TileSheetMetadata: Codable {
     let archiveHash: String
     let tileSize: Int
     let compressionQuality: Double
+    let imageFormat: String   // "jpeg" or "png" (#224)
     let sheets: [SheetInfo]
 
     struct SheetInfo: Codable {
@@ -496,5 +510,28 @@ struct TileSheetMetadata: Codable {
         let y: Int
         let w: Int
         let h: Int
+    }
+
+    // MARK: - Initializers
+
+    init(version: Int, archiveHash: String, tileSize: Int,
+         compressionQuality: Double, imageFormat: String, sheets: [SheetInfo]) {
+        self.version = version
+        self.archiveHash = archiveHash
+        self.tileSize = tileSize
+        self.compressionQuality = compressionQuality
+        self.imageFormat = imageFormat
+        self.sheets = sheets
+    }
+
+    /// Backward compatibility: decode existing metadata that lacks imageFormat field (pre-#224, always JPEG).
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        archiveHash = try container.decode(String.self, forKey: .archiveHash)
+        tileSize = try container.decode(Int.self, forKey: .tileSize)
+        compressionQuality = try container.decode(Double.self, forKey: .compressionQuality)
+        imageFormat = try container.decodeIfPresent(String.self, forKey: .imageFormat) ?? "jpeg"
+        sheets = try container.decode([SheetInfo].self, forKey: .sheets)
     }
 }
