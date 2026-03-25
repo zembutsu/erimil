@@ -171,6 +171,7 @@ class AppSettings: ObservableObject {
         static let autoSlideIntervalTurbo  = "autoSlideIntervalTurbo"      // #172
         static let autoSlideLoops          = "autoSlideLoops"              // #172
         static let gridSpacing             = "gridSpacing"                 // #212
+        static let prefetchPageLimit       = "prefetchPageLimit"           // #224
         static let lastSelectedSourcePath  = "lastSelectedSourcePath"      // S091
         static let lastSelectedSourceType  = "lastSelectedSourceType"      // S091
     }
@@ -326,6 +327,12 @@ class AppSettings: ObservableObject {
     /// Default: 8, range: 0-24
     @Published var gridSpacing: CGFloat {
         didSet { defaults.set(Double(gridSpacing), forKey: Keys.gridSpacing) }
+    }
+    
+    /// PDF prefetch page limit for TileSheet generation (#224)
+    /// 0 = unlimited, default: 500
+    @Published var prefetchPageLimit: Int {
+        didSet { defaults.set(prefetchPageLimit, forKey: Keys.prefetchPageLimit) }
     }
     
     /// Build MetadataCarryOverOptions from current settings
@@ -583,6 +590,10 @@ class AppSettings: ObservableObject {
         
         // #212: Grid spacing (default 8)
         self.gridSpacing = defaults.object(forKey: Keys.gridSpacing) != nil ? CGFloat(defaults.double(forKey: Keys.gridSpacing)) : 8
+        
+        // #224: Prefetch page limit (default 500, 0 = unlimited)
+        let savedPrefetchPageLimit = defaults.integer(forKey: Keys.prefetchPageLimit)
+        self.prefetchPageLimit = defaults.object(forKey: Keys.prefetchPageLimit) != nil ? savedPrefetchPageLimit : 500
     }
     
     // MARK: - Helper Methods
@@ -620,6 +631,7 @@ class AppSettings: ObservableObject {
         autoSlideIntervalTurbo  = 1.5            // #172
         autoSlideLoops          = true           // #172
         gridSpacing             = 8              // #212
+        prefetchPageLimit       = 500            // #224
         lastSelectedSourcePath  = nil            // S091
         lastSelectedSourceType  = nil            // S091
     }
