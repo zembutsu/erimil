@@ -59,23 +59,41 @@ struct SettingsView: View {
                     .font(.caption)
             }
             
-            // MARK: - Thumbnail Quality (#207)
+            // MARK: - Thumbnail Quality (#207, #224)
             Section {
                 Picker("画質プリセット", selection: Binding(
                     get: { ThumbnailQualityPreset(rawValue: thumbnailQualityRaw) ?? .standard },
                     set: { thumbnailQualityRaw = $0.rawValue }
                 )) {
                     ForEach(ThumbnailQualityPreset.allCases, id: \.self) { preset in
-                        Text("\(preset.displayName) (JPEG \(String(format: "%.0f%%", preset.compressionQuality * 100)))")
-                            .tag(preset)
+                        if preset.isPNG {
+                            Text(preset.displayName)
+                                .tag(preset)
+                        } else {
+                            Text("\(preset.displayName) (JPEG \(String(format: "%.0f%%", preset.compressionQuality * 100)))")
+                                .tag(preset)
+                        }
                     }
+                }
+                .pickerStyle(.radioGroup)
+                
+                Picker("PDF先読み上限", selection: $settings.prefetchPageLimit) {
+                    Text("100 ページ").tag(100)
+                    Text("250 ページ").tag(250)
+                    Text("500 ページ").tag(500)
+                    Text("1000 ページ").tag(1000)
+                    Text("無制限").tag(0)
                 }
                 .pickerStyle(.radioGroup)
             } header: {
                 Text("サムネイル画質")
             } footer: {
-                Text("JPEG圧縮率を制御します。次回ソースを開いた時に反映されます。")
-                    .font(.caption)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("次回ソースを開いた時に反映されます。")
+                    Text("PNG（ロスレス）は高画質ですが、TileSheetのディスク使用量が増加します。")
+                    Text("PDF先読み上限: 大きなPDFのTileSheet生成ページ数を制限します。")
+                }
+                .font(.caption)
             }
             
             // MARK: - Cache Management
@@ -298,7 +316,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 1020)
+        .frame(width: 450, height: 1150)
         .navigationTitle("設定")
         .onAppear {
             updateCacheInfo()

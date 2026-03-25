@@ -37,7 +37,6 @@ class PDFManager: ImageSource {
     private var prefetchStarted = false
     private var pdfArchiveHash: String?
     private let prefetchQueue = DispatchQueue(label: "com.erimil.pdf.prefetch", qos: .utility)
-    private let prefetchPageLimit = 500
     
     init(pdfURL: URL) {
         self.url = pdfURL
@@ -321,7 +320,8 @@ class PDFManager: ImageSource {
         let pdfURL = self.url
         let maxSize: CGFloat = AppSettings.shared.effectiveRetinaThumbnailSize
         guard let hash = pdfArchiveHash else { return }
-        let limit = min(entries.count, prefetchPageLimit)
+        let settingsLimit = AppSettings.shared.prefetchPageLimit
+        let limit = settingsLimit == 0 ? entries.count : min(entries.count, settingsLimit)
 
         prefetchQueue.async { [weak self] in
             guard let self = self else { return }
