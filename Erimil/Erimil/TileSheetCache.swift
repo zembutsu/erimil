@@ -152,10 +152,12 @@ class TileSheetCache {
                 )
                 guard let cropped = sheetCGImage.cropping(to: cropRect) else { continue }
 
+                let scale = AppSettings.shared.displayScaleFactor
                 let nsImage = NSImage(
                     cgImage: cropped,
-                    size: NSSize(width: tile.w, height: tile.h)
+                    size: NSSize(width: CGFloat(tile.w) / scale, height: CGFloat(tile.h) / scale)
                 )
+                Logger.cache.debug("TileSheet: tile \(tile.entryPath) px=\(tile.w)x\(tile.h) pt=\(Int(CGFloat(tile.w) / scale))x\(Int(CGFloat(tile.h) / scale)) scale=\(scale)")
 
                 // Register pathHash → contentHash mapping (idempotent)
                 let fullPath = archiveURL.path + "/" + tile.entryPath
