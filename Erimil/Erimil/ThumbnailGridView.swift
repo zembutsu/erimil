@@ -953,7 +953,7 @@ struct ThumbnailGridView: View {
         
         guard thumbnails[entry.path] == nil else { return }
         
-        let maxSize = max(settings.effectiveThumbnailSize, 180)
+        let maxSize = max(settings.effectiveRetinaThumbnailSize, 180)
         
         // Capture current state for validation
         let capturedLoadID = loadID
