@@ -140,7 +140,7 @@ enum ImageUtilities {
         // Force full bitmap materialization: draw into CGContext so all pixels
         // are decoded before returning. Without this, SwiftUI may render the
         // image progressively (top-to-bottom visible drawing).
-        let result = materializeBitmap(cgThumb)
+        let result = materializeBitmap(cgThumb, scaleFactor: AppSettings.shared.displayScaleFactor)
         
         let t2 = CFAbsoluteTimeGetCurrent()
         let thumbMs = (t1 - t0) * 1000
@@ -153,7 +153,7 @@ enum ImageUtilities {
     
     /// Draw CGImage into a fresh bitmap context to force complete pixel decode.
     /// Returns an NSImage backed by fully-rendered pixel data.
-    private static func materializeBitmap(_ cgImage: CGImage) -> NSImage? {
+    private static func materializeBitmap(_ cgImage: CGImage, scaleFactor: CGFloat = 1.0) -> NSImage? {
         let width = cgImage.width
         let height = cgImage.height
         
@@ -167,15 +167,15 @@ enum ImageUtilities {
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else {
             // Fallback: return without materialization
-            return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
+            return NSImage(cgImage: cgImage, size: NSSize(width: CGFloat(width) / scaleFactor, height: CGFloat(height) / scaleFactor))
         }
         
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
         
         guard let materialized = context.makeImage() else {
-            return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
+            return NSImage(cgImage: cgImage, size: NSSize(width: CGFloat(width) / scaleFactor, height: CGFloat(height) / scaleFactor))
         }
         
-        return NSImage(cgImage: materialized, size: NSSize(width: width, height: height))
+        return NSImage(cgImage: materialized, size: NSSize(width: CGFloat(width) / scaleFactor, height: CGFloat(height) / scaleFactor))
     }
 }

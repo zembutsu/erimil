@@ -173,15 +173,11 @@ class PDFManager: ImageSource {
             return nil
         }
         
-        // Render thumbnail
-        let pageRect = page.bounds(for: .mediaBox)
-        let scale = min(maxSize / pageRect.width, maxSize / pageRect.height, 1.0)
-        let thumbnailSize = CGSize(
-            width: pageRect.width * scale,
-            height: pageRect.height * scale
-        )
-        
-        let thumbnail = page.thumbnail(of: thumbnailSize, for: .mediaBox)
+        // #227 S101: CGContext + page.draw — no scale cap, sharp for small pages
+        guard let thumbnail = renderPageThumbnail(page, targetSize: maxSize) else {
+            Logger.pdf.error("renderPageThumbnail failed for \(entry.path)")
+            return nil
+        }
         
         // Use path-based hash as content hash for PDFs
         // (PDF content doesn't change like ZIP extraction might)
@@ -314,6 +310,51 @@ class PDFManager: ImageSource {
         return pageNumber - 1
     }
     
+    /// #227 S101: Render PDF page thumbnail using CGContext + page.draw().
+    /// Unlike PDFPage.thumbnail(of:for:) which never upscales beyond native pt size,
+    /// this renders vector content at arbitrary resolution — sharp thumbnails even for
+    /// small pages (e.g. bunkobon 168×250pt → 500px).
+    /// Benchmark: 8.1ms vs 34.5ms for PDFPage.thumbnail (S100 ThumbnailBench v2).
+    private func renderPageThumbnail(_ page: PDFPage, targetSize maxSize: CGFloat) -> NSImage? {
+        let pageRect = page.bounds(for: .mediaBox)
+        guard pageRect.width > 0, pageRect.height > 0 else { return nil }
+
+        // No 1.0 cap — allow upscale for small pages
+        let scale = min(maxSize / pageRect.width, maxSize / pageRect.height)
+        let renderWidth = Int(ceil(pageRect.width * scale))
+        let renderHeight = Int(ceil(pageRect.height * scale))
+
+        guard let bitmapRep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: renderWidth,
+            pixelsHigh: renderHeight,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else { return nil }
+
+        NSGraphicsContext.saveGraphicsState()
+        let context = NSGraphicsContext(bitmapImageRep: bitmapRep)
+        NSGraphicsContext.current = context
+
+        if let cgContext = context?.cgContext {
+            cgContext.setFillColor(NSColor.white.cgColor)
+            cgContext.fill(CGRect(x: 0, y: 0, width: renderWidth, height: renderHeight))
+            cgContext.scaleBy(x: scale, y: scale)
+            page.draw(with: .mediaBox, to: cgContext)
+        }
+
+        NSGraphicsContext.restoreGraphicsState()
+
+        let image = NSImage(size: NSSize(width: renderWidth, height: renderHeight))
+        image.addRepresentation(bitmapRep)
+        return image
+    }
+
     // MARK: - Tile Sheet Prefetch (#223)
     /// #223: entries passed as parameter to avoid accessQueue deadlock when called from listImageEntries().
     private func prefetchAllThumbnails(entries: [ImageEntry]) {
@@ -350,10 +391,8 @@ class PDFManager: ImageSource {
                       let doc = self.openDocument(),
                       let page = doc.page(at: pageIndex) else { continue }
 
-                let pageRect = page.bounds(for: .mediaBox)
-                let scale = min(maxSize / pageRect.width, maxSize / pageRect.height, 1.0)
-                let thumbnailSize = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
-                let thumbnail = page.thumbnail(of: thumbnailSize, for: .mediaBox)
+                // #227 S101: CGContext + page.draw — no scale cap
+                guard let thumbnail = self.renderPageThumbnail(page, targetSize: maxSize) else { continue }
 
                 let contentHash = pathHash
                 cache.registerMapping(pathHash: pathHash, contentHash: contentHash)
