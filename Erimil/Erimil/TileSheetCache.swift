@@ -254,6 +254,27 @@ class TileSheetCache {
 
         Logger.cache.info("TileSheet: invalidated for \(archiveURL.lastPathComponent)")
     }
+    
+    /// Remove ALL tile sheets (called from CacheManager.clearAllCache).
+    func clearAll() {
+        // Cancel all pending builds
+        pendingLock.lock()
+        for (_, build) in pendingBuilds {
+            build.buildWorkItem?.cancel()
+        }
+        pendingBuilds.removeAll()
+        pendingLock.unlock()
+
+        // Wait for any in-flight build to finish, then delete
+        buildQueue.sync {
+            let fm = FileManager.default
+            if fm.fileExists(atPath: directory.path) {
+                try? fm.removeItem(at: directory)
+            }
+        }
+        createDirectoryIfNeeded()
+        Logger.cache.info("TileSheet: all tile sheets cleared")
+    }
 
     // MARK: - Build
 

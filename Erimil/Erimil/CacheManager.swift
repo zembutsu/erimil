@@ -917,12 +917,14 @@ class CacheManager {
             indexLock.unlock()
             saveIndex()
             
+            // Clear tile sheet disk cache
+            TileSheetCache.shared.clearAll()
+            
             Logger.cache.debug("All cache cleared")
         } catch {
             Logger.cache.error("Failed to clear cache: \(error, privacy: .public)")
         }
     }
-    
     /// Get cache size info
     func getCacheInfo() -> (fileCount: Int, totalSize: Int64) {
         let fm = FileManager.default
@@ -940,6 +942,19 @@ class CacheManager {
             }
         }
         
+        // Include tilesheets directory
+        if let tileEnum = fm.enumerator(
+            at: baseDirectory.appendingPathComponent("tilesheets", isDirectory: true),
+            includingPropertiesForKeys: [.fileSizeKey]
+        ) {
+            while let fileURL = tileEnum.nextObject() as? URL {
+                count += 1
+                if let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                    size += Int64(fileSize)
+                }
+            }
+        }
+
         return (count, size)
     }
     
