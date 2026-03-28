@@ -816,14 +816,23 @@ class CacheManager {
             return
         }
         
-        let jpegData = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(jpegData, "public.jpeg" as CFString, 1, nil) else {
+        let usePNG = ThumbnailQualityPreset.current.isPNG
+        let uti = usePNG ? "public.png" as CFString : "public.jpeg" as CFString
+
+        let encodedData = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(encodedData, uti, 1, nil) else {
             Logger.cache.error("Failed to create CGImageDestination")
             return
         }
-        
-        let options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: 0.6]
-        CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
+
+        if usePNG {
+            CGImageDestinationAddImage(destination, cgImage, nil)
+        } else {
+            let options: [CFString: Any] = [
+                kCGImageDestinationLossyCompressionQuality: ThumbnailQualityPreset.current.compressionQuality
+            ]
+            CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
+        }
         
         guard CGImageDestinationFinalize(destination) else {
             Logger.cache.error("Failed to finalize CGImageDestination")
@@ -832,7 +841,7 @@ class CacheManager {
         
         // Prepend ERIM magic header
         var output = Self.ecacheMagic
-        output.append(jpegData as Data)
+        output.append(encodedData as Data)
         
         do {
             try output.write(to: url, options: .atomic)

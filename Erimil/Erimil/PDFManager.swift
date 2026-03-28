@@ -406,6 +406,10 @@ class PDFManager: ImageSource {
 
             Logger.pdf.info("TileSheet prefetch: completed \(limit, privacy: .public) pages")
             tileCache.finalizeBuild(for: hash)
+            
+            Logger.pdf.info("TileSheet prefetch: completed \(limit, privacy: .public) pages")
+            tileCache.finalizeBuild(for: hash)
+            self.tileSheetAvailable = true  // Stop registerThumbnail from on-demand cache hits
         }
     }
     
