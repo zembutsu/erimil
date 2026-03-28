@@ -314,6 +314,10 @@ class ArchiveManager: ImageSource {
 
             Logger.cache.info("TileSheet prefetch: completed \(entries.count, privacy: .public) entries")
             TileSheetCache.shared.finalizeBuild(for: hash)
+            
+            Logger.cache.info("TileSheet prefetch: completed \(entries.count, privacy: .public) entries")
+            TileSheetCache.shared.finalizeBuild(for: hash)
+            self.tileSheetAvailable = true  // Stop registerThumbnail from on-demand cache hits
         }
     }
     
