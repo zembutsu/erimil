@@ -288,7 +288,7 @@ class ArchiveManager: ImageSource {
                 }
 
                 // Cache miss — extract and generate
-                guard let imageData = self.extractData(for: entry) else { continue }
+                guard let imageData = self.extractDataForPrefetch(for: entry) else { continue }
                 let contentHash = cache.contentHash(for: imageData)
                 cache.registerMapping(pathHash: pathHash, contentHash: contentHash)
 
@@ -425,7 +425,36 @@ class ArchiveManager: ImageSource {
             return imageData
         }
     }
-    
+
+    /// Prefetch-only extract — opens own Archive handle to avoid accessQueue contention.
+    /// On-demand thumbnail() uses extractData() which serializes via accessQueue;
+    /// this method bypasses that queue so prefetch and on-demand can run in parallel.
+    private func extractDataForPrefetch(for imageEntry: ImageEntry) -> Data? {
+        guard let archive = openArchive() else { return nil }
+        let encoding = getPathEncoding()
+
+        var foundEntry: Entry?
+        for entry in archive {
+            let path = encoding != nil ? entry.path(using: encoding!) : entry.path
+            if path == imageEntry.path {
+                foundEntry = entry
+                break
+            }
+        }
+        guard let entry = foundEntry else { return nil }
+
+        var imageData = Data()
+        do {
+            _ = try archive.extract(entry) { data in
+                imageData.append(data)
+            }
+        } catch {
+            Logger.archive.error("Prefetch extract failed for \(imageEntry.name): \(error, privacy: .public)")
+            return nil
+        }
+        return imageData
+    }
+
     private func resizedImage(_ image: NSImage, maxSize: CGFloat) -> NSImage {
         let originalSize = image.size
         guard originalSize.width > 0 && originalSize.height > 0 else {
