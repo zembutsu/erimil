@@ -394,7 +394,8 @@ struct ThumbnailItemView: View {
     
     private func loadThumbnail() {
         DispatchQueue.global(qos: .utility).async {
-            let image = imageSource.thumbnail(for: entry, maxSize: size * 2)
+            let maxSize = max(AppSettings.shared.effectiveRetinaThumbnailSize, 180)
+            let image = imageSource.thumbnail(for: entry, maxSize: maxSize)
             if let image = image {
                 // #144: Cache aspect ratio for spread detection
                 CacheManager.shared.setAspectRatio(
@@ -559,15 +560,16 @@ struct SpreadThumbnailPairView: View {
     }
     
     private func loadThumbnails() {
+        let maxSize = max(AppSettings.shared.effectiveRetinaThumbnailSize, 180)
         DispatchQueue.global(qos: .utility).async {
-            let leftImage = imageSource.thumbnail(for: leftEntry, maxSize: pairSize)
+            let leftImage = imageSource.thumbnail(for: leftEntry, maxSize: maxSize)
             DispatchQueue.main.async {
                 leftThumbnail = leftImage
             }
         }
         
         DispatchQueue.global(qos: .utility).async {
-            let rightImage = imageSource.thumbnail(for: rightEntry, maxSize: pairSize)
+            let rightImage = imageSource.thumbnail(for: rightEntry, maxSize: maxSize)
             DispatchQueue.main.async {
                 rightThumbnail = rightImage
             }
