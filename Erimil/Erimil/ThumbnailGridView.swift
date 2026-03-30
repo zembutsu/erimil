@@ -249,8 +249,14 @@ struct ThumbnailGridView: View {
         .onChange(of: entries) { _, newEntries in
             handleEntriesChange(newEntries)
         }
-        .onChange(of: previewMode) { _, newMode in
+        .onChange(of: previewMode) { oldMode, newMode in
             isInViewerMode = newMode.isViewer
+            // #233: Restore grid scroll position when leaving Reader Mode
+            if oldMode.isViewer && newMode == .none, let index = focusedIndex {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    collectionUpdater.scrollToItem(at: index, animated: false)
+                }
+            }
         }
         .onAppear {
             SourceSwitchTiming.mark("grid.onAppear")
