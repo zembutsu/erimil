@@ -19,6 +19,9 @@ class ArchiveManager: ImageSource {
     private let accessQueue = DispatchQueue(label: "com.erimil.archive", qos: .userInitiated)
     
     /// #24: Tile sheet state tracking
+    /// #238: initLock protects tileSheetInitialized/prefetchStarted check-and-set
+    /// across accessQueue (listImageEntries) and non-queue (thumbnail) paths.
+    private let initLock = NSLock()
     private var tileSheetInitialized = false
     private var tileSheetAvailable = false
     
@@ -128,9 +131,16 @@ class ArchiveManager: ImageSource {
             // Also guarantees single-thread execution (eliminates N× redundant loads).
             // Only handles "tile sheet exists on disk" case — if no tile sheet,
             // flags stay unset and thumbnail() fallback triggers prefetchAllThumbnails().
-            if !tileSheetInitialized {
+            // #238: initLock protects check-and-set against thumbnail() on other threads.
+            initLock.lock()
+            let needsInit = !tileSheetInitialized
+            if needsInit {
                 tileSheetInitialized = true
                 prefetchStarted = true
+            }
+            initLock.unlock()
+            
+            if needsInit {
                 let tileCache = TileSheetCache.shared
                 if cachedArchiveHash == nil {
                     cachedArchiveHash = tileCache.archiveHash(for: url)
@@ -164,11 +174,16 @@ class ArchiveManager: ImageSource {
     func thumbnail(for entry: ImageEntry, maxSize: CGFloat = AppSettings.shared.effectiveRetinaThumbnailSize) -> NSImage? {
         // #24: Tile sheet initialization — fallback for when thumbnail() is called
         // before listImageEntries(), or when no tile sheet exists on disk.
-        // Both flags set immediately to prevent other threads from starting prefetch
-        // while this thread loads tile sheet or decides to prefetch.
-        if !tileSheetInitialized {
+        // #238: initLock protects check-and-set against listImageEntries() on accessQueue.
+        initLock.lock()
+        let needsInit = !tileSheetInitialized
+        if needsInit {
             tileSheetInitialized = true
-            prefetchStarted = true  // Block all other threads from prefetch check
+            prefetchStarted = true
+        }
+        initLock.unlock()
+        
+        if needsInit {
             let tileCache = TileSheetCache.shared
             if cachedArchiveHash == nil {
                 cachedArchiveHash = tileCache.archiveHash(for: url)
@@ -312,9 +327,6 @@ class ArchiveManager: ImageSource {
                 )
             }
 
-            Logger.cache.info("TileSheet prefetch: completed \(entries.count, privacy: .public) entries")
-            TileSheetCache.shared.finalizeBuild(for: hash)
-            
             Logger.cache.info("TileSheet prefetch: completed \(entries.count, privacy: .public) entries")
             TileSheetCache.shared.finalizeBuild(for: hash)
             self.tileSheetAvailable = true  // Stop registerThumbnail from on-demand cache hits
