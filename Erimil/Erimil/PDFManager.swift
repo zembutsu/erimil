@@ -32,6 +32,9 @@ class PDFManager: ImageSource {
     // MARK: - Tile Sheet State (#24, S084)
     
     /// Tile sheet init + prefetch flags (consolidated block, S083 race fix pattern)
+    /// #238: initLock protects tileSheetInitialized/prefetchStarted check-and-set
+    /// across accessQueue (listImageEntries) and non-queue (thumbnail) paths.
+    private let initLock = NSLock()
     private var tileSheetInitialized = false
     private var tileSheetAvailable = false
     private var prefetchStarted = false
@@ -85,9 +88,16 @@ class PDFManager: ImageSource {
             // This runs BEFORE any onAppear → loadThumbnailIfNeeded, ensuring the
             // synchronous memory check (SYNC memory hit) in ThumbnailGridView hits
             // for all tile-sheet-covered pages — no loading icon flash.
-            if !tileSheetInitialized {
+            // #238: initLock protects check-and-set against thumbnail() on other threads.
+            initLock.lock()
+            let needsInit = !tileSheetInitialized
+            if needsInit {
                 tileSheetInitialized = true
                 prefetchStarted = true
+            }
+            initLock.unlock()
+            
+            if needsInit {
                 if let hash = pdfHash() {
                     pdfArchiveHash = hash
                     let tileSheet = TileSheetCache.shared
@@ -125,10 +135,16 @@ class PDFManager: ImageSource {
         
         // #24 S084: Fallback init — normally tile sheet is preloaded in listImageEntries().
         // This block fires only if thumbnail() is called before listImageEntries() (edge case).
-        if !tileSheetInitialized {
+        // #238: initLock protects check-and-set against listImageEntries() on accessQueue.
+        initLock.lock()
+        let needsInit = !tileSheetInitialized
+        if needsInit {
             tileSheetInitialized = true
-            prefetchStarted = true  // Set simultaneously to eliminate race window
-            
+            prefetchStarted = true
+        }
+        initLock.unlock()
+        
+        if needsInit {
             if let hash = pdfHash() {
                 pdfArchiveHash = hash
                 let tileSheet = TileSheetCache.shared
@@ -404,9 +420,6 @@ class PDFManager: ImageSource {
                 )
             }
 
-            Logger.pdf.info("TileSheet prefetch: completed \(limit, privacy: .public) pages")
-            tileCache.finalizeBuild(for: hash)
-            
             Logger.pdf.info("TileSheet prefetch: completed \(limit, privacy: .public) pages")
             tileCache.finalizeBuild(for: hash)
             self.tileSheetAvailable = true  // Stop registerThumbnail from on-demand cache hits
