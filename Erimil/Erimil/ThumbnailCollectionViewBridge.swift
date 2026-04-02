@@ -45,6 +45,7 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
     let sourceURL: URL
     var onCellAppear: ((ImageEntry) -> Void)?
     var onCellTap: ((Int) -> Void)?
+    var onCellDoubleTap: ((Int) -> Void)?
     var cellStateProvider: ((Int, ImageEntry) -> ThumbnailCellState)?
     let updater: ThumbnailCollectionUpdater
     
@@ -72,6 +73,15 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         collectionView.isSelectable = true
         collectionView.allowsMultipleSelection = false
         collectionView.backgroundColors = [.clear]
+        
+        // #245: Double-click → Reader Mode
+        let doubleClickGesture = NSClickGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleDoubleClick(_:))
+        )
+        doubleClickGesture.numberOfClicksRequired = 2
+        doubleClickGesture.delaysPrimaryMouseButtonEvents = false
+        collectionView.addGestureRecognizer(doubleClickGesture)
         
         let scrollView = NSScrollView()
         scrollView.documentView = collectionView
@@ -115,6 +125,7 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         
         coordinator.onCellAppear = onCellAppear
         coordinator.onCellTap = onCellTap
+        coordinator.onCellDoubleTap = onCellDoubleTap
         coordinator.cellStateProvider = cellStateProvider
         coordinator.sourceURL = sourceURL
         updater.coordinator = coordinator
@@ -153,6 +164,7 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
         var thumbnails: [String: NSImage] = [:]
         var onCellAppear: ((ImageEntry) -> Void)?
         var onCellTap: ((Int) -> Void)?
+        var onCellDoubleTap: ((Int) -> Void)?
         var cellStateProvider: ((Int, ImageEntry) -> ThumbnailCellState)?
         weak var collectionView: NSCollectionView?
         var sourceURL: URL?
@@ -307,6 +319,14 @@ struct ThumbnailCollectionViewBridge: NSViewRepresentable {
             guard let indexPath = indexPaths.first else { return }
             collectionView.deselectItems(at: indexPaths)
             onCellTap?(globalIndex(for: indexPath))
+        }
+        
+        // #245: Double-click → Reader Mode
+        @objc func handleDoubleClick(_ gesture: NSClickGestureRecognizer) {
+            guard let cv = collectionView else { return }
+            let point = gesture.location(in: cv)
+            guard let indexPath = cv.indexPathForItem(at: point) else { return }
+            onCellDoubleTap?(globalIndex(for: indexPath))
         }
         
         func resetAppearanceTracking() {
