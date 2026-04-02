@@ -583,6 +583,11 @@ struct ThumbnailGridView: View {
                     onCellTap: { index in
                         focusedIndex = index
                     },
+                    // #245: Double-click → Reader Mode
+                    onCellDoubleTap: { index in
+                        focusedIndex = index
+                        previewMode = .viewer(index: index)
+                    },
                     cellStateProvider: { index, entry in
                         ThumbnailCellState(
                             thumbnail: thumbnails[entry.path],
