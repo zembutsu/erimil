@@ -204,6 +204,13 @@ class SlideWindowController {
             },
             onNextSource: onNextSource,
             onPreviousSource: onPreviousSource,
+            // #245: Edge-click navigation
+            onPrevious: { [weak self] in
+                self?.gatedNavigate { self?.goToPrevious() }
+            },
+            onNext: { [weak self] in
+                self?.gatedNavigate { self?.goToNext() }
+            },
             animationController: animationController  // #201
         )
         
@@ -430,6 +437,13 @@ class SlideWindowController {
             },
             onNextSource: onNextSource,
             onPreviousSource: onPreviousSource,
+            // #245: Edge-click navigation
+            onPrevious: { [weak self] in
+                self?.gatedNavigate { self?.goToPrevious() }
+            },
+            onNext: { [weak self] in
+                self?.gatedNavigate { self?.goToNext() }
+            },
             animationController: animationController  // #201
         )
         
@@ -1538,6 +1552,9 @@ struct SlideWindowView: View {
     let onIndexChange: ((Int) -> Void)?
     let onNextSource: (() -> Void)?
     let onPreviousSource: (() -> Void)?
+    // #245: Edge-click navigation
+    let onPrevious: (() -> Void)?
+    let onNext: (() -> Void)?
     let animationController: AnimationPlaybackController  // #201
     
     @State private var currentIndex: Int = 0
@@ -1589,6 +1606,8 @@ struct SlideWindowView: View {
         onIndexChange: ((Int) -> Void)?,
         onNextSource: (() -> Void)?,
         onPreviousSource: (() -> Void)?,
+        onPrevious: (() -> Void)?,
+        onNext: (() -> Void)?,
         animationController: AnimationPlaybackController  // #201
     ) {
         self.imageSource = imageSource
@@ -1607,6 +1626,8 @@ struct SlideWindowView: View {
         self.onIndexChange = onIndexChange
         self.onNextSource = onNextSource
         self.onPreviousSource = onPreviousSource
+        self.onPrevious = onPrevious
+        self.onNext = onNext
         self.animationController = animationController  // #201
     }
     
@@ -1634,6 +1655,36 @@ struct SlideWindowView: View {
                     }
                 )
                 .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)  // #150: RTL spread inversion
+                
+                // #245: Edge-click navigation (same UX as Reader Mode)
+                HStack {
+                    if currentIndex > 0 {
+                        Button {
+                            onPrevious?()
+                        } label: {
+                            Rectangle()
+                                .fill(Color.clear)
+                                .frame(width: 60)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    
+                    Spacer()
+                    
+                    if currentIndex < entries.count - 1 {
+                        Button {
+                            onNext?()
+                        } label: {
+                            Rectangle()
+                                .fill(Color.clear)
+                                .frame(width: 60)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)  // #245: RTL-aware
             }
             
             // #151: Controls overlay — always visible, hints togglable with Space
