@@ -278,6 +278,12 @@ struct ViewerView: View {
     // #201: Animation playback controller (shared with SpreadImageViewer)
     @StateObject private var animationController = AnimationPlaybackController()
     
+    // #235: Cursor auto-hide in Reader Mode
+    @State private var cursorHideTimer: DispatchWorkItem?
+    @State private var isCursorHidden: Bool = false
+    @State private var mouseMonitor: Any?
+    private let cursorHideDelay: TimeInterval = 3.0
+    
     /// #54: Effective reading direction for this source
     private var effectiveReadingDirection: ReadingDirection {
         CacheManager.shared.getEffectiveReadingDirection(for: imageSource.url)
@@ -403,6 +409,10 @@ struct ViewerView: View {
             viewerIndex = currentIndex
             previousViewerIndex = currentIndex
             isDeskewEnabled = CacheManager.shared.isDeskewEnabled(for: imageSource.url)  // #101
+            startCursorMonitor()  // #235
+        }
+        .onDisappear {
+            stopCursorMonitor()  // #235
         }
         .onChange(of: currentIndex) { oldValue, newValue in
             // External index change (from parent)
@@ -737,6 +747,54 @@ struct ViewerView: View {
         autoSlideWaitingForImage = true
     }
     
+    // MARK: - #235: Cursor Auto-Hide
+    
+    private func startCursorMonitor() {
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [self] event in
+            showCursor()
+            scheduleCursorHide()
+            return event
+        }
+        scheduleCursorHide()
+        Logger.viewer.debug("#235: Cursor monitor started")
+    }
+    
+    private func stopCursorMonitor() {
+        cursorHideTimer?.cancel()
+        cursorHideTimer = nil
+        if let monitor = mouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseMonitor = nil
+        }
+        showCursor()
+        Logger.viewer.debug("#235: Cursor monitor stopped")
+    }
+    
+    private func scheduleCursorHide() {
+        cursorHideTimer?.cancel()
+        let work = DispatchWorkItem { [self] in
+            hideCursor()
+        }
+        cursorHideTimer = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + cursorHideDelay, execute: work)
+    }
+    
+    private func hideCursor() {
+        guard !isCursorHidden else { return }
+        // Don't hide cursor when interactive overlays are showing
+        guard !showBookmarkList, !showMetadataInspector else { return }
+        NSCursor.hide()
+        isCursorHidden = true
+        Logger.viewer.debug("#235: Cursor hidden")
+    }
+    
+    private func showCursor() {
+        guard isCursorHidden else { return }
+        NSCursor.unhide()
+        isCursorHidden = false
+        Logger.viewer.debug("#235: Cursor shown")
+    }
+    
     // MARK: - Navigation (#67: Spread-aware using isShowingSpread)
     
     private func navigateTo(_ index: Int) {
@@ -744,6 +802,7 @@ struct ViewerView: View {
         Logger.viewer.debug("navigateTo: \(viewerIndex, privacy: .public) → \(index, privacy: .public)")
         previousViewerIndex = viewerIndex
         viewerIndex = index
+        hideCursor()  // #235: Hide cursor on navigation (same as Slide Mode behavior)
     }
     
     /// #154: Navigate with render gate — ensures each page displays at least one frame
