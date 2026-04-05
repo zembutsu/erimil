@@ -18,15 +18,19 @@ enum SelectionMode: String, CaseIterable {
     
     var displayName: String {
         switch self {
-        case .exclude: return "除外モード"
-        case .keep: return "選出モード"
+        case .exclude: return String(localized: "selectionMode.exclude.displayName",
+                                     defaultValue: "除外モード")
+        case .keep: return String(localized: "selectionMode.keep.displayName",
+                                  defaultValue: "選出モード")
         }
     }
     
     var description: String {
         switch self {
-        case .exclude: return "クリックした画像が除外されます（安全）"
-        case .keep: return "クリックした画像だけが残ります"
+        case .exclude: return String(localized: "selectionMode.exclude.description",
+                                     defaultValue: "クリックした画像が除外されます（安全）")
+        case .keep: return String(localized: "selectionMode.keep.description",
+                                  defaultValue: "クリックした画像だけが残ります")
         }
     }
 }
@@ -41,11 +45,16 @@ enum ThumbnailSizePreset: String, CaseIterable {
     
     var displayName: String {
         switch self {
-        case .small: return "小"
-        case .medium: return "中"
-        case .large: return "大"
-        case .extraLarge: return "特大"
-        case .custom: return "カスタム"
+        case .small: return String(localized: "thumbnailSize.small",
+                                   defaultValue: "小")
+        case .medium: return String(localized: "thumbnailSize.medium",
+                                    defaultValue: "中")
+        case .large: return String(localized: "thumbnailSize.large",
+                                   defaultValue: "大")
+        case .extraLarge: return String(localized: "thumbnailSize.extraLarge",
+                                       defaultValue: "特大")
+        case .custom: return String(localized: "thumbnailSize.custom",
+                                    defaultValue: "カスタム")
         }
     }
     
@@ -67,15 +76,19 @@ enum FavoriteScope: String, CaseIterable {
     
     var displayName: String {
         switch self {
-        case .content: return "コンテンツ単位"
-        case .source: return "ソース単位"
+        case .content: return String(localized: "favoriteScope.content.displayName",
+                                     defaultValue: "コンテンツ単位")
+        case .source: return String(localized: "favoriteScope.source.displayName",
+                                    defaultValue: "ソース単位")
         }
     }
     
     var description: String {
         switch self {
-        case .content: return "同じ画像なら別の場所でも⭐（画像の中身で識別）"
-        case .source: return "ZIP/フォルダごとに独立した⭐（場所で識別）"
+        case .content: return String(localized: "favoriteScope.content.description",
+                                     defaultValue: "同じ画像なら別の場所でも⭐（画像の中身で識別）")
+        case .source: return String(localized: "favoriteScope.source.description",
+                                    defaultValue: "ZIP/フォルダごとに独立した⭐（場所で識別）")
         }
     }
 }
@@ -88,9 +101,12 @@ enum ViewerThumbnailPosition: String, CaseIterable {
     
     var displayName: String {
         switch self {
-        case .left: return "左"
-        case .bottom: return "下"
-        case .hidden: return "非表示"
+        case .left: return String(localized: "viewerThumbnail.left",
+                                  defaultValue: "左")
+        case .bottom: return String(localized: "viewerThumbnail.bottom",
+                                    defaultValue: "下")
+        case .hidden: return String(localized: "viewerThumbnail.hidden",
+                                    defaultValue: "非表示")
         }
     }
     
@@ -111,8 +127,10 @@ enum ReadingDirection: String, CaseIterable, Codable {
     
     var displayName: String {
         switch self {
-        case .ltr: return "左→右 (LTR)"
-        case .rtl: return "右→左 (RTL)"
+        case .ltr: return String(localized: "readingDirection.ltr",
+                                 defaultValue: "左→右 (LTR)")
+        case .rtl: return String(localized: "readingDirection.rtl",
+                                 defaultValue: "右→左 (RTL)")
         }
     }
     
