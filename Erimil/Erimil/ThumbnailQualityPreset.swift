@@ -40,11 +40,16 @@ enum ThumbnailQualityPreset: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .low:         return "低画質"
-        case .standard:    return "標準"
-        case .high:        return "高画質"
-        case .maximum:     return "最高画質"
-        case .pngLossless: return "PNG（ロスレス）"
+        case .low:         return String(localized: "thumbnailQuality.low.displayName",
+                                         defaultValue: "Low")
+        case .standard:    return String(localized: "thumbnailQuality.standard.displayName",
+                                         defaultValue: "Standard")
+        case .high:        return String(localized: "thumbnailQuality.high.displayName",
+                                         defaultValue: "High")
+        case .maximum:     return String(localized: "thumbnailQuality.maximum.displayName",
+                                         defaultValue: "Maximum")
+        case .pngLossless: return String(localized: "thumbnailQuality.pngLossless.displayName",
+                                         defaultValue: "PNG (Lossless)")
         }
     }
 
