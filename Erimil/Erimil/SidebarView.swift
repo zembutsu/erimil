@@ -43,9 +43,9 @@ struct SidebarView: View {
                 .listStyle(.sidebar)
             } else {
                 ContentUnavailableView(
-                    "フォルダを選択",
+                    String(localized: "sidebar.selectFolder", defaultValue: "Select a Folder"),
                     systemImage: "folder",
-                    description: Text("下のボタンからフォルダを選択してください")
+                    description: Text(String(localized: "sidebar.selectFolderDescription", defaultValue: "Choose a folder from the button below"))
                 )
                 .frame(maxHeight: .infinity)
             }
@@ -57,7 +57,7 @@ struct SidebarView: View {
                 HStack {
                     Image(systemName: "photo.stack")
                         .foregroundStyle(.secondary)
-                    Text("\(cacheInfo.fileCount)枚キャッシュ済")
+                    Text("\(cacheInfo.fileCount) \(String(localized: "sidebar.cached", defaultValue: "cached"))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text("(\(formatBytes(cacheInfo.totalSize)))")
@@ -68,7 +68,7 @@ struct SidebarView: View {
                 .padding(.top, 8)
             }
             
-            Button("フォルダを開く...") {
+            Button(String(localized: "sidebar.openFolder", defaultValue: "Open Folder...")) {
                 openFolderPicker()
             }
             .padding()
@@ -166,8 +166,8 @@ struct SidebarView: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.message = "表示するフォルダを選択してください"
-        panel.prompt = "選択"
+        panel.message = String(localized: "sidebar.panel.message", defaultValue: "Select a folder to display")
+        panel.prompt = String(localized: "sidebar.panel.prompt", defaultValue: "Select")
         
         Logger.sidebar.debug("Opening folder picker...")
         

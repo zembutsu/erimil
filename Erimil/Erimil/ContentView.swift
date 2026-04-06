@@ -74,16 +74,16 @@ struct ContentView: View {
             }
         }
         // S050: onChange × 2 chain REMOVED — model.select() handles everything atomically
-        .alert("未保存の変更があります", isPresented: $showUnsavedAlert) {
-            Button("保存せず移動", role: .destructive) {
+        .alert(String(localized: "contentView.unsavedAlert.title", defaultValue: "Unsaved Changes"), isPresented: $showUnsavedAlert) {
+            Button(String(localized: "contentView.unsavedAlert.discard", defaultValue: "Discard and Navigate"), role: .destructive) {
                 discardAndNavigate()
             }
-            Button("キャンセル", role: .cancel) {
+            Button(String(localized: "contentView.unsavedAlert.cancel", defaultValue: "Cancel"), role: .cancel) {
                 pendingSourceURL = nil
                 pendingSourceType = nil
             }
         } message: {
-            Text("\(selectedPaths.count) 件の選択が保存されていません。破棄して別の場所に移動しますか？")
+            Text("\(selectedPaths.count) \(String(localized: "contentView.unsavedAlert.message", defaultValue: "selections are unsaved. Discard and navigate to another location?"))")
         }
         .onAppear {
             restoreLastOpenedFolder()

@@ -582,9 +582,9 @@ enum ArchiveError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .cannotOpenSource:
-            return "元のZIPファイルを開けません"
+            return String(localized: "error.cannotOpenSourceZip", defaultValue: "Cannot open source ZIP file")
         case .cannotCreateDestination:
-            return "新しいZIPファイルを作成できません"
+            return String(localized: "error.cannotCreateDestZip", defaultValue: "Cannot create new ZIP file")
         }
     }
 }

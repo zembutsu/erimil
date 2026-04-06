@@ -240,9 +240,9 @@ enum FolderError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .cannotCreateZip:
-            return "ZIPファイルを作成できません"
+            return String(localized: "error.cannotCreateZip", defaultValue: "Cannot create ZIP file")
         case .cannotReadFolder:
-            return "フォルダを読み込めません"
+            return String(localized: "error.cannotReadFolder", defaultValue: "Cannot read folder")
         }
     }
 }

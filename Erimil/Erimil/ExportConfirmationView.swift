@@ -21,40 +21,40 @@ struct ExportConfirmationView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Title
-            Text("エクスポートの確認")
+            Text(String(localized: "exportConfirm.title", defaultValue: "Export Confirmation"))
                 .font(.headline)
             
             // ★ warning
             if selectionMode == .exclude {
-                Label("★付き \(affectedFavoriteCount) 件が除外されます", systemImage: "star.fill")
+                Label("\(String(localized: "exportConfirm.favoritesPrefix", defaultValue: "★")) \(affectedFavoriteCount) \(String(localized: "exportConfirm.willBeExcluded", defaultValue: "will be excluded"))", systemImage: "star.fill")
                     .foregroundStyle(.orange)
             } else {
-                Label("★付き \(affectedFavoriteCount) 件が出力に含まれません", systemImage: "star.fill")
+                Label("\(String(localized: "exportConfirm.favoritesPrefix", defaultValue: "★")) \(affectedFavoriteCount) \(String(localized: "exportConfirm.notIncluded", defaultValue: "will not be included in output"))", systemImage: "star.fill")
                     .foregroundStyle(.orange)
             }
             
             Divider()
             
             // Metadata options
-            Text("メタデータの引き継ぎ")
+            Text(String(localized: "exportConfirm.metadataCarryOver", defaultValue: "Metadata Carry-Over"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             
-            Toggle("★ お気に入り", isOn: $options.favorites)
-            Toggle("栞 ブックマーク", isOn: $options.bookmarks)
-            Toggle("読み取り方向", isOn: $options.readingDirection)
-            Toggle("単独表示マーカー", isOn: $options.singlePageMarkers)
+            Toggle(String(localized: "exportConfirm.favorites", defaultValue: "★ Favorites"), isOn: $options.favorites)
+            Toggle(String(localized: "exportConfirm.bookmarks", defaultValue: "栞 Bookmarks"), isOn: $options.bookmarks)
+            Toggle(String(localized: "exportConfirm.readingDirection", defaultValue: "Reading Direction"), isOn: $options.readingDirection)
+            Toggle(String(localized: "exportConfirm.singlePageMarkers", defaultValue: "Single Page Markers"), isOn: $options.singlePageMarkers)
             
             Divider()
             
             // Buttons
             HStack {
                 Spacer()
-                Button("キャンセル", role: .cancel) {
+                Button(String(localized: "exportConfirm.cancel", defaultValue: "Cancel"), role: .cancel) {
                     onCancel()
                 }
                 .keyboardShortcut(.escape, modifiers: [])
-                Button(selectionMode == .exclude ? "除外する" : "続行") {
+                Button(selectionMode == .exclude ? String(localized: "exportConfirm.exclude", defaultValue: "Exclude") : String(localized: "exportConfirm.proceed", defaultValue: "Proceed")) {
                     onExport()
                 }
                 .keyboardShortcut(.return, modifiers: [])

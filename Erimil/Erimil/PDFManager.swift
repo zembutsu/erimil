@@ -66,7 +66,7 @@ class PDFManager: ImageSource {
                 // Format: page_001, page_002, etc. (zero-padded for sorting)
                 let pageNumber = i + 1
                 let path = String(format: "page_%03d", pageNumber)
-                let name = "\(pageNumber)ページ"
+                let name = "\(String(localized: "pdf.pageLabel", defaultValue: "Page")) \(pageNumber)"
                 
                 // Estimate size from page dimensions (for display purposes)
                 let estimatedSize: UInt64
@@ -689,11 +689,11 @@ enum PDFExportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .cannotOpenDocument:
-            return "PDFファイルを開けませんでした"
+            return String(localized: "error.cannotOpenPdf", defaultValue: "Could not open PDF file")
         case .noRemainingPages:
-            return "出力するページがありません（すべて除外されています）"
+            return String(localized: "error.noRemainingPages", defaultValue: "No pages to export (all excluded)")
         case .writeFailed(let url):
-            return "PDFの書き込みに失敗しました: \(url.lastPathComponent)"
+            return "\(String(localized: "error.pdfWriteFailed", defaultValue: "PDF write failed:")) \(url.lastPathComponent)"
         }
     }
 }

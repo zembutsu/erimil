@@ -395,26 +395,26 @@ struct ThumbnailGridView: View {
             .onChange(of: previewMode) { oldMode, newMode in
                 handlePreviewModeChange(oldMode: oldMode, newMode: newMode)
             }
-            .alert("エクスポート完了", isPresented: $showExportSuccess) {
+            .alert(String(localized: "grid.alert.exportComplete", defaultValue: "Export Complete"), isPresented: $showExportSuccess) {
                 Button("OK") { }
             } message: {
                 Text(exportMessage)
             }
-            .alert("エラー", isPresented: $showExportError) {
+            .alert(String(localized: "grid.alert.error", defaultValue: "Error"), isPresented: $showExportError) {
                 Button("OK") { }
             } message: {
                 Text(exportMessage)
             }
-            .alert("ゴミ箱に移動", isPresented: $showDeleteConfirm) {
-                Button("キャンセル", role: .cancel) { }
-                Button("削除", role: .destructive) {
+            .alert(String(localized: "grid.alert.moveToTrash", defaultValue: "Move to Trash"), isPresented: $showDeleteConfirm) {
+                Button(String(localized: "grid.alert.cancel", defaultValue: "Cancel"), role: .cancel) { }
+                Button(String(localized: "grid.alert.delete", defaultValue: "Delete"), role: .destructive) {
                     performDelete()
                 }
             } message: {
                 if affectedFavoriteCount > 0 {
-                    Text("\(pathsToRemoveForDelete.count) 件のファイルをゴミ箱に移動しますか？\n（⭐\(affectedFavoriteCount)件は保護されます）")
+                    Text("\(pathsToRemoveForDelete.count) \(String(localized: "grid.alert.trashConfirm", defaultValue: "files will be moved to Trash."))\n(\(String(localized: "grid.alert.favoritesProtected", defaultValue: "⭐")) \(affectedFavoriteCount) \(String(localized: "grid.alert.protected", defaultValue: "protected")))")
                 } else {
-                    Text("\(pathsToRemoveForDelete.count) 件のファイルをゴミ箱に移動しますか？")
+                    Text("\(pathsToRemoveForDelete.count) \(String(localized: "grid.alert.trashConfirm", defaultValue: "files will be moved to Trash."))")
                 }
             }
             .sheet(isPresented: $showFavoriteExportConfirm) {
@@ -554,7 +554,7 @@ struct ThumbnailGridView: View {
                     VStack(spacing: 12) {
                         ProgressView()
                             .scaleEffect(0.8)
-                        Text("読み込み中…")
+                        Text(String(localized: "grid.loading", defaultValue: "Loading…"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -565,9 +565,9 @@ struct ThumbnailGridView: View {
                 }
             } else if entries.isEmpty {
                 ContentUnavailableView(
-                    "画像がありません",
+                    String(localized: "grid.noImages", defaultValue: "No Images"),
                     systemImage: "photo",
-                    description: Text("このフォルダには画像ファイルが含まれていません")
+                    description: Text(String(localized: "grid.noImagesDescription", defaultValue: "This folder contains no image files"))
                 )
             } else {
                 ThumbnailCollectionViewBridge(
@@ -662,7 +662,7 @@ struct ThumbnailGridView: View {
                     .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
-                .help("クリックでモード切替")
+                .help(String(localized: "grid.help.toggleMode", defaultValue: "Click to toggle mode"))
                 
                 // #103: Select all favorites in keep mode
                 if settings.selectionMode == .keep && !directFavoritePaths.isEmpty {
@@ -675,7 +675,7 @@ struct ThumbnailGridView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: directFavoritePaths.isSubset(of: selectedPaths) ? "checkmark.square.fill" : "square")
-                            Text("★をすべて選出")
+                            Text(String(localized: "grid.button.selectAllFavorites", defaultValue: "Select All ★"))
                         }
                         .font(.caption)
                         .padding(.horizontal, 8)
@@ -685,14 +685,14 @@ struct ThumbnailGridView: View {
                         .cornerRadius(4)
                     }
                     .buttonStyle(.plain)
-                    .help("★付きアイテムをすべて選出に追加")
+                    .help(String(localized: "grid.help.selectAllFavorites", defaultValue: "Add all ★ items to selection"))
                 }
                 
-                Text("\(entries.count) 画像")
+                Text("\(entries.count) \(String(localized: "grid.status.images", defaultValue: "images"))")
                     .foregroundStyle(.secondary)
                 
                 if !selectedPaths.isEmpty {
-                    Text("/ \(selectedPaths.count) 選択")
+                    Text("/ \(selectedPaths.count) \(String(localized: "grid.status.selected", defaultValue: "selected"))")
                         .foregroundStyle(settings.selectionMode == .exclude ? .orange : .green)
                 }
             }
@@ -735,7 +735,7 @@ struct ThumbnailGridView: View {
     @ViewBuilder
     private var footerView: some View {
         HStack {
-            Button("選択をクリア") {
+            Button(String(localized: "grid.button.clearSelection", defaultValue: "Clear Selection")) {
                 selectedPaths.removeAll()
             }
             .buttonStyle(.plain)
@@ -750,33 +750,33 @@ struct ThumbnailGridView: View {
             
             switch imageSource.sourceType {
             case .archive:
-                Button("確定 → _opt.zip") {
+                Button(String(localized: "grid.button.exportOptZip", defaultValue: "Export → _opt.zip")) {
                     confirmExportArchive()
                 }
                 .buttonStyle(.borderedProminent)
                 
             case .folder:
-                Button("削除（ゴミ箱）") {
+                Button(String(localized: "grid.button.deleteTrash", defaultValue: "Delete (Trash)")) {
                     showDeleteConfirm = true
                 }
                 .buttonStyle(.bordered)
                 .foregroundStyle(.red)
                 
-                Button("ZIP化") {
+                Button(String(localized: "grid.button.createZip", defaultValue: "Create ZIP")) {
                     confirmCreateZip()
                 }
                 .buttonStyle(.borderedProminent)
             
             case .pdf:
                 Menu {
-                    Button("PNGとして出力...") {
+                    Button(String(localized: "grid.button.exportPng", defaultValue: "Export as PNG...")) {
                         confirmExportPNG()
                     }
-                    Button("PNGで出力（ZIP）...") {
+                    Button(String(localized: "grid.button.exportPngZip", defaultValue: "Export PNG (ZIP)...")) {
                         confirmExportPNGZip()
                     }
                 } label: {
-                    Text("確定 → _opt.pdf")
+                    Text(String(localized: "grid.button.exportOptPdf", defaultValue: "Export → _opt.pdf"))
                 } primaryAction: {
                     confirmExportPDF()
                 }
@@ -791,9 +791,9 @@ struct ThumbnailGridView: View {
         let removeCount = pathsToRemove.count
         let favoriteCount = affectedFavoriteCount
         
-        var summary = "出力: \(keepCount)件 / 除外: \(removeCount)件"
+        var summary = "\(String(localized: "grid.footer.keep", defaultValue: "Keep")): \(keepCount) / \(String(localized: "grid.footer.exclude", defaultValue: "Exclude")): \(removeCount)"
         if favoriteCount > 0 {
-            summary += " (含★\(favoriteCount)件)"
+            summary += " (\(String(localized: "grid.footer.includingFavorites", defaultValue: "incl. ★"))\(favoriteCount))"
         }
         return summary
     }
@@ -1579,7 +1579,7 @@ struct ThumbnailGridView: View {
         
         // #163: Block export when all items are excluded
         if pathsToKeep.isEmpty {
-            exportMessage = "出力するファイルがありません（すべて除外されています）"
+            exportMessage = String(localized: "grid.export.noFilesToExport", defaultValue: "No files to export (all excluded)")
             showExportError = true
             return
         }
@@ -1588,7 +1588,7 @@ struct ThumbnailGridView: View {
         let outputName = "\(originalName)_opt.zip"
         
         let savePanel = NSSavePanel()
-        savePanel.title = "最適化ZIPの保存先"
+        savePanel.title = String(localized: "grid.panel.saveOptimizedZip", defaultValue: "Save Optimized ZIP")
         savePanel.nameFieldStringValue = outputName
         savePanel.allowedContentTypes = [.zip]
         savePanel.directoryURL = settings.outputDirectory(for: archiveManager.url)
@@ -1613,7 +1613,7 @@ struct ThumbnailGridView: View {
                 contentHashes: contentHashes,
                 options: exportMetadataOptions
             )
-            exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(pathsToKeep.count) ファイル / 除外: \(pathsToRemove.count) ファイル"
+            exportMessage = "\(outputURL.lastPathComponent) \(String(localized: "grid.export.createdWithExcluded", defaultValue: "created\nKeep:")) \(pathsToKeep.count) \(String(localized: "grid.export.files", defaultValue: "files")) / \(String(localized: "grid.footer.exclude", defaultValue: "Exclude")): \(pathsToRemove.count) \(String(localized: "grid.export.files", defaultValue: "files"))"
             showExportSuccess = true
             selectedPaths.removeAll()  // Clear selections after success
             onExportSuccess?()
@@ -1643,7 +1643,7 @@ struct ThumbnailGridView: View {
         
         // #163: Block export when all items are excluded
         if pathsToKeep.isEmpty {
-            exportMessage = "出力するファイルがありません（すべて除外されています）"
+            exportMessage = String(localized: "grid.export.noFilesToExport", defaultValue: "No files to export (all excluded)")
             showExportError = true
             return
         }
@@ -1651,7 +1651,7 @@ struct ThumbnailGridView: View {
         let outputName = "\(folderManager.displayName).zip"
         
         let savePanel = NSSavePanel()
-        savePanel.title = "ZIPファイルの保存先"
+        savePanel.title = String(localized: "grid.panel.saveZip", defaultValue: "Save ZIP File")
         savePanel.nameFieldStringValue = outputName
         savePanel.allowedContentTypes = [.zip]
         savePanel.directoryURL = settings.outputDirectory(for: folderManager.url)
@@ -1676,7 +1676,7 @@ struct ThumbnailGridView: View {
                 contentHashes: contentHashes,
                 options: exportMetadataOptions
             )
-            exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(pathsToKeep.count) ファイル"
+            exportMessage = "\(outputURL.lastPathComponent) \(String(localized: "grid.export.created", defaultValue: "created\nContains:")) \(pathsToKeep.count) \(String(localized: "grid.export.files", defaultValue: "files"))"
             showExportSuccess = true
             selectedPaths.removeAll()  // Clear selections after success
             onExportSuccess?()
@@ -1692,7 +1692,7 @@ struct ThumbnailGridView: View {
         
         do {
             let count = try folderManager.moveToTrash(paths: pathsToRemoveForDelete)
-            exportMessage = "\(count) 件のファイルをゴミ箱に移動しました"
+            exportMessage = "\(count) \(String(localized: "grid.export.movedToTrash", defaultValue: "files moved to Trash"))"
             showExportSuccess = true
             selectedPaths.removeAll()  // Clear selections after success
             loadSource()  // Refresh the list
@@ -1717,7 +1717,7 @@ struct ThumbnailGridView: View {
         
         // #163: Block export when all pages are excluded
         if pathsToKeep.isEmpty {
-            exportMessage = "出力するページがありません（すべて除外されています）"
+            exportMessage = String(localized: "grid.export.noPagesToExport", defaultValue: "No pages to export (all excluded)")
             showExportError = true
             return
         }
@@ -1726,7 +1726,7 @@ struct ThumbnailGridView: View {
         let outputName = "\(originalName)_opt.pdf"
         
         let savePanel = NSSavePanel()
-        savePanel.title = "最適化PDFの保存先"
+        savePanel.title = String(localized: "grid.panel.saveOptimizedPdf", defaultValue: "Save Optimized PDF")
         savePanel.nameFieldStringValue = outputName
         savePanel.allowedContentTypes = [.pdf]
         savePanel.directoryURL = settings.outputDirectory(for: pdfManager.url)
@@ -1753,7 +1753,7 @@ struct ThumbnailGridView: View {
                 newPathForSurvivingIndex: pathRemapper,
                 options: exportMetadataOptions
             )
-            exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(pathsToKeep.count) ページ / 除外: \(pathsToRemove.count) ページ"
+            exportMessage = "\(outputURL.lastPathComponent) \(String(localized: "grid.export.created", defaultValue: "created\nContains:")) \(pathsToKeep.count) \(String(localized: "grid.export.pages", defaultValue: "pages")) / \(String(localized: "grid.footer.exclude", defaultValue: "Exclude")): \(pathsToRemove.count) \(String(localized: "grid.export.pages", defaultValue: "pages"))"
             showExportSuccess = true
             selectedPaths.removeAll()
             onExportSuccess?()
@@ -1775,13 +1775,13 @@ struct ThumbnailGridView: View {
         
         // #163: Block export when all pages are excluded
         if pathsToKeep.isEmpty {
-            exportMessage = "出力するページがありません（すべて除外されています）"
+            exportMessage = String(localized: "grid.export.noPagesToExport", defaultValue: "No pages to export (all excluded)")
             showExportError = true
             return
         }
         
         let openPanel = NSOpenPanel()
-        openPanel.title = "PNG出力先フォルダを選択"
+        openPanel.title = String(localized: "grid.panel.selectPngFolder", defaultValue: "Select PNG Output Folder")
         openPanel.canChooseDirectories = true
         openPanel.canChooseFiles = false
         openPanel.canCreateDirectories = true
@@ -1806,7 +1806,7 @@ struct ThumbnailGridView: View {
                 newPathForSurvivingIndex: pathRemapper,
                 options: exportMetadataOptions
             )
-            exportMessage = "\(folderName)/ に \(count) ページを出力しました"
+            exportMessage = "\(folderName)/ — \(count) \(String(localized: "grid.export.pagesExported", defaultValue: "pages exported"))"
             showExportSuccess = true
             selectedPaths.removeAll()
             onExportSuccess?()
@@ -1830,7 +1830,7 @@ struct ThumbnailGridView: View {
         
         // #163: Block export when all pages are excluded
         if pathsToKeep.isEmpty {
-            exportMessage = "出力するページがありません（すべて除外されています）"
+            exportMessage = String(localized: "grid.export.noPagesToExport", defaultValue: "No pages to export (all excluded)")
             showExportError = true
             return
         }
@@ -1839,7 +1839,7 @@ struct ThumbnailGridView: View {
         let outputName = "\(originalName)_png.zip"
         
         let savePanel = NSSavePanel()
-        savePanel.title = "PNG ZIP の保存先"
+        savePanel.title = String(localized: "grid.panel.savePngZip", defaultValue: "Save PNG ZIP")
         savePanel.nameFieldStringValue = outputName
         savePanel.allowedContentTypes = [.zip]
         savePanel.directoryURL = settings.outputDirectory(for: pdfManager.url)
@@ -1868,7 +1868,7 @@ struct ThumbnailGridView: View {
                 newPathForSurvivingIndex: pathRemapper,
                 options: exportMetadataOptions
             )
-            exportMessage = "\(outputURL.lastPathComponent) を作成しました\n含む: \(count) ページ"
+            exportMessage = "\(outputURL.lastPathComponent) \(String(localized: "grid.export.created", defaultValue: "created\nContains:")) \(count) \(String(localized: "grid.export.pages", defaultValue: "pages"))"
             showExportSuccess = true
             selectedPaths.removeAll()
             onExportSuccess?()
