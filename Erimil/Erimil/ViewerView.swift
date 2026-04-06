@@ -447,7 +447,7 @@ struct ViewerView: View {
                     Image(systemName: "photo.on.rectangle.angled")
                         .font(.system(size: 64))
                         .foregroundStyle(.white.opacity(0.4))
-                    Text("画像がありません")
+                    Text(String(localized: "viewer.noImages", defaultValue: "No Images"))
                         .font(.title2)
                         .foregroundStyle(.white.opacity(0.6))
                     Text(imageSource.url.lastPathComponent)
@@ -530,7 +530,7 @@ struct ViewerView: View {
                     .foregroundStyle(.white.opacity(0.8))
             }
             .buttonStyle(.plain)
-            .help("閉じる (Esc/Q)")
+            .help(String(localized: "viewer.help.close", defaultValue: "Close (Esc/Q)"))
             
             Spacer()
             
@@ -543,7 +543,7 @@ struct ViewerView: View {
                     .foregroundStyle(.white.opacity(0.6))
             }
             .buttonStyle(.plain)
-            .help("サムネイル位置: \(settings.viewerThumbnailPosition.displayName) (T)")
+            .help("\(String(localized: "viewer.help.thumbnailPosition", defaultValue: "Thumbnail position:"))" + " \(settings.viewerThumbnailPosition.displayName) (T)")
             
             Spacer()
             
@@ -629,7 +629,7 @@ struct ViewerView: View {
                     .foregroundStyle(.white.opacity(0.8))
             }
             .buttonStyle(.plain)
-            .help("全画面表示 (Enter)")
+            .help(String(localized: "viewer.help.fullscreen", defaultValue: "Fullscreen (Enter)"))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -649,22 +649,22 @@ struct ViewerView: View {
     @ViewBuilder
     private var footerBar: some View {
         HStack {
-            Text("←→: ページ")
-            Text("Ctrl+←→: ソース")
+            Text(String(localized: "viewer.shortcut.pages", defaultValue: "←→: Pages"))
+            Text(String(localized: "viewer.shortcut.source", defaultValue: "Ctrl+←→: Source"))
             Text("F: ★")
-            Text("X: 選択")
-            Text("T: サムネイル")
+            Text(String(localized: "viewer.shortcut.select", defaultValue: "X: Select"))
+            Text(String(localized: "viewer.shortcut.thumbnail", defaultValue: "T: Thumbnail"))
             // #55: Show V key hint only when spread mode is enabled
             if AppSettings.shared.isSpreadModeEnabled {
-                Text("V: 単独")
+                Text(String(localized: "viewer.shortcut.single", defaultValue: "V: Single"))
             }
             // #101: Deskew hints (PDF only)
             if imageSource.sourceType == .pdf {
-                Text("⌘D: 傾き補正")
-                Text("⌘[/]: 微調整")
+                Text(String(localized: "viewer.shortcut.deskew", defaultValue: "⌘D: Deskew"))
+                Text(String(localized: "viewer.shortcut.nudge", defaultValue: "⌘[/]: Nudge"))
             }
-            Text("Enter: 全画面")
-            Text("Esc: 閉じる")
+            Text(String(localized: "viewer.shortcut.fullscreen", defaultValue: "Enter: Fullscreen"))
+            Text(String(localized: "viewer.shortcut.close", defaultValue: "Esc: Close"))
         }
         .font(.caption)
         .foregroundStyle(.white.opacity(0.5))
