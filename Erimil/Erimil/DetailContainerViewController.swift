@@ -37,9 +37,9 @@ class DetailContainerViewController: NSViewController {
     func showPlaceholder() {
         updateContent(
             ContentUnavailableView(
-                "ZIPファイルまたはフォルダを選択",
+                String(localized: "detail.selectSource", defaultValue: "Select a ZIP File or Folder"),
                 systemImage: "archivebox",
-                description: Text("左のツリーから選んでください")
+                description: Text(String(localized: "detail.selectSourceDescription", defaultValue: "Choose from the tree on the left"))
             )
         )
     }

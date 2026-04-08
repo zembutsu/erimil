@@ -53,7 +53,7 @@ enum ExportUtilities {
     /// Returns localized error message if blocked, nil if safe to proceed.
     static func guardDestination(_ url: URL) -> String? {
         if FileManager.default.fileExists(atPath: url.path) {
-            return "「\(url.lastPathComponent)」は既に存在します。別の名前を指定してください。"
+            return "\(url.lastPathComponent) \(String(localized: "error.fileAlreadyExists", defaultValue: "already exists. Please choose a different name."))"
         }
         return nil
     }

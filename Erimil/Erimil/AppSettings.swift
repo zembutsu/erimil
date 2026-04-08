@@ -19,18 +19,18 @@ enum SelectionMode: String, CaseIterable {
     var displayName: String {
         switch self {
         case .exclude: return String(localized: "selectionMode.exclude.displayName",
-                                     defaultValue: "除外モード")
+                                     defaultValue: "Exclude Mode")
         case .keep: return String(localized: "selectionMode.keep.displayName",
-                                  defaultValue: "選出モード")
+                                  defaultValue: "Keep Mode")
         }
     }
     
     var description: String {
         switch self {
         case .exclude: return String(localized: "selectionMode.exclude.description",
-                                     defaultValue: "クリックした画像が除外されます（安全）")
+                                     defaultValue: "Clicked images are excluded (safe)")
         case .keep: return String(localized: "selectionMode.keep.description",
-                                  defaultValue: "クリックした画像だけが残ります")
+                                  defaultValue: "Only clicked images are kept")
         }
     }
 }
@@ -46,15 +46,15 @@ enum ThumbnailSizePreset: String, CaseIterable {
     var displayName: String {
         switch self {
         case .small: return String(localized: "thumbnailSize.small",
-                                   defaultValue: "小")
+                                   defaultValue: "Small")
         case .medium: return String(localized: "thumbnailSize.medium",
-                                    defaultValue: "中")
+                                    defaultValue: "Medium")
         case .large: return String(localized: "thumbnailSize.large",
-                                   defaultValue: "大")
+                                   defaultValue: "Large")
         case .extraLarge: return String(localized: "thumbnailSize.extraLarge",
-                                       defaultValue: "特大")
+                                       defaultValue: "Extra Large")
         case .custom: return String(localized: "thumbnailSize.custom",
-                                    defaultValue: "カスタム")
+                                    defaultValue: "Custom")
         }
     }
     
@@ -77,18 +77,18 @@ enum FavoriteScope: String, CaseIterable {
     var displayName: String {
         switch self {
         case .content: return String(localized: "favoriteScope.content.displayName",
-                                     defaultValue: "コンテンツ単位")
+                                     defaultValue: "By Content")
         case .source: return String(localized: "favoriteScope.source.displayName",
-                                    defaultValue: "ソース単位")
+                                    defaultValue: "By Source")
         }
     }
     
     var description: String {
         switch self {
         case .content: return String(localized: "favoriteScope.content.description",
-                                     defaultValue: "同じ画像なら別の場所でも⭐（画像の中身で識別）")
+                                     defaultValue: "Same image gets ⭐ everywhere (identified by content)")
         case .source: return String(localized: "favoriteScope.source.description",
-                                    defaultValue: "ZIP/フォルダごとに独立した⭐（場所で識別）")
+                                    defaultValue: "Independent ⭐ per ZIP/folder (identified by location)")
         }
     }
 }
@@ -102,11 +102,11 @@ enum ViewerThumbnailPosition: String, CaseIterable {
     var displayName: String {
         switch self {
         case .left: return String(localized: "viewerThumbnail.left",
-                                  defaultValue: "左")
+                                  defaultValue: "Left")
         case .bottom: return String(localized: "viewerThumbnail.bottom",
-                                    defaultValue: "下")
+                                    defaultValue: "Bottom")
         case .hidden: return String(localized: "viewerThumbnail.hidden",
-                                    defaultValue: "非表示")
+                                    defaultValue: "Hidden")
         }
     }
     
@@ -128,9 +128,9 @@ enum ReadingDirection: String, CaseIterable, Codable {
     var displayName: String {
         switch self {
         case .ltr: return String(localized: "readingDirection.ltr",
-                                 defaultValue: "左→右 (LTR)")
+                                 defaultValue: "Left to Right (LTR)")
         case .rtl: return String(localized: "readingDirection.rtl",
-                                 defaultValue: "右→左 (RTL)")
+                                 defaultValue: "Right to Left (RTL)")
         }
     }
     

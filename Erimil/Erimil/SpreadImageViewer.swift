@@ -315,7 +315,7 @@ struct SpreadImageViewer: View {
             
             // Loading indicator (only on initial load)
             if isLoading && bufferA == nil && bufferB == nil {
-                ProgressView("読み込み中...")
+                ProgressView(String(localized: "spread.loading", defaultValue: "Loading..."))
                     .foregroundStyle(.white)
                     .zIndex(2)
             }
