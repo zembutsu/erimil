@@ -298,7 +298,7 @@ class AppSettings: ObservableObject {
         didSet { defaults.set(metadataCarryOverFavorites, forKey: Keys.metadataFavorites) }
     }
     
-    /// Copy 栞 bookmarks on export
+    /// Copy bookmarks (栞) on export
     @Published var metadataCarryOverBookmarks: Bool {
         didSet { defaults.set(metadataCarryOverBookmarks, forKey: Keys.metadataBookmarks) }
     }

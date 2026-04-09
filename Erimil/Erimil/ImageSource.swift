@@ -69,10 +69,10 @@ protocol ImageSource {
     /// Resolve file URL for entry (nil if not directly accessible)
     func fileURL(for entry: ImageEntry) -> URL?
     
-    /// 指定エントリの画像がアニメーション画像かどうか（軽量チェック）
+    /// Check whether the specified entry is an animated image (lightweight check)
     func isAnimatedImage(for entry: ImageEntry) -> Bool
 
-    /// アニメーション全フレームをデコード。非アニメーションまたは安全上限超過時はnil。
+    /// Decode all animation frames. Returns nil for non-animated images or when safety limit is exceeded.
     func animatedImageContent(for entry: ImageEntry) -> AnimatedImageContent?
     
     func registerThumbnailForTileSheet(for entry: ImageEntry, contentHash: String, image: NSImage)
