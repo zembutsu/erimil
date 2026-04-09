@@ -31,7 +31,7 @@ struct ContentView: View {
     // S016: Flag to reopen Viewer Mode after source switch
     @State private var shouldReopenViewerMode: Bool = false
     
-    // 確認ダイアログ用
+    // For unsaved changes confirmation dialog
     @State private var pendingSourceURL: URL?
     @State private var pendingSourceType: ImageSourceType?
     @State private var showUnsavedAlert = false
@@ -128,12 +128,12 @@ struct ContentView: View {
         // S050: T1 — callback arrived at ContentView
         SourceSwitchTiming.mark("callback")
         
-        // 同じソースを選択した場合は何もしない
+        // Ignore if the same source is already selected
         if url == sourceSelection.currentURL && type == sourceSelection.currentType {
             return
         }
         
-        // 未保存の変更がある場合は確認
+        // Confirm if there are unsaved changes
         if !selectedPaths.isEmpty {
             pendingSourceURL = url
             pendingSourceType = type

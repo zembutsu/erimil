@@ -116,7 +116,7 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
                 let detailView = repr.makeDetailView(imageSource: source)
                 SourceSwitchTiming.mark("swap.detail.created")  // ← NEW
                 splitController?.detailController.updateContent(detailView)
-                SourceSwitchTiming.mark("direct.swap.done")  // 既存（互換維持）
+                SourceSwitchTiming.mark("direct.swap.done")  // existing (kept for compatibility)
             } else {
                 splitController?.detailController.showPlaceholder()
             }

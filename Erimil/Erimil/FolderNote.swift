@@ -42,7 +42,7 @@ struct FolderNode: Identifiable, Hashable {
         
         return contents
             .filter { item in
-                // ディレクトリまたはZIPファイルのみ
+                // Directories or ZIP files only
                 var isDir: ObjCBool = false
                 fm.fileExists(atPath: item.path, isDirectory: &isDir)
                 return isDir.boolValue || item.pathExtension.lowercased() == "zip" || item.pathExtension.lowercased() == "pdf"

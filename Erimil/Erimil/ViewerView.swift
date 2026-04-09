@@ -913,7 +913,7 @@ struct ViewerView: View {
         }
         
         if isShowingSpread {
-            // Spread表示で、右ページが元いた場所なら、さらに1つ戻る
+            // In spread view, go back one more if right page was the original position
             if preNavIndex == viewerIndex + 1 && viewerIndex > 0 {
                 Logger.viewer.debug("Correcting backward spread (showing spread): \(viewerIndex, privacy: .public) → \(viewerIndex - 1, privacy: .public)")
                 preNavIndex = viewerIndex
@@ -921,7 +921,7 @@ struct ViewerView: View {
                 return  // Keep navDirection for chained corrections
             }
         } else if couldBeSpreadWithPrevious {
-            // 単独表示だが、前のページとspreadになれる可能性がある → 戻ってみる
+            // Single page view, but previous page might form a spread — try going back
             if viewerIndex > 0 {
                 Logger.viewer.debug("Correcting backward spread (could be spread): \(viewerIndex, privacy: .public) → \(viewerIndex - 1, privacy: .public)")
                 preNavIndex = viewerIndex

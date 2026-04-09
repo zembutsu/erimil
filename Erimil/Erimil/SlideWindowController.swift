@@ -1410,7 +1410,7 @@ class SlideWindowController {
         guard autoSlideMode != 0 else { return }
         let before = currentIndex
         let isReverse = autoSlideMode < 0
-        // Fav Mode 中は★のみ進む
+        // In Fav Mode, advance only through favorited items
         if isFavoritesMode {
             if isReverse { goToPreviousFavorite() } else { goToNextFavorite() }
         } else {
