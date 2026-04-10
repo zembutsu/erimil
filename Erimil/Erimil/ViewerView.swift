@@ -489,36 +489,13 @@ struct ViewerView: View {
                         }  // #154
                     )
                     
-                    // Navigation hints (left/right edges) - #67: Spread-aware
-                    HStack {
-                        // Left arrow area
-                        if viewerIndex > 0 {
-                            Button {
-                                goToPrevious()
-                            } label: {
-                                Rectangle()
-                                    .fill(Color.clear)
-                                    .frame(width: 60)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        
-                        Spacer()
-                        
-                        // Right arrow area
-                        if viewerIndex < entries.count - 1 {
-                            Button {
-                                goToNext()
-                            } label: {
-                                Rectangle()
-                                    .fill(Color.clear)
-                                    .frame(width: 60)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+                    // #255: Edge-click navigation with chevron overlay
+                    EdgeNavigationOverlay(
+                        canGoBack: viewerIndex > 0,
+                        canGoForward: viewerIndex < entries.count - 1,
+                        onBack: { goToPrevious() },
+                        onForward: { goToNext() }
+                    )
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }

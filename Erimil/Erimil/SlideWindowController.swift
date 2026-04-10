@@ -1656,34 +1656,13 @@ struct SlideWindowView: View {
                 )
                 .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)  // #150: RTL spread inversion
                 
-                // #245: Edge-click navigation (same UX as Reader Mode)
-                HStack {
-                    if currentIndex > 0 {
-                        Button {
-                            onPrevious?()
-                        } label: {
-                            Rectangle()
-                                .fill(Color.clear)
-                                .frame(width: 60)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    
-                    Spacer()
-                    
-                    if currentIndex < entries.count - 1 {
-                        Button {
-                            onNext?()
-                        } label: {
-                            Rectangle()
-                                .fill(Color.clear)
-                                .frame(width: 60)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+                // #255: Edge-click navigation with chevron overlay
+                EdgeNavigationOverlay(
+                    canGoBack: currentIndex > 0,
+                    canGoForward: currentIndex < entries.count - 1,
+                    onBack: { onPrevious?() },
+                    onForward: { onNext?() }
+                )
                 .environment(\.layoutDirection, effectiveReadingDirection.layoutDirection)  // #245: RTL-aware
             }
             
