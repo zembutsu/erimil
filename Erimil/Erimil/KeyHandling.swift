@@ -503,13 +503,12 @@ struct CommonKeyParser {
         let hasShift = event.modifierFlags.contains(.shift)
         let hasCommand = event.modifierFlags.contains(.command)
         
-        // #143: Ctrl+Option = N-step navigation (must check before Ctrl alone)
-        let hasCtrlOption = hasControl && hasOption
+        // #143/#255: Option = N-step navigation (must check before Ctrl alone)
         
         switch event.keyCode {
         // Left arrow - horizontal, RTL-invertible
         case KeyCode.leftArrow:
-            if hasCtrlOption {
+            if hasOption {
                 return .navigateNStep(.backward)
             } else if hasControl {
                 return .navigateSource(.backward)
@@ -521,7 +520,7 @@ struct CommonKeyParser {
             
         // Right arrow - horizontal, RTL-invertible
         case KeyCode.rightArrow:
-            if hasCtrlOption {
+            if hasOption {
                 return .navigateNStep(.forward)
             } else if hasControl {
                 return .navigateSource(.forward)
@@ -568,7 +567,7 @@ struct CommonKeyParser {
         case "a":
             if hasCommand {
                 return .selectAll                     // #169: Cmd+A = select/deselect all (Grid)
-            } else if hasCtrlOption {
+            } else if hasOption {
                 return .navigateNStep(.backward)
             } else if hasShift {
                 return .navigateBookmark(.backward)   // Shift+A = prev bookmark (#62)
@@ -582,7 +581,7 @@ struct CommonKeyParser {
         
         // D - horizontal, RTL-invertible
         case "d":
-            if hasCtrlOption {
+            if hasOption {
                 return .navigateNStep(.forward)
             } else if hasShift {
                 return .navigateBookmark(.forward)    // Shift+D = next bookmark (#62)
@@ -617,7 +616,7 @@ struct CommonKeyParser {
             }
             
         case "z":
-            if hasCtrlOption {
+            if hasOption {
                 return .navigateFavoriteNStep(.backward)
             } else if hasControl {
                 return .jumpToFavoriteEdge(.backward)  // Ctrl+Z = jump to first/last fav
@@ -625,7 +624,7 @@ struct CommonKeyParser {
             return .navigateFavorite(.backward)
             
         case "c":
-            if hasCtrlOption {
+            if hasOption {
                 return .navigateFavoriteNStep(.forward)
             } else if hasControl {
                 return .jumpToFavoriteEdge(.forward)   // Ctrl+C = jump to last/first fav

@@ -993,8 +993,8 @@ struct ViewerView: View {
             
         // Left arrow
         case 123:
-            if event.modifierFlags.contains(.control) && event.modifierFlags.contains(.option) {
-                // #143: N-step file navigation (RTL-aware)
+            if event.modifierFlags.contains(.option) {
+                // #257: N-step file navigation (RTL-aware)
                 let step = AppSettings.shared.navigationStepCount
                 if let target = NavigationHelper.navigateNStep(
                     direction: .backward, from: viewerIndex,
@@ -1010,8 +1010,8 @@ struct ViewerView: View {
             
         // Right arrow
         case 124:
-            if event.modifierFlags.contains(.control) && event.modifierFlags.contains(.option) {
-                // #143: N-step file navigation (RTL-aware)
+            if event.modifierFlags.contains(.option) {
+                // #257: N-step file navigation (RTL-aware)
                 let step = AppSettings.shared.navigationStepCount
                 if let target = NavigationHelper.navigateNStep(
                     direction: .forward, from: viewerIndex,
@@ -1027,8 +1027,8 @@ struct ViewerView: View {
         
         // Up arrow - always previous (#106: vertical = direction-independent)
         case 126:
-            if event.modifierFlags.contains(.control) && event.modifierFlags.contains(.option) {
-                // #143: N-step source navigation
+            if event.modifierFlags.contains(.option) {
+                // #257: N-step source navigation
                 let step = AppSettings.shared.navigationStepCount
                 onRequestSourceJump?(-step)
             } else if event.modifierFlags.contains(.control) {
@@ -1040,8 +1040,8 @@ struct ViewerView: View {
             
         // Down arrow - always next (#106: vertical = direction-independent)
         case 125:
-            if event.modifierFlags.contains(.control) && event.modifierFlags.contains(.option) {
-                // #143: N-step source navigation
+            if event.modifierFlags.contains(.option) {
+                // #257: N-step source navigation
                 let step = AppSettings.shared.navigationStepCount
                 onRequestSourceJump?(step)
             } else if event.modifierFlags.contains(.control) {
@@ -1099,8 +1099,8 @@ struct ViewerView: View {
             
         // A - previous (Ctrl+A = jump to start/end, #62: Shift+A = prev bookmark)
         case "a":
-            if event.modifierFlags.contains(.control) && event.modifierFlags.contains(.option) {
-                // #143: N-step file navigation (RTL-aware)
+            if event.modifierFlags.contains(.option) {
+                // #257: N-step file navigation (RTL-aware)
                 let step = AppSettings.shared.navigationStepCount
                 if let target = NavigationHelper.navigateNStep(
                     direction: .backward, from: viewerIndex,
@@ -1128,8 +1128,8 @@ struct ViewerView: View {
             
         // D - next (Ctrl+D = jump to end/start, #62: Shift+D = next bookmark, #101: Cmd+D = deskew)
         case "d":
-            if event.modifierFlags.contains(.control) && event.modifierFlags.contains(.option) {
-                // #143: N-step file navigation (RTL-aware)
+            if event.modifierFlags.contains(.option) {
+                // #257: N-step file navigation (RTL-aware)
                 let step = AppSettings.shared.navigationStepCount
                 if let target = NavigationHelper.navigateNStep(
                     direction: .forward, from: viewerIndex,
@@ -1165,8 +1165,8 @@ struct ViewerView: View {
         
         // S017: W - previous (#106: vertical = direction-independent)
         case "w":
-            if event.modifierFlags.contains(.control) && event.modifierFlags.contains(.option) {
-                // #143: N-step source navigation
+            if event.modifierFlags.contains(.option) {
+                // #257: N-step source navigation
                 let step = AppSettings.shared.navigationStepCount
                 onRequestSourceJump?(-step)
             } else if event.modifierFlags.contains(.control) {
@@ -1179,8 +1179,8 @@ struct ViewerView: View {
         // S017: S - next (#106: vertical = direction-independent)
         // #62: Shift+S = bookmark
         case "s":
-            if event.modifierFlags.contains(.control) && event.modifierFlags.contains(.option) {
-                // #143: N-step source navigation
+            if event.modifierFlags.contains(.option) {
+                // #257: N-step source navigation
                 let step = AppSettings.shared.navigationStepCount
                 onRequestSourceJump?(step)
             } else if event.modifierFlags.contains(.shift) {
@@ -1365,8 +1365,8 @@ struct ViewerView: View {
         
         // #72: Z - previous favorite (RTL-aware), Ctrl+Z - first/last favorite (RTL-aware)
         case "z":
-            if event.modifierFlags.contains(.control) && event.modifierFlags.contains(.option) {
-                // #143: N-step favorite navigation (RTL-aware)
+            if event.modifierFlags.contains(.option) {
+                // #257: N-step favorite navigation (RTL-aware)
                 let step = AppSettings.shared.navigationStepCount
                 if let target = NavigationHelper.navigateFavoriteNStep(
                     direction: .backward, from: viewerIndex,
@@ -1386,8 +1386,8 @@ struct ViewerView: View {
             
         // #72: C - next favorite (RTL-aware), Ctrl+C - last/first favorite (RTL-aware)
         case "c":
-            if event.modifierFlags.contains(.control) && event.modifierFlags.contains(.option) {
-                // #143: N-step favorite navigation (RTL-aware)
+            if event.modifierFlags.contains(.option) {
+                // #257: N-step favorite navigation (RTL-aware)
                 let step = AppSettings.shared.navigationStepCount
                 if let target = NavigationHelper.navigateFavoriteNStep(
                     direction: .forward, from: viewerIndex,

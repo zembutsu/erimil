@@ -572,8 +572,7 @@ class SlideWindowController {
         let hasControl = event.modifierFlags.contains(.control)
         let hasCommand = event.modifierFlags.contains(.command)
         let hasShift = event.modifierFlags.contains(.shift)  // #62: Bookmark keys
-        let hasOption = event.modifierFlags.contains(.option)  // #143: N-step navigation
-        let hasCtrlOption = hasControl && hasOption  // #143: Ctrl+Option = N-step
+        let hasOption = event.modifierFlags.contains(.option)  // #257: Option = N-step navigation
         
         Logger.slideWindow.debug("handleKeyEvent: keyCode=\(event.keyCode, privacy: .public), ctrl=\(hasControl, privacy: .public), cmd=\(hasCommand, privacy: .public), shift=\(hasShift, privacy: .public), favMode=\(self.isFavoritesMode, privacy: .public)")
         
@@ -646,8 +645,8 @@ class SlideWindowController {
             
         // Left arrow
         case KeyCode.leftArrow:
-            if hasCtrlOption {
-                // #143: N-step file navigation (RTL-aware)
+            if hasOption {
+                // #257: N-step file navigation (RTL-aware)
                 jumpNStep(direction: .backward)
                 return nil
             } else if hasControl {
@@ -667,8 +666,8 @@ class SlideWindowController {
             
         // Right arrow
         case KeyCode.rightArrow:
-            if hasCtrlOption {
-                // #143: N-step file navigation (RTL-aware)
+            if hasOption {
+                // #257: N-step file navigation (RTL-aware)
                 jumpNStep(direction: .forward)
                 return nil
             } else if hasControl {
@@ -688,8 +687,8 @@ class SlideWindowController {
         
         // Up arrow - always previous (#106: vertical = direction-independent)
         case KeyCode.upArrow:
-            if hasCtrlOption {
-                // #143: N-step source navigation
+            if hasOption {
+                // #257: N-step source navigation
                 jumpNStepSource(direction: .backward)
                 return nil
             } else if hasControl {
@@ -707,8 +706,8 @@ class SlideWindowController {
             
         // Down arrow - always next (#106: vertical = direction-independent)
         case KeyCode.downArrow:
-            if hasCtrlOption {
-                // #143: N-step source navigation
+            if hasOption {
+                // #257: N-step source navigation
                 jumpNStepSource(direction: .forward)
                 return nil
             } else if hasControl {
@@ -748,8 +747,8 @@ class SlideWindowController {
             if let chars = event.charactersIgnoringModifiers?.lowercased() {
                 switch chars {
                 case "a":
-                    if hasCtrlOption {
-                        // #143: N-step file navigation (RTL-aware)
+                    if hasOption {
+                        // #257: N-step file navigation (RTL-aware)
                         jumpNStep(direction: .backward)
                     } else if hasShift {
                         // #62: Shift+A = previous bookmark (RTL-aware)
@@ -777,8 +776,8 @@ class SlideWindowController {
                     return nil
                     
                 case "d":
-                    if hasCtrlOption {
-                        // #143: N-step file navigation (RTL-aware)
+                    if hasOption {
+                        // #257: N-step file navigation (RTL-aware)
                         jumpNStep(direction: .forward)
                     } else if hasShift {
                         // #62: Shift+D = next bookmark (RTL-aware)
@@ -810,8 +809,8 @@ class SlideWindowController {
                 
                 // S017: W key (#106: vertical = direction-independent)
                 case "w":
-                    if hasCtrlOption {
-                        // #143: N-step source navigation
+                    if hasOption {
+                        // #257: N-step source navigation
                         jumpNStepSource(direction: .backward)
                     } else if hasControl {
                         Logger.slideWindow.debug("→ Previous source (Ctrl+W)")
@@ -826,8 +825,8 @@ class SlideWindowController {
                     
                 // S017: S key (#106: vertical = direction-independent, #62: Shift+S = bookmark)
                 case "s":
-                    if hasCtrlOption {
-                        // #143: N-step source navigation
+                    if hasOption {
+                        // #257: N-step source navigation
                         jumpNStepSource(direction: .forward)
                     } else if hasShift {
                         // #62: Shift+S = add/delete bookmark at current position
@@ -963,8 +962,8 @@ class SlideWindowController {
                 
                 // #72: Z - previous favorite (RTL-aware), Ctrl+Z - first/last favorite (RTL-aware)
                 case "z":
-                    if hasCtrlOption {
-                        // #143: N-step favorite navigation (RTL-aware)
+                    if hasOption {
+                        // #257: N-step favorite navigation (RTL-aware)
                         jumpNStepFavorite(direction: .backward)
                     } else if hasControl {
                         // Ctrl+Z = jump to visual left favorite (first in LTR, last in RTL)
@@ -981,8 +980,8 @@ class SlideWindowController {
                     
                 // #72: C - next favorite (RTL-aware), Ctrl+C - last/first favorite (RTL-aware)
                 case "c":
-                    if hasCtrlOption {
-                        // #143: N-step favorite navigation (RTL-aware)
+                    if hasOption {
+                        // #257: N-step favorite navigation (RTL-aware)
                         jumpNStepFavorite(direction: .forward)
                     } else if hasControl {
                         // Ctrl+C = jump to visual right favorite (last in LTR, first in RTL)
