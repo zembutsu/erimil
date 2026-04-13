@@ -31,21 +31,36 @@ enum NavigationDirection {
         case .backward: return .forward
         }
     }
+    
+    /// Resolve direction for execution: apply RTL inversion for horizontal axis only (#257 Phase 2)
+    func resolved(axis: NavigationAxis, isRTL: Bool) -> NavigationDirection {
+        (axis == .horizontal && isRTL) ? self.inverted : self
+    }
+}
+
+// MARK: - Navigation Axis (#257 Phase 2)
+
+/// Axis of the key that triggered navigation.
+/// Horizontal keys (←/→/A/D/Z/C) are RTL-invertible;
+/// vertical keys (↑/↓/W/S) are direction-independent.
+enum NavigationAxis {
+    case horizontal
+    case vertical
 }
 
 // MARK: - Key Actions
 
 /// All possible key actions across viewer modes
 enum KeyAction {
-    // Navigation
-    case navigate(NavigationDirection)
-    case navigateSource(NavigationDirection)
-    case navigateFavorite(NavigationDirection)
+    // Navigation (#257 Phase 2: axis for RTL-aware execution)
+    case navigate(NavigationDirection, NavigationAxis)
+    case navigateSource(NavigationDirection)       // source nav: no RTL inversion
+    case navigateFavorite(NavigationDirection, NavigationAxis)
     
-    // #143: N-step navigation (Ctrl+Option)
-    case navigateNStep(NavigationDirection)
-    case navigateSourceNStep(NavigationDirection)
-    case navigateFavoriteNStep(NavigationDirection)
+    // #143/#257: N-step navigation (Option+key)
+    case navigateNStep(NavigationDirection, NavigationAxis)
+    case navigateSourceNStep(NavigationDirection)   // source N-step: no RTL inversion
+    case navigateFavoriteNStep(NavigationDirection, NavigationAxis)
     
     // Position jumps (#72: Ctrl+A/D, Ctrl+1-5)
     case jumpToStart
@@ -509,45 +524,49 @@ struct CommonKeyParser {
         // Left arrow - horizontal, RTL-invertible
         case KeyCode.leftArrow:
             if hasOption {
-                return .navigateNStep(.backward)
+                return .navigateNStep(.backward, .horizontal)
             } else if hasControl {
                 return .navigateSource(.backward)
             } else if isFavoritesMode {
-                return .navigateFavorite(.backward)
+                return .navigateFavorite(.backward, .horizontal)
             } else {
-                return .navigate(.backward)
+                return .navigate(.backward, .horizontal)
             }
             
         // Right arrow - horizontal, RTL-invertible
         case KeyCode.rightArrow:
             if hasOption {
-                return .navigateNStep(.forward)
+                return .navigateNStep(.forward, .horizontal)
             } else if hasControl {
                 return .navigateSource(.forward)
             } else if isFavoritesMode {
-                return .navigateFavorite(.forward)
+                return .navigateFavorite(.forward, .horizontal)
             } else {
-                return .navigate(.forward)
+                return .navigate(.forward, .horizontal)
             }
         
         // Up arrow - vertical, NOT RTL-invertible (#106)
         case KeyCode.upArrow:
-            if hasControl {
+            if hasOption {
+                return .navigateSourceNStep(.backward)     // #257: Option+↑ = N-step source
+            } else if hasControl {
                 return .navigateSource(.backward)
             } else if isFavoritesMode {
-                return .navigateFavorite(.backward)
+                return .navigateFavorite(.backward, .vertical)
             } else {
-                return .navigate(.backward)  // Note: caller must NOT apply RTL inversion
+                return .navigate(.backward, .vertical)
             }
             
         // Down arrow - vertical, NOT RTL-invertible (#106)
         case KeyCode.downArrow:
-            if hasControl {
+            if hasOption {
+                return .navigateSourceNStep(.forward)      // #257: Option+↓ = N-step source
+            } else if hasControl {
                 return .navigateSource(.forward)
             } else if isFavoritesMode {
-                return .navigateFavorite(.forward)
+                return .navigateFavorite(.forward, .vertical)
             } else {
-                return .navigate(.forward)  // Note: caller must NOT apply RTL inversion
+                return .navigate(.forward, .vertical)
             }
             
         case KeyCode.escape:
@@ -568,68 +587,72 @@ struct CommonKeyParser {
             if hasCommand {
                 return .selectAll                     // #169: Cmd+A = select/deselect all (Grid)
             } else if hasOption {
-                return .navigateNStep(.backward)
+                return .navigateNStep(.backward, .horizontal)
             } else if hasShift {
                 return .navigateBookmark(.backward)   // Shift+A = prev bookmark (#62)
             } else if hasControl {
                 return .jumpToStart                   // Ctrl+A = jump to start (not source nav)
             } else if isFavoritesMode {
-                return .navigateFavorite(.backward)
+                return .navigateFavorite(.backward, .horizontal)
             } else {
-                return .navigate(.backward)
+                return .navigate(.backward, .horizontal)
             }
         
         // D - horizontal, RTL-invertible
         case "d":
             if hasOption {
-                return .navigateNStep(.forward)
+                return .navigateNStep(.forward, .horizontal)
             } else if hasShift {
                 return .navigateBookmark(.forward)    // Shift+D = next bookmark (#62)
             } else if hasControl {
                 return .jumpToEnd                     // Ctrl+D = jump to end (not source nav)
             } else if isFavoritesMode {
-                return .navigateFavorite(.forward)
+                return .navigateFavorite(.forward, .horizontal)
             } else {
-                return .navigate(.forward)
+                return .navigate(.forward, .horizontal)
             }
         
         // W - vertical, NOT RTL-invertible (#106)
         case "w":
-            if hasControl {
+            if hasOption {
+                return .navigateSourceNStep(.backward) // #257: Option+W = N-step source
+            } else if hasControl {
                 return .navigateSource(.backward)
             } else if isFavoritesMode {
-                return .navigateFavorite(.backward)
+                return .navigateFavorite(.backward, .vertical)
             } else {
-                return .navigate(.backward)  // Note: caller must NOT apply RTL inversion
+                return .navigate(.backward, .vertical)
             }
             
         // S - vertical, NOT RTL-invertible (#106)
         case "s":
             if hasShift {
                 return .addOrDeleteBookmark           // Shift+S = add/delete bookmark (#62)
+            } else if hasOption {
+                return .navigateSourceNStep(.forward)  // #257: Option+S = N-step source
             } else if hasControl {
                 return .navigateSource(.forward)
             } else if isFavoritesMode {
-                return .navigateFavorite(.forward)
+                return .navigateFavorite(.forward, .vertical)
             } else {
-                return .navigate(.forward)  // Note: caller must NOT apply RTL inversion
+                return .navigate(.forward, .vertical)
             }
             
         case "z":
             if hasOption {
-                return .navigateFavoriteNStep(.backward)
+                return .navigateFavoriteNStep(.backward, .horizontal)
             } else if hasControl {
                 return .jumpToFavoriteEdge(.backward)  // Ctrl+Z = jump to first/last fav
             }
-            return .navigateFavorite(.backward)
+            return .navigateFavorite(.backward, .horizontal)
             
         case "c":
             if hasOption {
-                return .navigateFavoriteNStep(.forward)
+                return .navigateFavoriteNStep(.forward, .horizontal)
             } else if hasControl {
                 return .jumpToFavoriteEdge(.forward)   // Ctrl+C = jump to last/first fav
             }
-            return .navigateFavorite(.forward)
+            return .navigateFavorite(.forward, .horizontal)
             
         case "b":
             if hasShift {

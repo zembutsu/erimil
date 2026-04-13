@@ -1243,8 +1243,9 @@ struct ThumbnailGridView: View {
         
         // #169: Grid-specific pre-parser handling
         // W/S without modifiers = vertical (column-based) navigation — bypass CommonKeyParser
-        if characters == "w" && !event.modifierFlags.contains(.control) {
-            moveFocus(by: -collectionUpdater.currentColumnCount())
+        if characters == "w"
+            && !event.modifierFlags.contains(.control)
+            && !event.modifierFlags.contains(.option) {            moveFocus(by: -collectionUpdater.currentColumnCount())
             return true
         }
         if characters == "s"
@@ -1271,11 +1272,11 @@ struct ThumbnailGridView: View {
     private func executeGridAction(_ action: KeyAction, currentIndex: Int) -> Bool {
         switch action {
         
-        case .navigate(let direction):
+        case .navigate(let direction, _):
             // Horizontal navigation (A/D): RTL-aware, step by 1
             moveFocus(by: direction == .forward ? (isRTL ? -1 : 1) : (isRTL ? 1 : -1))
             
-        case .navigateNStep(let direction):
+        case .navigateNStep(let direction, _):
             // Ctrl+Opt+A/D: N-step navigation (RTL-aware)
             let step = AppSettings.shared.navigationStepCount
             moveFocus(by: direction == .forward ? (isRTL ? -step : step) : (isRTL ? step : -step))
@@ -1378,7 +1379,7 @@ struct ThumbnailGridView: View {
                 selectedPaths = Set(entries.map { $0.path })
             }
             
-        case .navigateFavorite(let direction):
+        case .navigateFavorite(let direction, _):
             // Z/C: navigate favorites (RTL-aware)
             let targetIndex = direction == .backward
                 ? (isRTL
@@ -1401,7 +1402,7 @@ struct ThumbnailGridView: View {
                 Logger.folder.debug("Ctrl+\(direction == .backward ? "Z" : "C") → \(adjusted == .backward ? "first" : "last", privacy: .public) favorite at \(fav, privacy: .public)")
             }
             
-        case .navigateFavoriteNStep(let direction):
+        case .navigateFavoriteNStep(let direction, _):
             // Ctrl+Option+Z/C: N-step favorite navigation
             if let target = NavigationHelper.navigateFavoriteNStep(
                 direction: direction, from: currentIndex,
@@ -1411,6 +1412,11 @@ struct ThumbnailGridView: View {
             ) {
                 focusedIndex = target
             }
+        
+        case .navigateSourceNStep(let dir):
+            // #257 Phase 2: N-step source navigation in Grid (future enhancement)
+            break
+
             
         default:
             return false
