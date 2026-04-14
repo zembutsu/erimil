@@ -1250,7 +1250,8 @@ struct ThumbnailGridView: View {
         }
         if characters == "s"
             && !event.modifierFlags.contains(.control)
-            && !event.modifierFlags.contains(.shift) {
+            && !event.modifierFlags.contains(.shift)
+            && !event.modifierFlags.contains(.option) {
             moveFocus(by: collectionUpdater.currentColumnCount())
             return true
         }

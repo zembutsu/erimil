@@ -572,6 +572,19 @@ struct CommonKeyParser {
         case KeyCode.escape:
             return .close
             
+        // W - vertical source switch (keyCode immune to Option-altered characters)
+        // #259: charactersIgnoringModifiers returns "∑" for Ctrl+Option+W — keyCode is reliable
+        case KeyCode.w:
+            if hasControl {
+                return .navigateSource(.backward)
+            }
+            
+        // S - vertical source switch (keyCode immune to Option-altered characters)
+        case KeyCode.s:
+            if hasControl {
+                return .navigateSource(.forward)
+            }
+            
         default:
             break
         }
@@ -613,11 +626,10 @@ struct CommonKeyParser {
             }
         
         // W - vertical, NOT RTL-invertible (#106)
+        // Note: Ctrl+W handled by keyCode switch above (#259)
         case "w":
             if hasOption {
                 return .navigateSourceNStep(.backward) // #257: Option+W = N-step source
-            } else if hasControl {
-                return .navigateSource(.backward)
             } else if isFavoritesMode {
                 return .navigateFavorite(.backward, .vertical)
             } else {
@@ -625,13 +637,12 @@ struct CommonKeyParser {
             }
             
         // S - vertical, NOT RTL-invertible (#106)
+        // Note: Ctrl+S handled by keyCode switch above (#259)
         case "s":
             if hasShift {
                 return .addOrDeleteBookmark           // Shift+S = add/delete bookmark (#62)
             } else if hasOption {
                 return .navigateSourceNStep(.forward)  // #257: Option+S = N-step source
-            } else if hasControl {
-                return .navigateSource(.forward)
             } else if isFavoritesMode {
                 return .navigateFavorite(.forward, .vertical)
             } else {
