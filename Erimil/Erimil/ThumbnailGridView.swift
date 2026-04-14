@@ -1137,19 +1137,19 @@ struct ThumbnailGridView: View {
         }
         
         // Source navigation works even with empty entries
-        if let chars = event.charactersIgnoringModifiers?.lowercased() {
-            let hasControl = event.modifierFlags.contains(.control)
-            if hasControl {
-                switch chars {
-                case "w":
-                    onRequestPreviousSource?()
-                    return true
-                case "s":
-                    onRequestNextSource?()
-                    return true
-                default:
-                    break
-                }
+        // keyCode used instead of charactersIgnoringModifiers — Option modifier
+        // alters charactersIgnoringModifiers (e.g. Option+W → "∑"), breaking Ctrl+Option+W/S.
+        let hasControl = event.modifierFlags.contains(.control)
+        if hasControl {
+            switch event.keyCode {
+            case 13: // W
+                onRequestPreviousSource?()
+                return true
+            case 1:  // S
+                onRequestNextSource?()
+                return true
+            default:
+                break
             }
         }
         let hasControlArrow = event.modifierFlags.contains(.control)
