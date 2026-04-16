@@ -566,14 +566,14 @@ class SlideWindowController {
         }
     }
     
-    /// Handle key events centrally - returns nil to consume, event to pass through
+    // MARK: - #257 Phase 2: Key Event Handling (Refactored)
+    
     private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
         hideCursor()  // #145: Hide cursor on any key navigation
+        
         let hasControl = event.modifierFlags.contains(.control)
         let hasCommand = event.modifierFlags.contains(.command)
-        let hasShift = event.modifierFlags.contains(.shift)  // #62: Bookmark keys
-        let hasOption = event.modifierFlags.contains(.option)  // #143: N-step navigation
-        let hasCtrlOption = hasControl && hasOption  // #143: Ctrl+Option = N-step
+        let hasShift = event.modifierFlags.contains(.shift)
         
         Logger.slideWindow.debug("handleKeyEvent: keyCode=\(event.keyCode, privacy: .public), ctrl=\(hasControl, privacy: .public), cmd=\(hasCommand, privacy: .public), shift=\(hasShift, privacy: .public), favMode=\(self.isFavoritesMode, privacy: .public)")
         
@@ -600,8 +600,31 @@ class SlideWindowController {
             return nil
         }
         
+        // 1. Slide-specific keys (not in CommonKeyParser)
+        if handleSlideSpecificKey(event) {
+            return nil
+        }
+        
+        // 2. Common navigation via CommonKeyParser (#257 Phase 2)
+        if let action = CommonKeyParser.parseNavigationKey(event, isFavoritesMode: isFavoritesMode) {
+            executeKeyAction(action)
+            return nil
+        }
+        
+        // 3. Unrecognized — pass through
+        return event
+    }
+    
+    /// Handle keys specific to Slide Mode that CommonKeyParser does not cover.
+    /// Returns true if consumed.
+    private func handleSlideSpecificKey(_ event: NSEvent) -> Bool {
+        let hasControl = event.modifierFlags.contains(.control)
+        let hasCommand = event.modifierFlags.contains(.command)
+        let hasShift = event.modifierFlags.contains(.shift)
+        
+        // --- keyCode-based keys ---
         switch event.keyCode {
-        // Escape - dismiss inspector panel OR close fullscreen
+        // Escape: dismiss inspector panel OR close
         case KeyCode.escape:
             if MetadataInspectorPanelController.shared.isVisible {
                 Logger.slideWindow.debug("→ Close metadata inspector (Esc)")
@@ -610,18 +633,18 @@ class SlideWindowController {
                 Logger.slideWindow.debug("→ Close (Esc)")
                 triggerClose()
             }
-            return nil
+            return true
             
-        // Shift+Space - Reverse Auto-Slide (#178)
-        case KeyCode.space where event.modifierFlags.contains(.shift):
+        // Shift+Space: Reverse Auto-Slide (#178)
+        case KeyCode.space where hasShift:
             autoSlideTapHandler.handleShiftSpace(
                 currentMode: autoSlideMode,
                 start: { [weak self] mode in self?.startAutoSlide(mode: mode) },
                 stop: { [weak self] in self?.stopAutoSlide() }
             )
-            return nil
-
-        // Space - Auto-Slide (#172; overlay toggle moved to O key) / Animation toggle (#201)
+            return true
+        
+        // Space: Auto-Slide (#172) / Animation toggle (#201)
         case KeyCode.space:
             if animationController.hasAnimatedContent {
                 animationController.togglePlay()
@@ -632,9 +655,9 @@ class SlideWindowController {
                     stop: { [weak self] in self?.stopAutoSlide() }
                 )
             }
-            return nil
+            return true
             
-        // Tab - next favorite + enter Favorites Mode
+        // Tab: next favorite + enter Favorites Mode
         case KeyCode.tab:
             Logger.slideWindow.debug("→ Next favorite + Favorites Mode ON (Tab)")
             if !isFavoritesMode {
@@ -642,403 +665,232 @@ class SlideWindowController {
                 notifyViewOfModeChange()
             }
             goToNextFavorite()
-            return nil
+            return true
             
-        // Left arrow
-        case KeyCode.leftArrow:
-            if hasCtrlOption {
-                // #143: N-step file navigation (RTL-aware)
-                jumpNStep(direction: .backward)
-                return nil
-            } else if hasControl {
-                Logger.slideWindow.debug("→ Previous source (Ctrl+←)")
-                storedOnPreviousSource?()
-                return nil
-            } else if isFavoritesMode {
-                // #76: RTL inverts direction
-                Logger.slideWindow.debug("→ \(self.isRTL ? "Next" : "Previous") favorite (← in Favorites Mode)")
-                gatedNavigate { isRTL ? goToNextFavorite() : goToPreviousFavorite() }  // #154
-                return nil
-            } else {
-                // #76: RTL inverts direction
-                gatedNavigate { isRTL ? goToNext() : goToPrevious() }  // #154
-                return nil
-            }
-            
-        // Right arrow
-        case KeyCode.rightArrow:
-            if hasCtrlOption {
-                // #143: N-step file navigation (RTL-aware)
-                jumpNStep(direction: .forward)
-                return nil
-            } else if hasControl {
-                Logger.slideWindow.debug("→ Next source (Ctrl+→)")
-                storedOnNextSource?()
-                return nil
-            } else if isFavoritesMode {
-                // #76: RTL inverts direction
-                Logger.slideWindow.debug("→ \(self.isRTL ? "Previous" : "Next") favorite (→ in Favorites Mode)")
-                gatedNavigate { isRTL ? goToPreviousFavorite() : goToNextFavorite() }  // #154
-                return nil
-            } else {
-                // #76: RTL inverts direction
-                gatedNavigate { isRTL ? goToPrevious() : goToNext() }  // #154
-                return nil
-            }
+        default:
+            break
+        }
         
-        // Up arrow - always previous (#106: vertical = direction-independent)
-        case KeyCode.upArrow:
-            if hasCtrlOption {
-                // #143: N-step source navigation
-                jumpNStepSource(direction: .backward)
-                return nil
-            } else if hasControl {
-                Logger.slideWindow.debug("→ Previous source (Ctrl+↑)")
-                storedOnPreviousSource?()
-                return nil
-            } else if isFavoritesMode {
-                Logger.slideWindow.debug("→ Previous favorite (↑ in Favorites Mode)")
-                gatedNavigate { goToPreviousFavorite() }  // #154
-                return nil
-            } else {
-                gatedNavigate { goToPrevious() }  // #154
-                return nil
-            }
-            
-        // Down arrow - always next (#106: vertical = direction-independent)
-        case KeyCode.downArrow:
-            if hasCtrlOption {
-                // #143: N-step source navigation
-                jumpNStepSource(direction: .forward)
-                return nil
-            } else if hasControl {
-                Logger.slideWindow.debug("→ Next source (Ctrl+↓)")
-                storedOnNextSource?()
-                return nil
-            } else if isFavoritesMode {
-                Logger.slideWindow.debug("→ Next favorite (↓ in Favorites Mode)")
-                gatedNavigate { goToNextFavorite() }  // #154
-                return nil
-            } else {
-                gatedNavigate { goToNext() }  // #154
-                return nil
-            }
+        // --- Character-based Slide-specific keys ---
+        guard let chars = event.charactersIgnoringModifiers?.lowercased() else {
+            return false
+        }
         
-        // R - exit to Viewer Mode (Reader)
-        // #54: Ctrl+R = toggle reading direction
-        case KeyCode.r:
+        switch chars {
+        // Q: auto-slide stop / favorites exit / close (special sequencing)
+        case "q":
+            if autoSlideMode != 0 {
+                Logger.slideWindow.debug("→ Auto-slide stop (Q)")
+                stopAutoSlide()
+            } else if isFavoritesMode {
+                Logger.slideWindow.debug("→ Exit Favorites Mode (Q)")
+                isFavoritesMode = false
+                notifyViewOfModeChange()
+            } else {
+                Logger.slideWindow.debug("→ Close fullscreen (Q)")
+                triggerClose()
+            }
+            return true
+        
+        // R: Ctrl+R = toggle reading direction, plain R = exit to Viewer Mode (not Filer)
+        case "r":
             if hasControl {
-                // Ctrl+R: Toggle reading direction
                 if let source = storedImageSource {
                     let newDirection = CacheManager.shared.toggleReadingDirection(for: source.url)
-                    notifyViewOfReadingDirectionChange()  // #150: Trigger view re-render
+                    notifyViewOfReadingDirectionChange()
                     Logger.slideWindow.debug("Reading direction toggled to: \(newDirection.displayName, privacy: .public)")
                 }
-                return nil
             } else {
                 Logger.slideWindow.debug("→ Exit to Viewer Mode (R)")
                 if let exitToViewer = storedOnExitToViewerMode {
                     close()
                     exitToViewer()
                 }
-                return nil
             }
+            return true
+        
+        // P: toggle deskew (#151 alias for Cmd+D)
+        case "p":
+            Logger.slideWindow.debug("→ Toggle deskew (P)")
+            toggleDeskew()
+            return true
+        
+        // O: toggle controls overlay (#172)
+        case "o":
+            Logger.slideWindow.debug("→ Toggle controls (O)")
+            notifyViewOfControlsToggle()
+            return true
+        
+        // I: toggle metadata inspector panel (#140)
+        case "i":
+            if currentIndex < storedEntries.count {
+                MetadataInspectorPanelController.shared.toggle(
+                    imageSource: storedImageSource,
+                    entry: storedEntries[currentIndex],
+                    parentWindow: slideWindow
+                )
+            }
+            return true
+        
+        // L: toggle animation loop (#201)
+        case "l":
+            if animationController.hasAnimatedContent {
+                animationController.toggleLoop()
+            }
+            return true
+        
+        // Cmd+D: toggle deskew (#101)
+        case "d" where hasCommand:
+            toggleDeskew()
+            return true
+        
+        // #101: Cmd+[/{ = nudge deskew -0.1°, Cmd+]/} = nudge +0.1°
+        case "[", "{":
+            if hasCommand {
+                nudgeDeskewAngle(by: -0.1, targetRight: hasShift)
+            }
+            return true
+        case "]", "}":
+            if hasCommand {
+                nudgeDeskewAngle(by: 0.1, targetRight: hasShift)
+            }
+            return true
             
         default:
-            if let chars = event.charactersIgnoringModifiers?.lowercased() {
-                switch chars {
-                case "a":
-                    if hasCtrlOption {
-                        // #143: N-step file navigation (RTL-aware)
-                        jumpNStep(direction: .backward)
-                    } else if hasShift {
-                        // #62: Shift+A = previous bookmark (RTL-aware)
-                        if let source = storedImageSource,
-                           let target = NavigationHelper.navigateBookmark(
-                            direction: .backward, from: currentIndex,
-                            sourceURL: source.url, isRTL: isRTL
-                           ) {
-                            Logger.slideWindow.debug("→ Shift+A → bookmark at \(target, privacy: .public)")
-                            jumpToIndex(target)
-                        }
-                    } else if hasControl {
-                        // #72: Ctrl+A = jump to visual left (start in LTR, end in RTL)
-                        let target = isRTL ? storedEntries.count - 1 : 0
-                        Logger.slideWindow.debug("→ Jump to \(self.isRTL ? "end" : "start") (Ctrl+A)")
-                        jumpToIndex(target)
-                    } else if isFavoritesMode {
-                        // #76: RTL inverts direction
-                        Logger.slideWindow.debug("→ \(self.isRTL ? "Next" : "Previous") favorite (A in Favorites Mode)")
-                        gatedNavigate { isRTL ? goToNextFavorite() : goToPreviousFavorite() }  // #154
-                    } else {
-                        // #76: RTL inverts direction
-                        gatedNavigate { isRTL ? goToNext() : goToPrevious() }  // #154
-                    }
-                    return nil
-                    
-                case "d":
-                    if hasCtrlOption {
-                        // #143: N-step file navigation (RTL-aware)
-                        jumpNStep(direction: .forward)
-                    } else if hasShift {
-                        // #62: Shift+D = next bookmark (RTL-aware)
-                        if let source = storedImageSource,
-                           let target = NavigationHelper.navigateBookmark(
-                            direction: .forward, from: currentIndex,
-                            sourceURL: source.url, isRTL: isRTL
-                           ) {
-                            Logger.slideWindow.debug("→ Shift+D → bookmark at \(target, privacy: .public)")
-                            jumpToIndex(target)
-                        }
-                    } else if hasCommand {
-                        // #101: Cmd+D = toggle deskew
-                        toggleDeskew()
-                    } else if hasControl {
-                        // #72: Ctrl+D = jump to visual right (end in LTR, start in RTL)
-                        let target = isRTL ? 0 : storedEntries.count - 1
-                        Logger.slideWindow.debug("→ Jump to \(self.isRTL ? "start" : "end") (Ctrl+D)")
-                        jumpToIndex(target)
-                    } else if isFavoritesMode {
-                        // #76: RTL inverts direction
-                        Logger.slideWindow.debug("→ \(self.isRTL ? "Previous" : "Next") favorite (D in Favorites Mode)")
-                        gatedNavigate { isRTL ? goToPreviousFavorite() : goToNextFavorite() }  // #154
-                    } else {
-                        // #76: RTL inverts direction
-                        gatedNavigate { isRTL ? goToPrevious() : goToNext() }  // #154
-                    }
-                    return nil
-                
-                // S017: W key (#106: vertical = direction-independent)
-                case "w":
-                    if hasCtrlOption {
-                        // #143: N-step source navigation
-                        jumpNStepSource(direction: .backward)
-                    } else if hasControl {
-                        Logger.slideWindow.debug("→ Previous source (Ctrl+W)")
-                        storedOnPreviousSource?()
-                    } else if isFavoritesMode {
-                        Logger.slideWindow.debug("→ Previous favorite (W in Favorites Mode)")
-                        gatedNavigate { goToPreviousFavorite() }  // #154
-                    } else {
-                        gatedNavigate { goToPrevious() }  // #154
-                    }
-                    return nil
-                    
-                // S017: S key (#106: vertical = direction-independent, #62: Shift+S = bookmark)
-                case "s":
-                    if hasCtrlOption {
-                        // #143: N-step source navigation
-                        jumpNStepSource(direction: .forward)
-                    } else if hasShift {
-                        // #62: Shift+S = add/delete bookmark at current position
-                        if let source = storedImageSource, currentIndex < storedEntries.count {
-                            let entry = storedEntries[currentIndex]
-                            let defaultName = URL(fileURLWithPath: entry.path).deletingPathExtension().lastPathComponent
-                            BookmarkDialogHelper.handleShiftS(
-                                sourceURL: source.url,
-                                imageIndex: currentIndex,
-                                defaultName: defaultName,
-                                window: slideWindow
-                            )
-                        }
-                    } else if hasControl {
-                        Logger.slideWindow.debug("→ Next source (Ctrl+S)")
-                        storedOnNextSource?()
-                    } else if isFavoritesMode {
-                        Logger.slideWindow.debug("→ Next favorite (S in Favorites Mode)")
-                        gatedNavigate { goToNextFavorite() }  // #154
-                    } else {
-                        gatedNavigate { goToNext() }  // #154
-                    }
-                    return nil
-                
-                // #62 Phase 5: Shift+B = toggle bookmark list overlay
-                case "b":
-                    if hasShift {
-                        if let source = storedImageSource {
-                            let bookmarks = CacheManager.shared.getBookmarks(for: source.url)
-                            showBookmarkList = true
-                            if let nearest = bookmarks.enumerated().min(by: {
-                                abs($0.element.imageIndex - currentIndex) < abs($1.element.imageIndex - currentIndex)
-                            }) {
-                                bookmarkListCursor = nearest.offset
-                            } else {
-                                bookmarkListCursor = 0
-                            }
-                            notifyViewOfBookmarkListChange()
-                            Logger.slideWindow.debug("Shift+B → bookmark list (\(bookmarks.count, privacy: .public) bookmarks)")
-                        }
-                        return nil
-                    }
-                
-                // #72: Cmd+1-5 = jump to percentage position (RTL-aware, Cmd to avoid system shortcut conflict)
-                case "1":
-                    if hasCommand {
-                        let percent = isRTL ? 100 : 0
-                        Logger.slideWindow.debug("→ Jump to \(percent, privacy: .public)% (Cmd+1)")
-                        jumpToIndex(NavigationHelper.indexForPercent(percent, totalCount: storedEntries.count))
-                        return nil
-                    }
-                case "2":
-                    if hasCommand {
-                        let percent = isRTL ? 75 : 25
-                        Logger.slideWindow.debug("→ Jump to \(percent, privacy: .public)% (Cmd+2)")
-                        jumpToIndex(NavigationHelper.indexForPercent(percent, totalCount: storedEntries.count))
-                        return nil
-                    }
-                case "3":
-                    if hasCommand {
-                        Logger.slideWindow.debug("→ Jump to 50% (Cmd+3)")
-                        jumpToIndex(NavigationHelper.indexForPercent(50, totalCount: storedEntries.count))
-                        return nil
-                    }
-                case "4":
-                    if hasCommand {
-                        let percent = isRTL ? 25 : 75
-                        Logger.slideWindow.debug("→ Jump to \(percent, privacy: .public)% (Cmd+4)")
-                        jumpToIndex(NavigationHelper.indexForPercent(percent, totalCount: storedEntries.count))
-                        return nil
-                    }
-                case "5":
-                    if hasCommand {
-                        let percent = isRTL ? 0 : 100
-                        Logger.slideWindow.debug("→ Jump to \(percent, privacy: .public)% (Cmd+5)")
-                        jumpToIndex(NavigationHelper.indexForPercent(percent, totalCount: storedEntries.count))
-                        return nil
-                    }
-                    
-                case "f":
-                    // S010: Toggle favorite (not exit fullscreen anymore)
-                    Logger.slideWindow.debug("→ Toggle favorite (F)")
-                    toggleFavorite()
-                    return nil
-                    
-                case "x":
-                    // S010: Toggle selection
-                    Logger.slideWindow.debug("→ Toggle selection (X)")
-                    toggleSelection()
-                    return nil
-                    
-                case "q":
-                    // #172/#178: Auto-Slide running → stop only
-                    if autoSlideMode != 0 {
-                        Logger.slideWindow.debug("→ Auto-slide stop (Q)")
-                        stopAutoSlide()
-                        return nil
-                    }
-                    // S010: Exit Favorites Mode OR close fullscreen
-                    if isFavoritesMode {
-                        Logger.slideWindow.debug("→ Exit Favorites Mode (Q)")
-                        isFavoritesMode = false
-                        notifyViewOfModeChange()
-                    } else {
-                        Logger.slideWindow.debug("→ Close fullscreen (Q)")
-                        triggerClose()
-                    }
-                    return nil
-                
-                case "v":
-                    // #55: Toggle single page marker (#111: spread-aware)
-                    if let source = storedImageSource {
-                        let isInSpread: Bool = {
-                            guard AppSettings.shared.isSpreadModeEnabled,
-                                  currentIndex + 1 < storedEntries.count else { return false }
-                            return !SpreadNavigationHelper.shouldShowSinglePage(
-                                for: source.url, at: currentIndex,
-                                totalCount: storedEntries.count, entries: storedEntries
-                            )
-                        }()
-                        let target = CacheManager.shared.spreadAwareToggleTarget(for: source.url, at: currentIndex, isInSpread: isInSpread)
-                        let added = CacheManager.shared.toggleSinglePageMarker(for: source.url, at: target)
-                        Logger.slideWindow.debug("Single page marker at \(target, privacy: .public) (from \(self.currentIndex, privacy: .public), spread: \(isInSpread, privacy: .public)): \(added ? "ON" : "OFF")")
-                        notifyViewOfSpreadChange()
-                    }
-                    return nil
-                
-                // #151: P - toggle PDF Deskew (alias for ⌘D)
-                case "p":
-                    Logger.slideWindow.debug("→ Toggle deskew (P)")
-                    toggleDeskew()
-                    return nil
-                
-                // #72: Z - previous favorite (RTL-aware), Ctrl+Z - first/last favorite (RTL-aware)
-                case "z":
-                    if hasCtrlOption {
-                        // #143: N-step favorite navigation (RTL-aware)
-                        jumpNStepFavorite(direction: .backward)
-                    } else if hasControl {
-                        // Ctrl+Z = jump to visual left favorite (first in LTR, last in RTL)
-                        let targetFav = isRTL ? storedFavoriteIndices.max() : storedFavoriteIndices.min()
-                        if let fav = targetFav {
-                            Logger.slideWindow.debug("→ \(self.isRTL ? "Last" : "First") favorite (Ctrl+Z) at \(fav)")
-                            jumpToIndex(fav)
-                        }
-                    } else {
-                        Logger.slideWindow.debug("→ \(self.isRTL ? "Next" : "Previous") favorite (Z)")
-                        gatedNavigate { isRTL ? goToNextFavorite() : goToPreviousFavorite() }  // #154
-                    }
-                    return nil
-                    
-                // #72: C - next favorite (RTL-aware), Ctrl+C - last/first favorite (RTL-aware)
-                case "c":
-                    if hasCtrlOption {
-                        // #143: N-step favorite navigation (RTL-aware)
-                        jumpNStepFavorite(direction: .forward)
-                    } else if hasControl {
-                        // Ctrl+C = jump to visual right favorite (last in LTR, first in RTL)
-                        let targetFav = isRTL ? storedFavoriteIndices.min() : storedFavoriteIndices.max()
-                        if let fav = targetFav {
-                            Logger.slideWindow.debug("→ \(self.isRTL ? "First" : "Last") favorite (Ctrl+C) at \(fav)")
-                            jumpToIndex(fav)
-                        }
-                    } else {
-                        Logger.slideWindow.debug("→ \(self.isRTL ? "Previous" : "Next") favorite (C)")
-                        gatedNavigate { isRTL ? goToPreviousFavorite() : goToNextFavorite() }  // #154
-                    }
-                    return nil
-                    
-                // #101: Cmd+[ = nudge deskew angle -0.1°, Cmd+] = nudge +0.1°
-                //       Cmd+Shift+[/] = adjust visual RIGHT page in spread
-                case "[", "{":
-                    if hasCommand {
-                        nudgeDeskewAngle(by: -0.1, targetRight: hasShift)
-                    }
-                    return nil
-                case "]", "}":
-                    if hasCommand {
-                        nudgeDeskewAngle(by: 0.1, targetRight: hasShift)
-                    }
-                    return nil
-                
-                // #172: O key - toggle controls overlay (moved from Space)
-                case "o":
-                    Logger.slideWindow.debug("→ Toggle controls (O)")
-                    notifyViewOfControlsToggle()
-                    return nil
-                
-                // #140: Toggle metadata inspector panel
-                case "i":
-                    if currentIndex < storedEntries.count {
-                        MetadataInspectorPanelController.shared.toggle(
-                            imageSource: storedImageSource,
-                            entry: storedEntries[currentIndex],
-                            parentWindow: slideWindow
-                        )
-                    }
-                    return nil
-                    
-                // L - toggle animation loop (#201)
-                case "l":
-                    if animationController.hasAnimatedContent {
-                        animationController.toggleLoop()
-                    }
-                    return nil
-                    
-                default:
-                    return event  // Pass through unhandled
-                }
+            return false
+        }
+    }
+    
+    /// Execute a KeyAction from CommonKeyParser (#257 Phase 2)
+    ///
+    /// RTL handling rules:
+    /// - `.navigate`, `.navigateFavorite`, `.jumpToFavoriteEdge`: use `resolved(axis:isRTL:)` — these call goToNext/Previous directly
+    /// - `.navigateNStep`, `.navigateFavoriteNStep`: pass direction as-is — NavigationHelper handles RTL internally
+    /// - `.navigateSource`, `.navigateSourceNStep`: no RTL inversion
+    private func executeKeyAction(_ action: KeyAction) {
+        switch action {
+        // --- File navigation ---
+        case .navigate(let dir, let axis):
+            let effective = dir.resolved(axis: axis, isRTL: isRTL)
+            gatedNavigate { effective == .forward ? goToNext() : goToPrevious() }
+            
+        case .navigateNStep(let dir, _):
+            // axis unused — NavigationHelper.navigateNStep handles RTL
+            jumpNStep(direction: dir)
+            
+        // --- Source navigation ---
+        case .navigateSource(let dir):
+            switch dir {
+            case .forward:  storedOnNextSource?()
+            case .backward: storedOnPreviousSource?()
             }
-            return event
+            
+        case .navigateSourceNStep(let dir):
+            jumpNStepSource(direction: dir)
+            
+        // --- Favorite navigation ---
+        case .navigateFavorite(let dir, let axis):
+            let effective = dir.resolved(axis: axis, isRTL: isRTL)
+            gatedNavigate { effective == .forward ? goToNextFavorite() : goToPreviousFavorite() }
+            
+        case .navigateFavoriteNStep(let dir, _):
+            // axis unused — NavigationHelper.navigateFavoriteNStep handles RTL
+            jumpNStepFavorite(direction: dir)
+            
+        // --- Position jumps ---
+        case .jumpToStart:
+            // Ctrl+A: visual left = index 0 (LTR) / last (RTL)
+            jumpToIndex(isRTL ? storedEntries.count - 1 : 0)
+            
+        case .jumpToEnd:
+            // Ctrl+D: visual right = last (LTR) / index 0 (RTL)
+            jumpToIndex(isRTL ? 0 : storedEntries.count - 1)
+            
+        case .jumpToPercent(let n):
+            // Cmd+1–5: RTL-aware percent mapping
+            let percentMap = isRTL ? [100, 75, 50, 25, 0] : [0, 25, 50, 75, 100]
+            let percent = percentMap[n - 1]
+            Logger.slideWindow.debug("→ Jump to \(percent, privacy: .public)% (Cmd+\(n, privacy: .public))")
+            jumpToIndex(NavigationHelper.indexForPercent(percent, totalCount: storedEntries.count))
+            
+        case .jumpToFavoriteEdge(let dir):
+            // Ctrl+Z/C: jump to first/last favorite (RTL-aware)
+            let effective = isRTL ? dir.inverted : dir
+            let targetFav = effective == .forward ? storedFavoriteIndices.max() : storedFavoriteIndices.min()
+            if let fav = targetFav {
+                Logger.slideWindow.debug("→ \(effective == .backward ? "First" : "Last") favorite at \(fav, privacy: .public)")
+                jumpToIndex(fav)
+            }
+            
+        // --- Toggles ---
+        case .toggleFavorite:
+            toggleFavorite()
+            
+        case .toggleSelection:
+            toggleSelection()
+            
+        case .toggleSinglePageMarker:
+            if let source = storedImageSource {
+                let isInSpread: Bool = {
+                    guard AppSettings.shared.isSpreadModeEnabled,
+                          currentIndex + 1 < storedEntries.count else { return false }
+                    return !SpreadNavigationHelper.shouldShowSinglePage(
+                        for: source.url, at: currentIndex,
+                        totalCount: storedEntries.count, entries: storedEntries
+                    )
+                }()
+                let target = CacheManager.shared.spreadAwareToggleTarget(
+                    for: source.url, at: currentIndex, isInSpread: isInSpread)
+                let added = CacheManager.shared.toggleSinglePageMarker(for: source.url, at: target)
+                Logger.slideWindow.debug("Single page marker at \(target, privacy: .public) (from \(self.currentIndex, privacy: .public), spread: \(isInSpread, privacy: .public)): \(added ? "ON" : "OFF")")
+                notifyViewOfSpreadChange()
+            }
+            
+        // --- Bookmarks ---
+        case .addOrDeleteBookmark:
+            if let source = storedImageSource, currentIndex < storedEntries.count {
+                let entry = storedEntries[currentIndex]
+                let defaultName = URL(fileURLWithPath: entry.path).deletingPathExtension().lastPathComponent
+                BookmarkDialogHelper.handleShiftS(
+                    sourceURL: source.url, imageIndex: currentIndex,
+                    defaultName: defaultName, window: slideWindow
+                )
+            }
+            
+        case .navigateBookmark(let dir):
+            if let source = storedImageSource,
+               let target = NavigationHelper.navigateBookmark(
+                direction: dir, from: currentIndex, sourceURL: source.url, isRTL: isRTL
+               ) {
+                Logger.slideWindow.debug("→ Bookmark at \(target, privacy: .public)")
+                jumpToIndex(target)
+            }
+            
+        case .showBookmarkList:
+            if let source = storedImageSource {
+                let bookmarks = CacheManager.shared.getBookmarks(for: source.url)
+                showBookmarkList = true
+                if let nearest = bookmarks.enumerated().min(by: {
+                    abs($0.element.imageIndex - currentIndex) < abs($1.element.imageIndex - currentIndex)
+                }) {
+                    bookmarkListCursor = nearest.offset
+                } else {
+                    bookmarkListCursor = 0
+                }
+                notifyViewOfBookmarkListChange()
+                Logger.slideWindow.debug("Bookmark list (\(bookmarks.count, privacy: .public) bookmarks)")
+            }
+            
+        case .enterSlideMode:
+            break  // already in Slide Mode — Ctrl+F no-op
+            
+        // --- Handled in handleSlideSpecificKey or not applicable ---
+        case .close, .exitToFiler, .toggleReadingDirection:
+            break  // Q, R handled in slide-specific pre-parse
+        case .selectAll, .enterFavoritesMode, .exitFavoritesMode:
+            break  // Grid-specific or handled by Tab/Q
+        case .toggleControls, .toggleDeskew, .adjustDeskew, .toggleMetadataInspector, .toggleThumbnailPosition:
+            break  // handled in slide-specific pre-parse or not applicable
         }
     }
     
