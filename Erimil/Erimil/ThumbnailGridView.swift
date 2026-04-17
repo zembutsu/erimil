@@ -1415,8 +1415,10 @@ struct ThumbnailGridView: View {
             }
         
         case .navigateSourceNStep(let dir):
-            // #257 Phase 2: N-step source navigation in Grid (future enhancement)
-            break
+            // #260: N-step source navigation in Grid Mode
+            let step = AppSettings.shared.navigationStepCount
+            let signedSteps = (dir == .forward) ? step : -step
+            onRequestSourceJump?(signedSteps)
 
             
         default:
