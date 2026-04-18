@@ -51,8 +51,7 @@ These boundaries are intentional. Features that don't serve "browse → evaluate
 
 ## Current Status
 
-- **Version**: 0.3.4 (released)
-- **Phase**: Phase 2.4 (nearing completion)
+- **Version**: 0.3.4 (released), 0.3.5 (in progress)
 - **Phase 1**: ✅ Completed (2025-12-13)
 - **Phase 2**: ✅ Completed (2025-12-14)
 - **Phase 2.1**: ✅ Completed (2025-12-16)
@@ -166,18 +165,23 @@ This project uses AI-assisted development following the WORKFLOW.md guidelines:
 - ✅ Various bug fixes (#144, #150, #165, #193, #194, #195, #196)
 - ✅ Hyperscaler PoC: CoreML Real-ESRGAN super-resolution (#40)
 
-### v0.3.5 (Next Release) - Architecture & UX
-- NSCollectionView + HSplitView migration — resolves #126, #209, #215 (#215)
-- "/" command palette replacing inline help tooltips (#139)
-- Show non-image items in Grid view (#132)
-- Grid view filtering and sorting (#97)
-- Drag & drop files to open directly in Viewer/Slide mode (#63)
-- PDF file support enhancements (#57)
-- Extract SlideWindowController.open helper (#50)
-- Tab Key mode switching in Grid Mode (#199)
-- Individual .ecache cleanup after tile sheet build (#208)
-- Thread safety: first-writer-wins Bool flags (#210)
-- Tile sheet incremental rebuild (#211)
+### v0.3.5 (In Progress) - Architecture & UX
+- ✅ NSCollectionView + HSplitView migration — resolves #126, #209, #215 (#215)
+- ✅ Full i18n / localization infrastructure (#244)
+- ✅ Edge-click navigation (#255)
+- ✅ Option+key N-step Navigation (#257)
+- ✅ Ctrl+Option+W/S source switch across all modes (#259)
+- ✅ Grid Source N-step navigation (#260)
+- 🔄 "/" command palette replacing inline help tooltips (#139)
+- 🔄 Show non-image items in Grid view (#132)
+- 🔄 Grid view filtering and sorting (#97)
+- 🔄 Drag & drop files to open directly in Viewer/Slide mode (#63)
+- 🔄 PDF file support enhancements (#57)
+- 🔄 Extract SlideWindowController.open helper (#50)
+- 🔄 Tab Key mode switching in Grid Mode (#199)
+- 🔄 Individual .ecache cleanup after tile sheet build (#208)
+- 🔄 Thread safety: first-writer-wins Bool flags (#210)
+- 🔄 Tile sheet incremental rebuild (#211)
 
 ### Phase 3 (Next) - Curation Quality
 - Grid filtering (filename search) and sorting (name, size, date, ★)
