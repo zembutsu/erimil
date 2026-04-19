@@ -69,7 +69,8 @@ All navigation keys are **RTL-aware** — they follow "physical key position = v
 | Ctrl+A / Ctrl+D | Jump to first / last image |
 | Ctrl+Z / Ctrl+C | Jump to first / last favorite |
 | Cmd+1/2/3/4/5 | Jump to 0% / 25% / 50% / 75% / 100% |
-| Ctrl+Option+←/→ | N-step jump (configurable in Settings) |
+| Option+←/→ | N-step jump (configurable in Settings) |
+| Option+W/S or Option+↑/↓ | N-step source switch |
 | Ctrl+R | Toggle reading direction (LTR ↔ RTL) |
 | Shift+S | Add / delete bookmark (栞) |
 | Shift+A / Shift+D | Previous / Next bookmark |
@@ -86,7 +87,8 @@ All navigation keys are **RTL-aware** — they follow "physical key position = v
 | Enter / R | Open Viewer Mode |
 | Ctrl+F | Open Slide Mode |
 | Ctrl+W/S or Ctrl+↑/↓ | Previous / Next source |
-| Ctrl+Option+←/→ | N-step jump (configurable) |
+| Option+←/→ | N-step jump (configurable) |
+| Option+W/S or Option+↑/↓ | N-step source switch |
 
 ### Viewer Mode
 
@@ -103,6 +105,8 @@ All navigation keys are **RTL-aware** — they follow "physical key position = v
 | Enter | Open Slide Mode |
 | Q / R / Esc | Close (return to Filer) |
 | Ctrl+W/S or Ctrl+↑/↓ | Previous / Next source |
+| Option+W/S or Option+↑/↓ | N-step source switch |
+| Edge click (left/right) | Previous / Next image |
 
 ### Slide Mode (Fullscreen)
 
@@ -119,6 +123,7 @@ All navigation keys are **RTL-aware** — they follow "physical key position = v
 | Q | Exit fullscreen | Exit Favorites Mode |
 | Esc | Exit fullscreen | Exit fullscreen |
 | Ctrl+W/S or Ctrl+↑/↓ | Previous/Next source | Same |
+| Option+W/S or Option+↑/↓ | N-step source switch | Same |
 | Ctrl+T | Cycle thumbnail position | Same |
 | Shift+S | Add/delete bookmark (栞) | Same |
 | Shift+A / Shift+D | Previous/Next bookmark | Same |
@@ -126,6 +131,7 @@ All navigation keys are **RTL-aware** — they follow "physical key position = v
 | Space | Auto-Slide start/stop | Same |
 | Shift+Space | Reverse Auto-Slide | Same |
 | O | Toggle controls overlay | Same |
+| Edge click (left/right) | Previous/Next image | Same |
 
 ### Sidebar Navigation
 
@@ -182,7 +188,7 @@ Exported pages preserve original page numbers (e.g., `page_001.png, page_003.png
 
 **Favorites Mode**: Press `Tab` to enter — navigation keys move between favorites only. Yellow header indicates active. Press `Q` to exit back to normal navigation.
 
-**Source Navigation**: `Ctrl+W/S` or `Ctrl+↑/↓` switches between sources while maintaining fullscreen state. Loops from last to first.
+**Source Navigation**: `Ctrl+W/S` or `Ctrl+↑/↓` switches between sources while maintaining fullscreen state. `Option+W/S` or `Option+↑/↓` jumps N sources at a time (configurable in Settings). Loops from last to first.
 
 **Position Jump**: `Ctrl+A/D` for first/last, `Ctrl+Z/C` for first/last favorite, `Cmd+1-5` for percentage positions. All jumps are RTL-aware.
 
