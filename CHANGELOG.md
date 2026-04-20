@@ -5,6 +5,17 @@ All notable changes to Erimil will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Edge-click chevron overlay navigation**: Click left/right screen edges to navigate between images in Viewer and Slide Modes (#255)
+- **Source N-step navigation**: Option+W/S to jump by configurable step count between sources (#259, #260)
+- **i18n infrastructure**: Localization framework with 240 keys (#244)
+
+### Changed
+- **N-step key binding**: Ctrl+Option+←/→ → Option+←/→ for file/favorite N-step navigation (#257)
+
+
 ## [0.3.4] - 2026-03-21
 
 ### Added
