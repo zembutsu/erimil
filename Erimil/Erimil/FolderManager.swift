@@ -14,6 +14,23 @@ class FolderManager: ImageSource {
     let url: URL
     let sourceType: ImageSourceType = .folder
     
+    /// #236: Tile sheet state tracking (same pattern as ArchiveManager #24/#238)
+    /// initLock protects tileSheetInitialized/prefetchStarted check-and-set
+    /// across listImageEntries and thumbnail calls on different threads.
+    private let initLock = NSLock()
+    private var tileSheetInitialized = false
+    private var tileSheetAvailable = false
+    
+    /// #236: Cached folder hash (computed once per instance)
+    private var cachedFolderHash: String?
+    
+    /// #236: Background prefetch for tile sheet collection
+    private var prefetchStarted = false
+    private let prefetchQueue = DispatchQueue(
+        label: "com.erimil.folder.prefetch",
+        qos: .utility
+    )
+    
     init(folderURL: URL) {
         self.url = folderURL
     }
@@ -51,11 +68,74 @@ class FolderManager: ImageSource {
             }
         }
         
-        return results.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let sorted = results.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        
+        // #236: Preload tile sheet into memory cache during entry listing (D005 pattern from #24 S085).
+        // Runs BEFORE any onAppear → loadThumbnailIfNeeded, ensuring SYNC memory hit.
+        // If no tile sheet exists on disk, starts background prefetch.
+        initLock.lock()
+        let needsInit = !tileSheetInitialized
+        if needsInit {
+            tileSheetInitialized = true
+            prefetchStarted = true
+        }
+        initLock.unlock()
+        
+        if needsInit {
+            let tileCache = TileSheetCache.shared
+            if cachedFolderHash == nil {
+                cachedFolderHash = tileCache.folderHash(for: url)
+            }
+            if let hash = cachedFolderHash, tileCache.hasTileSheet(for: url, archiveHash: hash) {
+                tileSheetAvailable = true
+                let loaded = tileCache.loadAllThumbnails(for: url, archiveHash: hash)
+                if loaded == 0 {
+                    tileSheetAvailable = false
+                    prefetchAllThumbnails(entries: sorted)
+                } else {
+                    Logger.folder.info("TileSheet: preloaded \(loaded, privacy: .public) thumbnails for \(self.url.lastPathComponent)")
+                    if loaded < sorted.count {
+                        // Partial coverage — prefetch remaining entries
+                        tileSheetAvailable = false
+                        Logger.folder.info("TileSheet: partial coverage (\(loaded)/\(sorted.count)) — starting prefetch")
+                        prefetchAllThumbnails(entries: sorted)
+                    }
+                }
+            } else {
+                // No tile sheet — full prefetch
+                prefetchAllThumbnails(entries: sorted)
+            }
+        }
+        
+        return sorted
     }
     
-    /// Generate thumbnail - with disk cache
+    /// Generate thumbnail - with disk cache and TileSheet integration (#236)
     func thumbnail(for entry: ImageEntry, maxSize: CGFloat = 120) -> NSImage? {
+        // #236: Tile sheet initialization — fallback for when thumbnail() is called
+        // before listImageEntries(), or when no tile sheet exists on disk.
+        initLock.lock()
+        let needsInit = !tileSheetInitialized
+        if needsInit {
+            tileSheetInitialized = true
+            prefetchStarted = true
+        }
+        initLock.unlock()
+        
+        if needsInit {
+            let tileCache = TileSheetCache.shared
+            if cachedFolderHash == nil {
+                cachedFolderHash = tileCache.folderHash(for: url)
+            }
+            if let hash = cachedFolderHash, tileCache.hasTileSheet(for: url, archiveHash: hash) {
+                tileSheetAvailable = true
+                let loaded = tileCache.loadAllThumbnails(for: url, archiveHash: hash)
+                if loaded == 0 {
+                    tileSheetAvailable = false
+                }
+            }
+        }
+        
         let cache = CacheManager.shared
         
         // Use full file path as unique identifier
@@ -66,6 +146,13 @@ class FolderManager: ImageSource {
             // Try to get cached thumbnail
             if let cached = cache.getThumbnail(for: contentHash) {
                 Logger.folder.debug("Cache HIT for \(entry.name)")
+                // #236: Register for deferred tile sheet build (debounce resets on each call)
+                if !tileSheetAvailable, let hash = cachedFolderHash {
+                    TileSheetCache.shared.registerThumbnail(
+                        for: url, archiveHash: hash, entryPath: entry.name,
+                        contentHash: contentHash, image: cached
+                    )
+                }
                 return cached
             }
         }
@@ -95,13 +182,88 @@ class FolderManager: ImageSource {
             }
             let fallback = resizedImage(image, maxSize: maxSize)
             cache.saveThumbnail(fallback, for: contentHash)
+            // #236: Register fallback for tile sheet build
+            if !tileSheetAvailable, let hash = cachedFolderHash {
+                TileSheetCache.shared.registerThumbnail(
+                    for: url, archiveHash: hash, entryPath: entry.name,
+                    contentHash: contentHash, image: fallback
+                )
+            }
             return fallback
         }
         
         // Save to cache
         cache.saveThumbnail(thumbnail, for: contentHash)
         
+        // #236: Register for deferred tile sheet build
+        if !tileSheetAvailable, let hash = cachedFolderHash {
+            TileSheetCache.shared.registerThumbnail(
+                for: url, archiveHash: hash, entryPath: entry.name,
+                contentHash: contentHash, image: thumbnail
+            )
+        }
+        
         return thumbnail
+    }
+    
+    /// #236: Background prefetch — collect all thumbnails for tile sheet build.
+    /// Runs on utility queue. Uses existing cache when available, generates otherwise.
+    /// Simpler than ArchiveManager: no ZIP extraction needed, direct file reads.
+    private func prefetchAllThumbnails(entries: [ImageEntry]) {
+        let folderURL = self.url
+        let maxSize: CGFloat = AppSettings.shared.effectiveRetinaThumbnailSize
+        guard let hash = cachedFolderHash else { return }
+
+        prefetchQueue.async { [weak self] in
+            guard let self = self else { return }
+            let cache = CacheManager.shared
+            let tileCache = TileSheetCache.shared
+
+            Logger.folder.info("TileSheet prefetch: starting \(entries.count, privacy: .public) entries for \(folderURL.lastPathComponent)")
+
+            for entry in entries {
+                let pathHash = cache.pathHash(for: entry.path)
+
+                // Try existing cache first (hybrid: reuse what's already there)
+                if let contentHash = cache.getContentHash(for: pathHash),
+                   let cached = cache.getThumbnail(for: contentHash) {
+                    tileCache.registerThumbnail(
+                        for: folderURL, archiveHash: hash, entryPath: entry.name,
+                        contentHash: contentHash, image: cached
+                    )
+                    continue
+                }
+
+                // Cache miss — read file and generate
+                let fileURL = URL(fileURLWithPath: entry.path)
+                guard let imageData = try? Data(contentsOf: fileURL) else { continue }
+                let contentHash = cache.contentHash(for: imageData)
+                cache.registerMapping(pathHash: pathHash, contentHash: contentHash)
+
+                // Check if thumbnail exists under content hash (different path, same content)
+                if let cached = cache.getThumbnail(for: contentHash) {
+                    tileCache.registerThumbnail(
+                        for: folderURL, archiveHash: hash, entryPath: entry.name,
+                        contentHash: contentHash, image: cached
+                    )
+                    continue
+                }
+
+                // Generate thumbnail
+                guard let thumbnail = ImageUtilities.downsampledThumbnail(from: imageData, maxSize: maxSize) else {
+                    continue
+                }
+                cache.saveThumbnail(thumbnail, for: contentHash)
+                tileCache.registerThumbnail(
+                    for: folderURL, archiveHash: hash, entryPath: entry.name,
+                    contentHash: contentHash, image: thumbnail
+                )
+            }
+
+            Logger.folder.info("TileSheet prefetch: completed \(entries.count, privacy: .public) entries")
+            TileSheetCache.shared.finalizeBuild(for: hash)
+            self.tileSheetAvailable = true
+        }
     }
     
     /// Get full-size image - direct file access (fully materialized)

@@ -2,7 +2,7 @@
 //  TileSheetCache.swift
 //  Erimil
 //
-//  #24: Tile sheet thumbnail cache for ZIP archives
+//  #24: Tile sheet thumbnail cache for ZIP archives and folder sources (#236)
 //  Combines N individual thumbnails into a single tile sheet image,
 //  reducing I/O from N reads to 1 read on subsequent opens.
 //
@@ -82,6 +82,30 @@ class TileSheetCache {
         let raw = archive
             .filter { $0.type == .file }
             .map { "\($0.path):\($0.uncompressedSize)" }
+            .sorted()
+            .joined(separator: "\n")
+
+        guard !raw.isEmpty else { return nil }
+        let hash = SHA256.hash(data: Data(raw.utf8))
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+    
+    /// #236: Content-based hash for folder sources.
+    /// Same philosophy as archiveHash: file names + sizes produce the hash.
+    /// Detects file additions, removals, and size changes.
+    func folderHash(for url: URL) -> String? {
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+
+        let raw = contents
+            .compactMap { fileURL -> String? in
+                guard let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+                      values.isRegularFile == true else { return nil }
+                return "\(fileURL.lastPathComponent):\(values.fileSize ?? 0)"
+            }
             .sorted()
             .joined(separator: "\n")
 
