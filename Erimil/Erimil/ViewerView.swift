@@ -1118,11 +1118,13 @@ struct ViewerView: View {
             
         case .navigateNStep(let dir, _):
             // axis unused — NavigationHelper.navigateNStep handles RTL
-            let step = AppSettings.shared.navigationStepCount
-            if let target = NavigationHelper.navigateNStep(
-                direction: dir, from: viewerIndex,
-                totalCount: entries.count, stepCount: step, isRTL: isRTL
-            ) { navigateTo(target) }
+            gatedNavigate {
+                let step = AppSettings.shared.navigationStepCount
+                if let target = NavigationHelper.navigateNStep(
+                    direction: dir, from: viewerIndex,
+                    totalCount: entries.count, stepCount: step, isRTL: isRTL
+                ) { navigateTo(target) }
+            }
             
         // --- Source navigation ---
         case .navigateSource(let dir):
@@ -1143,11 +1145,13 @@ struct ViewerView: View {
             
         case .navigateFavoriteNStep(let dir, _):
             // axis unused — NavigationHelper.navigateFavoriteNStep handles RTL
-            let step = AppSettings.shared.navigationStepCount
-            if let target = NavigationHelper.navigateFavoriteNStep(
-                direction: dir, from: viewerIndex,
-                favoriteIndices: favoriteIndices, stepCount: step, isRTL: isRTL
-            ) { navigateTo(target) }
+            gatedNavigate {
+                let step = AppSettings.shared.navigationStepCount
+                if let target = NavigationHelper.navigateFavoriteNStep(
+                    direction: dir, from: viewerIndex,
+                    favoriteIndices: favoriteIndices, stepCount: step, isRTL: isRTL
+                ) { navigateTo(target) }
+            }
             
         // --- Position jumps ---
         case .jumpToStart:

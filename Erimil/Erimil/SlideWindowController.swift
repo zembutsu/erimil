@@ -776,7 +776,7 @@ class SlideWindowController {
             
         case .navigateNStep(let dir, _):
             // axis unused — NavigationHelper.navigateNStep handles RTL
-            jumpNStep(direction: dir)
+            gatedNavigate { jumpNStep(direction: dir) }
             
         // --- Source navigation ---
         case .navigateSource(let dir):
@@ -795,7 +795,7 @@ class SlideWindowController {
             
         case .navigateFavoriteNStep(let dir, _):
             // axis unused — NavigationHelper.navigateFavoriteNStep handles RTL
-            jumpNStepFavorite(direction: dir)
+            gatedNavigate { jumpNStepFavorite(direction: dir) }
             
         // --- Position jumps ---
         case .jumpToStart:
