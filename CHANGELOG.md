@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **N-step key binding**: Ctrl+Option+←/→ → Option+←/→ for file/favorite N-step navigation (#257)
+- **Grid view architecture**: Migrated thumbnail grid from SwiftUI Grid to NSCollectionView (#215)
+
+### Performance
+- **Folder TileSheet caching**: Folder sources now use the same prefetch → TileSheet pipeline as ZIP/PDF archives (#236)
+
+### Fixed
+- **N-step navigation rendering**: Apply render gate to N-step and favorite N-step navigation in Viewer and Slide Modes (#263)
 
 
 ## [0.3.4] - 2026-03-21
