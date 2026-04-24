@@ -146,6 +146,7 @@ struct ErimilSplitViewRepresentable: NSViewControllerRepresentable {
     private class FillView: NSView {
         override func layout() {
             super.layout()
+            SourceSwitchTiming.mark("fillView.layout")  // #265
             let child = subviews.first
             print("[FillView.layout] bounds: \(bounds), child.frame before: \(child?.frame ?? .zero)")
             child?.frame = bounds
