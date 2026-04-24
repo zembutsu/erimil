@@ -52,21 +52,23 @@ struct SidebarView: View {
             
             Divider()
             
-            let cacheInfo = CacheManager.shared.getCacheInfo()
-            if cacheInfo.fileCount > 0 {
-                HStack {
-                    Image(systemName: "photo.stack")
-                        .foregroundStyle(.secondary)
-                    Text("\(cacheInfo.fileCount) \(String(localized: "sidebar.cached", defaultValue: "cached"))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("(\(formatBytes(cacheInfo.totalSize)))")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(.horizontal)
-                .padding(.top, 8)
-            }
+            // let cacheInfo = CacheManager.shared.getCacheInfo()
+            // #265 HYPOTHESIS CHECK: bypass heavy filesystem walk
+            // let cacheInfo: (fileCount: Int, totalSize: Int64) = (0, 0)
+            // if cacheInfo.fileCount > 0 {
+            //    HStack {
+            //        Image(systemName: "photo.stack")
+            //            .foregroundStyle(.secondary)
+            //        Text("\(cacheInfo.fileCount) \(String(localized: "sidebar.cached", defaultValue: "cached"))")
+            //            .font(.caption)
+            //            .foregroundStyle(.secondary)
+            //        Text("(\(formatBytes(cacheInfo.totalSize)))")
+            //            .font(.caption)
+            //            .foregroundStyle(.tertiary)
+            //    }
+            //    .padding(.horizontal)
+            //    .padding(.top, 8)
+            //}
             
             Button(String(localized: "sidebar.openFolder", defaultValue: "Open Folder...")) {
                 openFolderPicker()
@@ -80,6 +82,7 @@ struct SidebarView: View {
             reloadTree()
         }
         .onChange(of: selectedFolderURL) { oldValue, newValue in
+            SourceSwitchTiming.mark("sidebar.onChange.in")  // #265
             Logger.sidebar.debug("onChange: \(oldValue?.path ?? "nil") → \(newValue?.path ?? "nil")")
             // S023: Clear expansion state only when root folder changes
             if oldValue != newValue {
@@ -87,6 +90,7 @@ struct SidebarView: View {
                 childrenCache = [:]  // #216: Clear lazy cache for new root
             }
             reloadTree()
+            SourceSwitchTiming.mark("sidebar.onChange.out")  // #265
         }
         .onChange(of: reloadTrigger) { _, _ in
             // S023: reloadTree without clearing expandedNodes

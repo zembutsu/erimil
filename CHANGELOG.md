@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **N-step navigation rendering**: Apply render gate to N-step and favorite N-step navigation in Viewer and Slide Modes (#263)
-
+- **Startup delay**: Removed synchronous filesystem walk from sidebar body; startup improved by 15-24× (#265)
 
 ## [0.3.4] - 2026-03-21
 
