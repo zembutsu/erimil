@@ -5,7 +5,7 @@ All notable changes to Erimil will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.5] - 2026-04-25
 
 ### Added
 - **Edge-click chevron overlay navigation**: Click left/right screen edges to navigate between images in Viewer and Slide Modes (#255)
@@ -198,6 +198,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Phase | Highlights |
 |---------|------|-------|------------|
+| 0.3.5 | 2026-04-25 | Phase 2.5 | i18n infrastructure, NSCollectionView migration, edge-click navigation, startup 24× faster |
 | 0.3.4 | 2026-03-21 | Phase 2.4 | Startup 8300×, Auto-Slide, GIF playback, tile cache, metadata inspector |
 | 0.3.3 | 2026-01-31 | Phase 2.3 | PDF support, Spread view, RTL, ViewerView |
 | 0.3.2 | 2025-12-31 | Phase 2.2 | Fullscreen source navigation, F key shortcut |
@@ -205,7 +206,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | 0.2.0 | 2025-12-14 | Phase 2 | Folder viewer, settings, selection modes |
 | 0.1.0 | 2025-12-13 | Phase 1 | MVP - ZIP viewer and export |
 
-[Unreleased]: https://github.com/zembutsu/erimil/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/zembutsu/erimil/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/zembutsu/erimil/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/zembutsu/erimil/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/zembutsu/erimil/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/zembutsu/erimil/compare/v0.3.1...v0.3.2

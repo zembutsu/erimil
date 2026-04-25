@@ -146,7 +146,10 @@ Open question: is Erimil image-first by accident of origin, or image-first by de
 
 - [`PHILOSOPHY-DRAFT.md`](./PHILOSOPHY-DRAFT.md) — Bebop Style Development methodology (how we develop)
 - `ARCHITECTURE.md` — Implementation architecture (how it is built)
-- View Layer feature (issues filed S127) — first concrete realization of the Editorial Model
+- View Layer feature — first concrete realization of the Editorial Model:
+  - #268 — View Layer: manual order and hide
+  - #267 — Sort implementation (prerequisite)
+  - #269 — Export favorites-only (consequence)
 
 ---
 
