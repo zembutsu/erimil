@@ -4,7 +4,7 @@ This document describes the internal architecture of Erimil.
 
 ## Overview
 
-Erimil is a macOS application built with SwiftUI that provides visual management of images in ZIP archives, folders, and PDF documents. Users can browse folders, select ZIP files, image folders, or PDFs, preview contained images, mark items for exclusion/selection, and generate optimized archives or manage files.
+Erimil is a macOS application built with SwiftUI and AppKit that provides visual management of images in ZIP archives, folders, and PDF documents. The main window uses NSSplitViewController for sidebar/detail layout, with NSCollectionView for the thumbnail grid. Users can browse folders, select ZIP files, image folders, or PDFs, preview contained images, mark items for exclusion/selection, and generate optimized archives or manage files.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -71,8 +71,15 @@ Manages PDF document viewing as image sequences.
 
 ### 5. Navigation Layer
 
-Handles folder browsing and source discovery.
+Handles folder browsing, source discovery, and split view management.
 
+- **ErimilSplitViewController**: NSSplitViewController managing sidebar/detail split (#215)
+  - Replaced NavigationSplitView for stable resize behavior and sidebar control
+  - Sidebar hosted via NSSplitViewItem with holdingPriority management
+- **ErimilSplitViewRepresentable**: NSViewControllerRepresentable bridge to SwiftUI
+  - Passes source selection, Viewer Mode state, and entry callbacks to SwiftUI layers
+- **DetailContainerViewController**: NSHostingController wrapper for detail pane content
+  - Hosts ThumbnailGridView (or Viewer Mode) within NSSplitViewController right pane
 - **SidebarView**: Finder-style tree navigation (→ DESIGN.md Decision 9)
   - ▶ for expand/collapse
   - Single-click for content display
@@ -83,6 +90,8 @@ Handles folder browsing and source discovery.
   - Children are always `nil` — tree structure lives in `SidebarView.childrenCache` (#216)
   - Lazy loading: only root's direct children loaded on startup (1 `contentsOfDirectory` call)
   - Deeper levels loaded on-demand via DisclosureGroup expansion
+- **SourceSelection**: Shared source selection state for sidebar ↔ detail communication
+- **SourceSwitchTiming**: Diagnostic timing instrumentation for source switch performance
 
 ### 6. Selection Layer
 
@@ -99,15 +108,21 @@ Manages thumbnails, metadata, and aspect ratio information.
   - **Async initialization**: All data loads dispatched to background queue on startup; completes in ~143ms (#216)
   - **Thumbnail cache**: contentHash → NSImage (memory, with disk persistence)
   - **Path index**: pathHash → contentHash mapping
-  - **Favorites storage**: Per-source favorites with hybrid format
-  - **Source settings**: Per-source lastPosition, readingDirection, singlePageIndices (#54, #56)
+  - **Favorites storage**: Per-source favorites with hybrid format (`favorites_hybrid.json`, version 2)
+    - `favoritesByContent`: Set<String> (content hashes — same image anywhere)
+    - `favoritesBySource`: Set<String> (source keys — per-source independent)
+    - Legacy `favorites.json` auto-migrated to hybrid on first load
+  - **Source settings**: Per-source lastPosition, readingDirection, singlePageIndices, deskewEnabled (#54, #56, #101)
+  - **Last position**: Per-source last viewed index (`last_position.json`)
   - **Bookmarks storage**: Per-source bookmarks with name, imageIndex, createdAt (#62)
+  - **Deskew angles**: Per-source, per-page rotation angles (`deskew_angles.json`) (#101)
   - **Aspect ratio cache**: In-memory cache for spread detection (#67 Phase 3)
     - `cacheAspectRatio(for:path:ratio:)` - Store aspect ratio
     - `getCachedAspectRatio(for:path:)` - Retrieve cached ratio
     - `isWideImage(for:path:threshold:)` - Check if image is wide (default threshold: 1.3)
     - `clearAspectRatioCache()` - Clear on source change
   - **Lock discipline**: JSON decode outside NSLock, lock only for assignment (#216)
+  - **Debounced writes**: All JSON saves use DispatchWorkItem with debounce interval
 
 - **TileSheetCache**: Tile-based thumbnail cache for archives (#24)
   - Debounce-based tile sheet generation for ZIP and PDF archives
@@ -137,13 +152,30 @@ Handles spread (two-page) display logic and navigation.
 
 ### 9. View Layer
 
-SwiftUI views for user interaction.
+SwiftUI views for user interaction, with AppKit integration via NSViewRepresentable bridges.
 
-- **ContentView**: Main split view, owns selection state
+- **ContentView**: Main view, owns selection state. Hosted inside DetailContainerViewController.
 - **ThumbnailGridView**: Grid display with mode-aware styling
-  - **ThumbnailDisplayItem**: Enum for display item types (#69)
-    - `.single(Int)` - Single thumbnail
-    - `.spread(leftIndex:rightIndex:)` - Spread pair
+  - Thumbnail grid rendering delegated to NSCollectionView via **ThumbnailCollectionViewBridge**
+  - Retains SwiftUI state (`entries`, `thumbnails`, `selectedPaths`, `focusedIndex`)
+  - Coordinates grid updates via **ThumbnailCollectionUpdater** (direct AppKit push, bypasses SwiftUI body re-evaluation)
+  - **ThumbnailCollectionViewBridge**: NSViewRepresentable wrapping NSCollectionView (#215)
+    - NSCollectionViewFlowLayout with adaptive column calculation (replicates LazyVGrid `.adaptive` behavior)
+    - Coordinator implements NSCollectionViewDataSource + NSCollectionViewDelegateFlowLayout
+    - Section management: bookmark dividers via SectionInfo (bookmarkName + entry range)
+    - Index mapping: globalIndex ↔ IndexPath conversion for sectioned data
+    - Double-click → Reader Mode via NSClickGestureRecognizer (#245)
+    - RTL layout direction support via `userInterfaceLayoutDirection`
+    - Frame change observation for adaptive sectionInset (#221)
+  - **ThumbnailCollectionUpdater**: Communication bridge between SwiftUI state and NSCollectionView
+    - `applyBatch([(path, image)])` — direct thumbnail push to visible cells
+    - `refreshVisibleCells()` — re-configure visible cells from cellStateProvider
+    - `scrollToItem(at:animated:)` — programmatic scroll
+    - `reloadSections()` — rebuild bookmark sections and reload
+    - `currentColumnCount()` — dynamic column count for keyboard navigation
+  - **ThumbnailCollectionViewItem**: NSCollectionViewItem subclass for individual thumbnail cells
+    - Configurable via `ThumbnailCellState` (thumbnail, isSelected, isFocused, favoriteStatus, selectionMode, isLastViewed, isAnimatedFormat, showProtectedFeedback)
+  - **ThumbnailSectionHeaderView**: NSView subclass for bookmark section headers (📖 icon + name)
   - **GridSection**: Section model for bookmark dividers (#62)
     - Orange bookmark icon + section name + divider line
     - Pinned section headers during scroll
@@ -160,15 +192,30 @@ SwiftUI views for user interaction.
   - Auto-Slide support (Space/Shift+Space, shared AutoSlideTapHandler)
   - Animated GIF playback overlay (Space pause/resume, L loop toggle) (#201)
   - Render-gated navigation: waits for frame render before accepting next input (#154)
+  - **EdgeNavigationOverlay**: Transparent click zones on left/right edges for mouse-based prev/next navigation (#255)
 - **ExportConfirmationView**: Export sheet with metadata options (#105, #175 Phase 1: separate file)
   - Data loss prevention: blocks overwrite of same filename (#161)
   - Blocks export when all items are excluded (#163)
-- **MetadataInspectorPanel**: NSPanel-based draggable/resizable metadata display (#140)
+- **ExportUtilities**: Shared export validation helpers (destination guard, etc.)
+- **MetadataInspectorPanelController**: NSPanel-based draggable/resizable metadata display (#140)
   - "i" key toggles in Viewer and Slide Modes
-  - Shows image dimensions, file size, color space, format
   - Position and size persisted across sessions
+- **MetadataInspectorView**: SwiftUI view for metadata display content
+- **MetadataExtractor**: Metadata extraction logic for image inspector (#140, S058)
+  - Supports JPEG (EXIF, TIFF, IPTC, GPS), PNG (tEXt/iTXt chunks), PDF (document-level metadata)
+  - PNG text chunk parsing for AI generation parameters
+  - GPS coordinate formatting, file size formatting
+  - Copy-to-clipboard as plain text
 - **AnimatedImageContent**: Data model + CGImageSource-based GIF decoder (#201)
+- **AnimatedImageOverlay**: NSViewRepresentable bridge for GIF playback (#201)
+  - `AnimatedImageNSView`: layer.contents-based frame rendering
+  - Static first frame rendered by existing pipeline; overlay takes over on playback start
 - **AnimationPlayer**: CADisplayLink-based playback engine with retain cycle fix (#201)
+- **DeskewDetector**: Vision framework-based document deskew angle detection (#101)
+  - Uses VNDetectDocumentSegmentationRequest for page boundary detection
+- **DeskewService**: Deskew application service — coordinates detection, caching, and image rotation (#101)
+- **ImageUtilities**: Shared image processing helpers (resizing, format detection, etc.)
+- **ThumbnailQualityPreset**: Thumbnail quality/size preset definitions with Retina support (#207)
 - **ThumbnailCell**: Individual thumbnail with selection overlay
 - **ImagePreviewView**: Quick Look modal preview — *deprecated, replaced by Auto-Slide (#176)*
 - **SettingsView**: Settings panel (⌘,)
@@ -176,6 +223,17 @@ SwiftUI views for user interaction.
   - Thumbnail quality presets with Retina support (#207)
   - N-step navigation step count (#143)
   - Auto-Slide loop setting
+  - Deskew enable/disable toggle (#101)
+
+### 9a. Internationalization (i18n) Layer (#244)
+
+Localization infrastructure for multi-language support.
+
+- **Localizable.xcstrings**: Xcode String Catalog containing ~240 localized keys
+  - Format: `String(localized: "key.path", defaultValue: "English text")`
+  - Hierarchical key naming: `grid.export.*`, `grid.alert.*`, `slide.*`, `settings.*`, etc.
+  - Default values serve as English strings; additional languages added via Xcode String Catalog editor
+  - Covers: UI labels, alert messages, export dialogs, settings descriptions, accessibility hints
 
 ### 10. Slide Mode Layer
 
@@ -199,7 +257,7 @@ Fullscreen image viewing with Favorites Mode and source navigation.
   | Z/C | Previous/Next favorite (RTL-aware) | Previous/Next favorite (RTL-aware) |
   | Ctrl+A/D | Jump to first/last image | Same |
   | Ctrl+Z/C | Jump to first/last favorite | Same |
-  | Ctrl+Option+←/→ | N-step jump (configurable) (#143) | Same |
+  | Option+←/→ | N-step jump (configurable) (#143) | Same |
   | Cmd+1/2/3/4/5 | Jump to 0%/25%/50%/75%/100% | Same |
   | Tab | Next ★ + enter mode | Next ★ |
   | F | Toggle favorite | Toggle favorite |
@@ -308,9 +366,20 @@ ContentView creates ImageSource:
     ↓
 ThumbnailGridView calls listImageEntries()
     ↓
-Lazy thumbnail loading (on scroll)
+entries set → ThumbnailCollectionViewBridge.updateNSView() detects change
     ↓
-Grid displays images
+Coordinator rebuilds sections, reloads NSCollectionView
+    ↓
+NSCollectionView cells created on demand (itemForRepresentedObjectAt:)
+    ↓
+onCellAppear triggers loadThumbnailIfNeeded()
+    ↓
+Thumbnail loaded (sync cache hit or async generation)
+    ↓
+ThumbnailCoalescer batches results → flushThumbnailBuffer()
+    ↓
+ThumbnailCollectionUpdater.applyBatch() pushes directly to visible cells
+  (bypasses SwiftUI @State — no body re-evaluation)
 ```
 
 ### Selecting Items
@@ -377,10 +446,9 @@ Show confirmation dialog:
 
 ```
 User triggers Slide Mode:
-  - Enter key in filer
-  - Double-click thumbnail
+  - Enter key in Grid (Filer)
   - Double-click sidebar item
-  - Enter in Quick Look preview
+  - Enter key in Viewer Mode (Reader Mode)
     ↓
 ThumbnailGridView sets previewMode = .slideMode(index)
     ↓
@@ -392,6 +460,21 @@ SlideWindowController.shared.open()
 User navigates with keyboard
     ↓
 Exit via Q/Esc → SlideWindowController.close()
+```
+
+### Opening Viewer Mode (Reader Mode)
+
+```
+User triggers Viewer Mode:
+  - R key in Grid (Filer)
+  - Double-click thumbnail (#245: via NSCollectionView gesture recognizer)
+    ↓
+ThumbnailGridView sets previewMode = .viewer(index)
+    ↓
+ViewerView rendered inline (replaces grid)
+    ↓
+Enter key in Viewer → transitions to Slide Mode
+Q/R/Esc → returns to Grid
 ```
 
 ### Favorites Mode Flow
@@ -505,21 +588,38 @@ CacheManager.clearAspectRatioCache()
 ```
 Erimil/
 ├── ErimilApp.swift              # App entry point, Settings scene, CacheManager trigger
-├── ContentView.swift            # Main split view, owns selection state
+├── ContentView.swift            # Main view, owns selection state
+├── ErimilSplitViewController.swift   # NSSplitViewController for sidebar/detail split (#215)
+├── ErimilSplitViewRepresentable.swift # NSViewControllerRepresentable bridge to SwiftUI
+├── DetailContainerViewController.swift # NSHostingController wrapper for detail pane
 ├── SidebarView.swift            # Folder tree navigation (Finder-style, lazy childrenCache)
-├── ThumbnailGridView.swift      # Image grid with mode-aware UI
-│   ├── ThumbnailDisplayItem     # Enum: .single, .spread (#69)
-│   ├── ThumbnailSidebarView     # Thumbnail strip (S014)
-│   └── ThumbnailCell            # Individual thumbnail
+├── SourceSelection.swift        # Shared source selection state for sidebar ↔ detail
+├── SourceSwitchTiming.swift     # Diagnostic timing instrumentation for source switches
+├── ThumbnailGridView.swift      # Grid display with mode-aware UI, keyboard handling
+│   └── ThumbnailCoalescer       # Batch thumbnail buffer (inline private class)
+├── ThumbnailCollectionViewBridge.swift # NSViewRepresentable for NSCollectionView (#215)
+│   ├── ThumbnailCollectionUpdater     # Direct AppKit push bridge (applyBatch, scrollToItem)
+│   └── Coordinator              # NSCollectionViewDataSource + DelegateFlowLayout
+├── ThumbnailCollectionViewItem.swift  # NSCollectionViewItem for individual cells (#215)
+│   └── ThumbnailSectionHeaderView     # Bookmark section header view
 ├── ThumbnailComponents.swift    # Extracted thumbnail subviews (#175 Phase 1)
 │   └── SpreadThumbnailPairView  # Paired thumbnails (#69, #187 .fill+.clipped)
 ├── ViewerView.swift             # In-grid viewer with thumbnail sidebar (#175 Phase 1)
 │   └── ViewerKeyEventHandler    # Viewer-specific key handling
+├── EdgeNavigationOverlay.swift  # Left/right edge click zones for prev/next (#255)
 ├── ExportConfirmationView.swift # Export sheet with metadata options (#105, #175 Phase 1)
-├── MetadataInspectorPanel.swift # NSPanel metadata display (#140)
+├── ExportUtilities.swift        # Shared export validation helpers
+├── MetadataInspectorPanelController.swift # NSPanel metadata display (#140)
+├── MetadataInspectorView.swift  # SwiftUI metadata display content (#140)
+├── MetadataExtractor.swift      # Metadata extraction logic (EXIF/PNG/PDF) (#140, S058)
 ├── AnimatedImageContent.swift   # GIF frame data model + decoder (#201)
+├── AnimatedImageOverlay.swift   # NSViewRepresentable GIF playback bridge (#201)
 ├── AnimationPlayer.swift        # CADisplayLink playback engine (#201)
+├── DeskewDetector.swift         # Vision-based document deskew detection (#101)
+├── DeskewService.swift          # Deskew coordination service (#101)
 ├── ImagePreviewView.swift       # Quick Look preview modal (deprecated #176)
+├── ImageUtilities.swift         # Shared image processing helpers
+├── ThumbnailQualityPreset.swift # Thumbnail quality/size preset definitions (#207)
 ├── SettingsView.swift           # Settings panel (grid spacing, quality, N-step, Auto-Slide)
 ├── SlideWindowController.swift  # Fullscreen slide mode controller
 │   ├── SlideWindowView          # SwiftUI view for slide content
@@ -536,13 +636,22 @@ Erimil/
 ├── FolderNote.swift             # FolderNode tree node model (lazy, children=nil)
 ├── CacheManager.swift           # Thumbnail cache, favorites, async init (#216)
 ├── TileSheetCache.swift         # Tile-based thumbnail cache for archives (#24)
-├── ThumbnailCoalescer.swift     # Batch thumbnail update coalescer (#138)
 ├── KeyHandling.swift            # Centralized key handling + CommonKeyParser (#169)
 │   ├── AutoSlideTapHandler      # Shared Auto-Slide state machine (#175 Phase 2)
 │   ├── BookmarkDialogHelper     # NSAlert bookmark dialogs (#62)
 │   └── BookmarkListKeyHandler   # Bookmark list key handling (#62)
+├── Logger.swift                 # os.Logger category definitions
 ├── ZIPEncodingDetector.swift    # ZIP filename encoding detection
-└── AppSettings.swift            # UserDefaults wrapper, settings enums
+├── AppSettings.swift            # UserDefaults wrapper, settings enums
+└── Localizable.xcstrings        # String Catalog: ~240 localized keys (#244)
+```
+
+### Project Documentation
+
+```
+docs/
+├── PHILOSOPHY-DRAFT.md        # BSD methodology (project-portable)
+└── DESIGN-PHILOSOPHY.md       # Erimil-specific design principles (Editorial Model)
 ```
 
 ## External Dependencies
@@ -551,12 +660,14 @@ Erimil/
 |------------|---------|-------|
 | [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | ZIP archive handling | Swift Package, MIT license |
 | SwiftUI | UI framework | System framework |
+| AppKit | NSCollectionView, NSSplitViewController, NSPanel | System framework |
 | Combine | Reactive state (AppSettings) | System framework |
 | UniformTypeIdentifiers | File type handling | System framework |
 | PDFKit | PDF rendering | System framework |
 | CryptoKit | Content hashing for cache | System framework |
 | CoreML | Super-resolution upscaling (Hyperscaler PoC) (#40) | System framework |
 | ImageIO | GIF frame extraction (CGImageSource) (#201) | System framework |
+| Vision | Document deskew detection (#101) | System framework |
 
 ## State Management
 
@@ -564,12 +675,18 @@ Erimil/
 ErimilApp
     ├── Settings { SettingsView }
     │
-    └── WindowGroup { ContentView }
+    └── WindowGroup { ErimilSplitViewRepresentable }
             │
-            ├── @State selectedPaths: Set<String>  ← Source of truth
-            ├── @State selectedSourceURL: URL?
-            ├── @State selectedSourceType: ImageSourceType?
-            ├── @State shouldReopenSlideMode: Bool  ← For source navigation
+            ├── ErimilSplitViewController (NSSplitViewController)
+            │       ├── Sidebar: SidebarView (SwiftUI via NSHostingController)
+            │       └── Detail: DetailContainerViewController
+            │               └── ContentView (SwiftUI via NSHostingController)
+            │
+            ├── ContentView
+            │       ├── @State selectedPaths: Set<String>  ← Source of truth
+            │       ├── @State selectedSourceURL: URL?
+            │       ├── @State selectedSourceType: ImageSourceType?
+            │       └── @State shouldReopenSlideMode: Bool  ← For source navigation
             │
             ├── SidebarView
             │       ├── @Binding selectedFolderURL
@@ -585,7 +702,16 @@ ErimilApp
             │       ├── @State entries: [ImageEntry]
             │       ├── @State thumbnails: [String: NSImage]
             │       ├── @State previewMode: PreviewMode
-            │       └── imageSource: any ImageSource
+            │       ├── @State collectionUpdater: ThumbnailCollectionUpdater
+            │       ├── imageSource: any ImageSource
+            │       │
+            │       └── ThumbnailCollectionViewBridge (NSViewRepresentable)
+            │               ├── Coordinator (NSCollectionViewDataSource + DelegateFlowLayout)
+            │               │       ├── sections: [SectionInfo]     ← Bookmark-based sections
+            │               │       ├── entries / thumbnails        ← Coordinator-local copies
+            │               │       └── appearedPaths: Set<String>  ← Lazy load tracking
+            │               └── NSCollectionView
+            │                       └── ThumbnailCollectionViewItem (per cell)
             │
             └── SlideWindowController.shared (Singleton)
                     ├── slideWindow: NSWindow?
@@ -609,8 +735,10 @@ CacheManager.shared
     ├── sourceSettings: [String: SourceSettings]  ← Per-source settings (#54)
     │       ├── lastPosition: Int?
     │       ├── readingDirection: ReadingDirection?
-    │       └── singlePageIndices: Set<Int>?  ← V key markers (#56)
+    │       ├── singlePageIndices: Set<Int>?  ← V key markers (#56)
+    │       └── deskewEnabled: Bool?          ← Per-source deskew toggle (#101)
     ├── aspectRatioCache: [String: CGFloat]   ← In-memory only (#67)
+    ├── deskewAnglesBySource: [String: [String: CGFloat]]  ← Per-source, per-page (#101)
     │
     Methods:
     ├── copyMetadata()             ← Export metadata carry-over (#105)
@@ -620,8 +748,12 @@ CacheManager.shared
     │
     Persisted:
     ├── index.json                 ← pathIndex
-    ├── favorites.json             ← Favorites data
+    ├── favorites_hybrid.json      ← Favorites data (v2 hybrid: byContent + bySource)
+    ├── favorites.json             ← Legacy format (auto-migrated, read-only)
+    ├── last_position.json         ← Per-source last viewed index
     ├── source_settings.json       ← sourceSettings
+    ├── bookmarks.json             ← Per-source bookmarks (#62)
+    ├── deskew_angles.json         ← Per-source deskew angles (#101)
     └── tilesheets/                ← Tile-based archive thumbnails (#24)
 ```
 
@@ -655,6 +787,7 @@ AppSettings.shared
     ├── @Published spreadThreshold: Double            ← Wide image threshold
     ├── @Published nStepCount: Int                    ← N-step navigation step (#143)
     ├── @Published autoSlideLoop: Bool                ← Auto-Slide loop at boundary (#172)
+    ├── @Published deskewEnabled: Bool                 ← Global deskew toggle (#101)
     ├── @Published lastOpenedFolderURL: URL?          ← Restore on launch
     ├── @Published metadataCarryOverFavorites: Bool   ← Export ★ (#105)
     ├── @Published metadataCarryOverBookmarks: Bool   ← Export 栞 (#105)
@@ -827,7 +960,8 @@ Logger categories are defined in `Logger.swift` as static extensions.
 | `AnimationPlayer` | GIF playback (#201) |
 | `TileSheet` | Tile-based thumbnail cache (#24) |
 | `Coalescer` | Thumbnail batch updates (#138) |
-| `Metadata` | Metadata inspector (#140) |
+| `Metadata` | Metadata inspector / extractor (#140) |
+| `Deskew` | Document deskew detection (#101) |
 
 **Log levels**
 
@@ -844,9 +978,12 @@ Logger categories are defined in `Logger.swift` as static extensions.
 ├── cache/                      # Thumbnail cache (.ecache format #146)
 ├── tilesheets/                 # Tile-based thumbnail cache for archives (#24)
 ├── index.json                  # Path → contentHash mapping
-├── favorites.json              # Favorites data (hybrid format)
+├── favorites_hybrid.json       # Favorites data (v2 hybrid format)
+├── favorites.json              # Legacy favorites (auto-migrated, read-only)
+├── last_position.json          # Per-source last viewed index
 ├── source_settings.json        # Per-source settings (#54)
 ├── bookmarks.json              # Per-source bookmarks (#62)
+├── deskew_angles.json          # Per-source deskew angles (#101)
 └── last_folder_bookmark.data   # Folder restoration bookmark
 ```
 
@@ -902,17 +1039,21 @@ A: Aspect ratio or direction issue
 ## Performance Considerations
 
 - **Startup**: Lazy tree loading (FolderNode children=nil, on-demand via childrenCache) — 16.7s → 2ms (#216)
+- **Source switch**: Optimized pipeline — 24× faster end-to-end (#265), measured via SourceSwitchTiming probes
 - **CacheManager**: Async initialization on background queue — 143ms for 105K entries, does not block main thread (#216)
+- **NSCollectionView**: Replaced SwiftUI LazyVGrid (#215) — eliminates body re-evaluation overhead for thumbnail updates
+  - Direct thumbnail push via `ThumbnailCollectionUpdater.applyBatch()` — no @State mutation for grid cells
+  - ThumbnailCoalescer batches async thumbnail results, single flush per run loop cycle
 - **Large ZIPs (>1GB)**: Show warning, consider streaming approach
-- **Many Images (>1000)**: Virtualized grid, load visible thumbnails only
+- **Many Images (>1000)**: NSCollectionView with on-demand cell loading
 - **Memory**: Thumbnail cache with size limit, LRU eviction
 - **Large PDFs**: Lazy page rendering, memory cache with double-checked locking (#165)
 - **Image Prefetching**: Direction-aware prefetch reduces perceived latency
 - **Thumbnail disk cache**: Synchronous check in loadThumbnailIfNeeded eliminates async delay for cached thumbnails (#160)
 - **Tile sheets**: ZIP/PDF archives use tile-based thumbnail cache for fast subsequent opens (#24)
 - **Render-gated navigation**: Z/C favorite navigation prevents key-repeat from skipping unrendered frames (#154)
-- **ThumbnailCoalescer**: Batches thumbnail assignments to reduce SwiftUI body re-evaluations by 95-98% (#138)
 - **Sandboxed filesystem**: Recursive traversal is catastrophically expensive due to permission checks; always use lazy loading (#216)
+- **Thumbnail generation**: OperationQueue with maxConcurrentOperationCount=4 prevents thread pool saturation (#134)
 
 ---
 
@@ -920,4 +1061,4 @@ A: Aspect ratio or direction issue
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2026-03-21 (v0.3.4: #216 lazy tree, #24 tile sheets, #201 animated, #140 metadata, #138 coalescer)
+> Last updated: 2026-04-27 (v0.3.5: #215 NSCollectionView, #244 i18n, #255 edge-click, #265 startup 24×, NSSplitViewController migration)
