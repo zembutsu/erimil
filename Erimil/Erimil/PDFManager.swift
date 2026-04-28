@@ -78,6 +78,8 @@ class PDFManager: ImageSource {
                     estimatedSize = 0
                 }
                 
+                // #267: modifiedDate intentionally nil — per-page modification date is undefined for PDF.
+                // Date sort will place all PDF pages at the end (nil-last fallback in EntrySorter).
                 let entry = ImageEntry(path: path, name: name, size: estimatedSize)
                 entries.append(entry)
             }

@@ -15,6 +15,7 @@ struct ImageEntry: Identifiable, Hashable {
     let path: String           // Full path within source
     let name: String           // Display name (filename)
     let size: UInt64           // File size in bytes
+    let modifiedDate: Date?    // #267: File modification date (nil if unavailable, e.g. PDF pages)
     
     static let imageExtensions: Set<String> = [
         "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "bmp", "tiff", "tif"
@@ -31,10 +32,11 @@ struct ImageEntry: Identifiable, Hashable {
         return ext == "gif"  // Phase 1: GIF only. APNG/WebP in future phases.
     }
     
-    init(path: String, name: String? = nil, size: UInt64 = 0) {
+    init(path: String, name: String? = nil, size: UInt64 = 0, modifiedDate: Date? = nil) {
         self.path = path
         self.name = name ?? (path as NSString).lastPathComponent
         self.size = size
+        self.modifiedDate = modifiedDate
     }
     
     static func == (lhs: ImageEntry, rhs: ImageEntry) -> Bool {
@@ -45,7 +47,6 @@ struct ImageEntry: Identifiable, Hashable {
         hasher.combine(id)
     }
 }
-
 /// Protocol for browsing images from various sources
 protocol ImageSource {
     /// Source URL (ZIP file or folder)

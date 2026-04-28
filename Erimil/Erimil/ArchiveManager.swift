@@ -105,7 +105,8 @@ class ArchiveManager: ImageSource {
                 if entry.type == .file {
                     let imageEntry = ImageEntry(
                         path: path,
-                        size: entry.uncompressedSize
+                        size: entry.uncompressedSize,
+                        modifiedDate: entry.fileAttributes[.modificationDate] as? Date    // #267
                     )
                     
                     // Filter: images only, exclude __MACOSX metadata
