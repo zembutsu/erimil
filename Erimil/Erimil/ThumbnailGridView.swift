@@ -873,7 +873,13 @@ struct ThumbnailGridView: View {
             
             SourceSwitchTiming.end("load.done(\(loadedEntries.count))")
             
-            entries = loadedEntries
+            // S132: Phase 3 step 1 — sort at display path.
+            // PDF date sort silently falls back to name (UI gating in step 2).
+            let mode = CacheManager.shared.getSortMode(for: imageSource.url)
+            let asc = CacheManager.shared.getSortAscending(for: imageSource.url)
+            let effectiveMode: SortMode =
+                (!imageSource.supportsDateSort && mode == .date) ? .name : mode
+            entries = EntrySorter.sort(loadedEntries, by: effectiveMode, ascending: asc)
             isLoadingSource = false
             showLoadingSpinner = false
             

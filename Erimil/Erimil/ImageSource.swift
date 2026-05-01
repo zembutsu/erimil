@@ -58,6 +58,13 @@ protocol ImageSource {
     /// Source type for UI customization
     var sourceType: ImageSourceType { get }
     
+    /// Whether this source supports sorting by modification date.
+    /// Default: true. PDF returns false (all pages share document mtime —
+    /// per-page date sort is meaningless). UI gates the Date option for
+    /// sources where this is false; EntrySorter callers fall back to .name.
+    /// (S132)
+    var supportsDateSort: Bool { get }
+    
     /// List all image entries
     func listImageEntries() -> [ImageEntry]
     
@@ -77,6 +84,11 @@ protocol ImageSource {
     func animatedImageContent(for entry: ImageEntry) -> AnimatedImageContent?
     
     func registerThumbnailForTileSheet(for entry: ImageEntry, contentHash: String, image: NSImage)
+}
+
+extension ImageSource {
+    /// Default: source supports date sort. PDFManager overrides to false. (S132)
+    var supportsDateSort: Bool { true }
 }
 
 /// Source type for determining available actions

@@ -2,8 +2,10 @@ import Foundation
 
 /// Layer 1 (Curator): pure-function entry sorting.
 /// Reads no state; produces sorted output from input.
-/// Viewer layer must NOT depend on this directly — sort is applied
-/// at `listImageEntries()` time, before entries cross the firewall.
+/// Applied at the display path, after `listImageEntries()`, on entries
+/// crossing into the View Layer. Cache/prefetch paths must NOT sort —
+/// `listImageEntries()` returns raw order to preserve tile sheet alignment
+/// (TileSheetCache assumes entryPath order, ArchiveManager.swift:335 ref).
 enum EntrySorter {
 
     /// Sort entries by the given mode and direction.

@@ -22,6 +22,7 @@ import ZIPFoundation
 class PDFManager: ImageSource {
     let url: URL
     let sourceType: ImageSourceType = .pdf
+    let supportsDateSort: Bool = false  // S132: PDF pages share document mtime
     
     /// Cached PDF document
     private var document: PDFDocument?
