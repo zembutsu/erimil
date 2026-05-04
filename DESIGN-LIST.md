@@ -29,6 +29,8 @@ Quick reference for all design decisions. See **DESIGN.md** for full details.
 | D008 | 2026-01-30 | RTL Navigation Key Inversion | ←/→ keys inverted in RTL mode for natural reading |
 | D009 | 2026-01-24 | ViewerView Thumbnail Sidebar | In-grid viewer with left/bottom/hidden positions |
 | D010 | 2026-01-24 | Direction-Aware Prefetching | LRU cache prefetches in travel direction |
+| D011 | 2026-05-02 | Sort UI Placement Follows State Topology | Sort menu in ThumbnailGridView header, not ContentView toolbar |
+| D012 | 2026-05-04 | TileSheetCache Order Constraint Internal | Path-based lookup; build-time entryPath sort orthogonal to View sort |
 
 ---
 
@@ -52,11 +54,13 @@ D001-D003 were transitional and are now consolidated into the main Decision seri
 - Decision 8: ImageSource Abstraction
 - D005: Mode Definitions
 - D006: PDF as ImageSource
+- D012: TileSheetCache Order Constraint Internal
 
 ### User Interface
 - Decision 9: Finder-style Navigation
 - D007: Spread View Double Buffering
 - D009: ViewerView Thumbnail Sidebar
+- D011: Sort UI Placement Follows State Topology
 
 ### Data & Storage
 - Decision 11: Cache Storage Location
