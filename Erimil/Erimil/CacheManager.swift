@@ -13,19 +13,33 @@ import AppKit
 import CryptoKit
 import os
 
-/// Per-source settings (#54, #56)
+/// Per-source settings (#54, #56, #267)
 struct SourceSettings: Codable {
     var lastPosition: Int?
     var readingDirection: ReadingDirection?  // nil = use global default
     var singlePageIndices: Set<Int>?         // #56: Manual single page markers
     var deskewEnabled: Bool?                 // #101: nil = off (default off)
+    var sortMode: SortMode?                  // #267: nil = .name (default)
+    var sortAscending: Bool?                 // #267: nil = true (default ascending)
     
     /// Check if settings are empty (can be removed)
     var isEmpty: Bool {
-        lastPosition == nil && readingDirection == nil && (singlePageIndices == nil || singlePageIndices!.isEmpty) && deskewEnabled == nil
+        lastPosition == nil
+            && readingDirection == nil
+            && (singlePageIndices == nil || singlePageIndices!.isEmpty)
+            && deskewEnabled == nil
+            && sortMode == nil
+            && sortAscending == nil
     }
 }
 
+/// Sort mode for image entries (#267)
+enum SortMode: String, Codable, CaseIterable {
+    case name      // default (nil persisted)
+    case date
+    case size
+    case custom    // reserved; UI gating until #268 (D005)
+}
 /// Bookmark (栞) - Section marker within a source (#62)
 struct Bookmark: Codable, Identifiable {
     let id: UUID
@@ -1525,5 +1539,33 @@ class CacheManager {
         }
         Logger.cache.debug("Deskew \(new ? "enabled" : "disabled") for \(sourceURL.lastPathComponent)")
         return new
+    }
+    
+    // MARK: - Sort (#267)
+        
+    /// Get sort mode for a source (default: .name)
+    func getSortMode(for sourceURL: URL) -> SortMode {
+        return getSourceSettings(for: sourceURL)?.sortMode ?? .name
+    }
+    
+    /// Get sort direction (ascending) for a source (default: true)
+    func getSortAscending(for sourceURL: URL) -> Bool {
+        return getSourceSettings(for: sourceURL)?.sortAscending ?? true
+    }
+    
+    /// Set sort mode for a source (.name persisted as nil to save space)
+    func setSortMode(for sourceURL: URL, mode: SortMode) {
+        updateSourceSettings(for: sourceURL) { settings in
+            settings.sortMode = (mode == .name) ? nil : mode
+        }
+        Logger.cache.debug("Set sort mode for \(sourceURL.lastPathComponent): \(mode.rawValue)")
+    }
+    
+    /// Set sort direction for a source (true ascending persisted as nil to save space)
+    func setSortAscending(for sourceURL: URL, ascending: Bool) {
+        updateSourceSettings(for: sourceURL) { settings in
+            settings.sortAscending = ascending ? nil : false
+        }
+        Logger.cache.debug("Set sort ascending for \(sourceURL.lastPathComponent): \(ascending)")
     }
 }

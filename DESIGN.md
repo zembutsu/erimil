@@ -951,6 +951,69 @@ Future (Phase 2.2):
 5. Favorite feature (v toggle, ★ display, delete protection)
 
 ---
+### D011: Sort UI Placement Follows State Topology
+
+**Date**: 2026-05-02 (S133)
+
+**Context**: Adding a sort menu (Name / Date / Size + ascending/descending toggle) to the thumbnail grid (#267 Phase 3). The conventional macOS pattern places sort controls in the window toolbar (ContentView), but the controlling state (`imageSource`, `entries`, persisted sort mode) lives entirely within ThumbnailGridView, separated from ContentView by the NSHostingView swap pattern.
+
+**Options Considered**:
+
+| Option | Description | Pros | Cons |
+|--------|-------------|------|------|
+| A | ContentView toolbar | Matches macOS convention | Requires bridging `imageSource` and sort state upward across the NSHostingView boundary |
+| B | ThumbnailGridView header | All required state already local | Less conventional placement |
+
+**Decision**: **Option B** — Place the sort menu in `ThumbnailGridView.headerView`, between the source name and the existing mode toggle.
+
+**Rationale**:
+- ContentView holds no reference to `imageSource`; the source is owned by the inner view that NSHostingView swaps in
+- `entries`, `currentSortMode`, `currentSortAscending` are all `@State` in ThumbnailGridView
+- Placing the UI where the state already lives requires zero plumbing
+- Header already contains a related control (mode toggle), establishing the pattern
+- `@State`-driven Menu with `.onChange` handlers gives free SwiftUI reactivity for re-sort and CacheManager persistence
+
+**Consequences**:
+- ✅ Zero state bridging across view boundaries
+- ✅ Sort UI naturally scopes to the grid context (irrelevant in Viewer mode)
+- ✅ Per-source sort state preserved across source switches via existing CacheManager pattern
+- ⚠️ Diverges from macOS toolbar convention (acceptable: the grid is the operative context)
+
+**Generalization**: UI placement should follow the topology of the state it controls, not platform convention. When deciding placement, identify where the controlling state lives before choosing the host view.
+
+---
+### D012: TileSheetCache Order Constraint Scoped to Internal Build Path
+
+**Date**: 2026-05-04 (S134)
+
+**Context**: S132 raised a warning that `listImageEntries()` returning raw entry order was an invariant required by TileSheetCache. With sort functionality now in place (#267 Phase 3, D011), the question was whether sort changes break the tile sheet, and if so, what infrastructure is needed.
+
+**Options Considered**:
+
+| Option | Description | Pros | Cons |
+|--------|-------------|------|------|
+| A | Invalidate tile sheet on sort change | Simple model | Discards valid cache, slow first display after sort |
+| B | Sort-aware index translation in lookup | Preserves cache | New coupling between View and TileSheetCache |
+| C | No change required; systems already orthogonal | Minimal code | Requires verification that no path-order dependency exists |
+
+**Decision**: **Option C** — TileSheetCache and sort are orthogonal at the boundary. No invalidation, no translation layer.
+
+**Rationale**:
+- Lookup chain analysis: `ArchiveManager.thumbnail(for: entry)` → `entry.path` → `CacheManager.pathHash` → `contentHash` → cached `NSImage`. All keys are path-based, never display-index-based.
+- `TileSheetCache.registerThumbnail` accepts entries in arbitrary order, deduplicates by `entryPath`, and `buildTileSheets` sorts internally before packing for deterministic layout
+- `prefetchAllThumbnails(entries:)` ingestion order does not affect final TileSheet contents
+- ThumbnailGridView never references TileSheetCache directly; the abstraction boundary at `ArchiveManager.thumbnail(for:)` already isolates Source-layer storage from View-layer ordering
+- The "invariant" identified in S132 is real but scoped to TileSheetCache's internal build path — it is not an external contract on caller order
+
+**Consequences**:
+- ✅ Sort changes require no Source-layer recomputation (no invalidation, no rebuild, no re-prefetch)
+- ✅ Existing tile sheets remain valid across all sort modes and ascending/descending toggles
+- ✅ Per-source prefetch order remains content-intrinsic (filesystem order), independent of user view selection — correct by Source/View layer separation
+- ⚠️ Documentation must distinguish "internal ordering for build determinism" from "external contract on caller order" to prevent re-confusion
+
+**Related**: See `DESIGN-PHILOSOPHY.md` — "Source Layer / View Layer Separation" for the broader framework this decision fits within.
+
+---
 
 ## References
 
@@ -965,4 +1028,4 @@ Future (Phase 2.2):
 
 > Based on **Project Documentation Methodology** v0.1.0
 > Document started: 2025-12-13
-> Last updated: 2026-01-31 (S029: D004-D010 added)
+> Last updated: 2026-05-04 (S134: D011-D012 added)

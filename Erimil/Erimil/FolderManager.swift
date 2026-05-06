@@ -49,10 +49,10 @@ class FolderManager: ImageSource {
         }
         
         var results: [ImageEntry] = []
-        
+                
         for fileURL in contents {
             // Skip directories
-            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]),
                   resourceValues.isRegularFile == true else {
                 continue
             }
@@ -60,7 +60,8 @@ class FolderManager: ImageSource {
             let entry = ImageEntry(
                 path: fileURL.path,
                 name: fileURL.lastPathComponent,
-                size: UInt64(resourceValues.fileSize ?? 0)
+                size: UInt64(resourceValues.fileSize ?? 0),
+                modifiedDate: resourceValues.contentModificationDate    // #267
             )
             
             if entry.isImage {

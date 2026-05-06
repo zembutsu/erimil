@@ -32,6 +32,7 @@ Unified interface for different image sources (→ DESIGN.md Decision 8).
 
 - **ImageSource**: Protocol defining common interface for image browsing
 - **ImageEntry**: Model representing single image from any source
+  - Includes `modifiedDate: Date?` for date-based sort (#267); `nil` for PDF (per-page modified date is not meaningful)
 - **ImageSourceType**: Enum for source type identification
   - `.archive` - ZIP files
   - `.folder` - Directories
@@ -159,6 +160,9 @@ SwiftUI views for user interaction, with AppKit integration via NSViewRepresenta
   - Thumbnail grid rendering delegated to NSCollectionView via **ThumbnailCollectionViewBridge**
   - Retains SwiftUI state (`entries`, `thumbnails`, `selectedPaths`, `focusedIndex`)
   - Coordinates grid updates via **ThumbnailCollectionUpdater** (direct AppKit push, bypasses SwiftUI body re-evaluation)
+  - **Sort UI** (#267): Header menu with 3 modes (name / date / size) + direction toggle
+      - Custom mode hidden until #268 (View Layer) ships; enum case exists internally
+      - Sort applied at Curator layer only — Viewer/Slide consult source order, not `sortMode` (see `DESIGN-PHILOSOPHY.md` *Source Layer / View Layer Separation*)
   - **ThumbnailCollectionViewBridge**: NSViewRepresentable wrapping NSCollectionView (#215)
     - NSCollectionViewFlowLayout with adaptive column calculation (replicates LazyVGrid `.adaptive` behavior)
     - Coordinator implements NSCollectionViewDataSource + NSCollectionViewDelegateFlowLayout
@@ -179,6 +183,7 @@ SwiftUI views for user interaction, with AppKit integration via NSViewRepresenta
   - **GridSection**: Section model for bookmark dividers (#62)
     - Orange bookmark icon + section name + divider line
     - Pinned section headers during scroll
+    - Display gated to `sortMode == .name && ascending` — bookmarks are landmarks within source order (#267)
   - **ThumbnailSidebarView**: Vertical/horizontal thumbnail strip (S014)
 - **ThumbnailComponents.swift**: Extracted thumbnail subviews (#175 Phase 1)
   - **SpreadThumbnailPairView**: Paired thumbnail display for spreads (#69)
@@ -214,6 +219,11 @@ SwiftUI views for user interaction, with AppKit integration via NSViewRepresenta
 - **DeskewDetector**: Vision framework-based document deskew angle detection (#101)
   - Uses VNDetectDocumentSegmentationRequest for page boundary detection
 - **DeskewService**: Deskew application service — coordinates detection, caching, and image rotation (#101)
+- **EntrySorter**: Sort logic for ImageEntry arrays (#267)
+  - Name: `localizedStandardCompare` (matches Finder ordering)
+  - Date: `nil`-last fallback for entries without modified date
+  - Size: file size in bytes
+  - Custom: falls back to name until #268 ships
 - **ImageUtilities**: Shared image processing helpers (resizing, format detection, etc.)
 - **ThumbnailQualityPreset**: Thumbnail quality/size preset definitions with Retina support (#207)
 - **ThumbnailCell**: Individual thumbnail with selection overlay
@@ -736,7 +746,9 @@ CacheManager.shared
     │       ├── lastPosition: Int?
     │       ├── readingDirection: ReadingDirection?
     │       ├── singlePageIndices: Set<Int>?  ← V key markers (#56)
-    │       └── deskewEnabled: Bool?          ← Per-source deskew toggle (#101)
+    │       ├── deskewEnabled: Bool?          ← Per-source deskew toggle (#101)
+    │       ├── sortMode: SortMode?           ← Curator sort mode (#267)
+    │       └── sortAscending: Bool?          ← Curator sort direction (#267)
     ├── aspectRatioCache: [String: CGFloat]   ← In-memory only (#67)
     ├── deskewAnglesBySource: [String: [String: CGFloat]]  ← Per-source, per-page (#101)
     │
@@ -823,6 +835,12 @@ ViewerThumbnailPosition
 ReadingDirection
     ├── .ltr        ← Left-to-Right (Western)
     └── .rtl        ← Right-to-Left (Japanese vertical text)
+
+SortMode (#267)
+    ├── .name       ← Filename, localizedStandardCompare
+    ├── .date       ← File modified date, nil-last
+    ├── .size       ← File size in bytes
+    └── .custom     ← Manual order (deferred to #268; not exposed in UI)
 ```
 
 ## Privacy/Security Considerations

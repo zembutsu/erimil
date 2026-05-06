@@ -108,6 +108,8 @@ struct ThumbnailGridView: View {
     @ObservedObject private var settings = AppSettings.shared
     
     @State private var entries: [ImageEntry] = []
+    @State private var currentSortMode: SortMode = .name
+    @State private var currentSortAscending: Bool = true
     @State private var thumbnails: [String: NSImage] = [:]
     @State private var previewMode: PreviewMode = .none  // Changed: enum for Quick Look vs Slide Mode
     @State private var showExportSuccess = false
@@ -257,6 +259,20 @@ struct ThumbnailGridView: View {
                     collectionUpdater.scrollToItem(at: index, animated: false)
                 }
             }
+        }
+        .onChange(of: currentSortMode) { _, newMode in
+            // S133: Re-sort on user sort mode change. No listImageEntries re-fetch.
+            let effectiveMode: SortMode =
+                (!imageSource.supportsDateSort && newMode == .date) ? .name : newMode
+            entries = EntrySorter.sort(entries, by: effectiveMode, ascending: currentSortAscending)
+            CacheManager.shared.setSortMode(for: imageSource.url, mode: newMode)
+        }
+        .onChange(of: currentSortAscending) { _, newAsc in
+            // S133: Re-sort on user order change. No listImageEntries re-fetch.
+            let effectiveMode: SortMode =
+                (!imageSource.supportsDateSort && currentSortMode == .date) ? .name : currentSortMode
+            entries = EntrySorter.sort(entries, by: effectiveMode, ascending: newAsc)
+            CacheManager.shared.setSortAscending(for: imageSource.url, ascending: newAsc)
         }
         .onAppear {
             SourceSwitchTiming.mark("grid.onAppear")
@@ -643,6 +659,55 @@ struct ThumbnailGridView: View {
                     .font(.headline)
                 
                 Spacer()
+
+                // Sort menu
+                Menu {
+                    Button {
+                        currentSortMode = .name
+                    } label: {
+                        Label(
+                            String(localized: "grid.sort.name", defaultValue: "Name"),
+                            systemImage: currentSortMode == .name ? "checkmark" : ""
+                        )
+                    }
+                    
+                    Button {
+                        currentSortMode = .date
+                    } label: {
+                        Label(
+                            String(localized: "grid.sort.date", defaultValue: "Date"),
+                            systemImage: currentSortMode == .date ? "checkmark" : ""
+                        )
+                    }
+                    .disabled(!imageSource.supportsDateSort)
+                    
+                    Button {
+                        currentSortMode = .size
+                    } label: {
+                        Label(
+                            String(localized: "grid.sort.size", defaultValue: "Size"),
+                            systemImage: currentSortMode == .size ? "checkmark" : ""
+                        )
+                    }
+                    
+                    Divider()
+                    
+                    Button {
+                        currentSortAscending.toggle()
+                    } label: {
+                        Label(
+                            currentSortAscending
+                                ? String(localized: "grid.sort.ascending", defaultValue: "Ascending")
+                                : String(localized: "grid.sort.descending", defaultValue: "Descending"),
+                            systemImage: currentSortAscending ? "arrow.up" : "arrow.down"
+                        )
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                        .font(.caption)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
                 
                 // Mode toggle button
                 Button {
@@ -873,7 +938,14 @@ struct ThumbnailGridView: View {
             
             SourceSwitchTiming.end("load.done(\(loadedEntries.count))")
             
-            entries = loadedEntries
+            // S132: Phase 3 step 1 — sort at display path.
+            // S133: Phase 3 step 2 — sort state driven by @State (UI-connected).
+            // PDF date sort silently falls back to name (UI gating in step 2).
+            currentSortMode = CacheManager.shared.getSortMode(for: imageSource.url)
+            currentSortAscending = CacheManager.shared.getSortAscending(for: imageSource.url)
+            let effectiveMode: SortMode =
+                (!imageSource.supportsDateSort && currentSortMode == .date) ? .name : currentSortMode
+            entries = EntrySorter.sort(loadedEntries, by: effectiveMode, ascending: currentSortAscending)
             isLoadingSource = false
             showLoadingSpinner = false
             

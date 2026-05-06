@@ -332,7 +332,12 @@ class TileSheetCache {
     }
 
     private func buildTileSheets(_ build: PendingBuild) {
-        // Sort by entryPath (same order as ArchiveManager.listImageEntries)
+        // Sort by entryPath for deterministic packing layout.
+        // This is an internal build-path concern — registerThumbnail callers may
+        // invoke in any order, and buildTileSheets sorts here to ensure that
+        // repeated builds of the same archive produce identical sheet layouts.
+        // Independent of View-layer sort (D012). Independent of listImageEntries
+        // return order (registerThumbnail is the only entry path here).
         let sorted = build.collected.sorted {
             $0.entryPath.localizedStandardCompare($1.entryPath) == .orderedAscending
         }

@@ -141,6 +141,71 @@ The model currently applies to image-based sources (PDF, ZIP, folder of images).
 Open question: is Erimil image-first by accident of origin, or image-first by design?
 
 ---
+## Source Layer / View Layer Separation
+
+Erimil treats every image collection as two stacked layers. Most design
+decisions resolve cleanly once you ask which layer a given concern belongs to.
+
+### Definitions
+
+**Source layer (ソース層)** — what the content *is*.
+A FolderManager / ArchiveManager / PDFManager owns this. Everything in this
+layer is determined when the source is opened, or is intrinsic to the content
+itself. The user does not change Source-layer properties through view
+controls.
+
+**View layer (表示層)** — how the user is *looking at* the content right now.
+ThumbnailGridView owns this (currently with CacheManager-backed persistence).
+View-layer state can change at any time, can differ between sessions, and is
+orthogonal to which source is open.
+
+### Classification
+
+| Concern | Layer | Note |
+|---|---|---|
+| `entryPath` order (raw) | Source | Filesystem-derived, deterministic |
+| RTL / LTR reading direction | Source | Content-intrinsic |
+| `supportsDateSort` | Source | Capability flag |
+| Prefetch order (`prefetchAllThumbnails`) | Source | Natural ingestion order, content-internal |
+| Cover image position | Source | Content-intrinsic |
+| TileSheet packing order | Source (internal) | Build-time determinism, path-based |
+| Sort mode / ascending | View | User preference, runtime-mutable |
+| Manual order (#268) | View | User-defined override |
+| Hidden entries (#268) | View | Display filter, entry preserved in source |
+| Bookmarks (栞) | View-adjacent | Per-source persistence, but user-driven |
+
+### The orthogonality rule
+
+> View-layer changes never trigger Source-layer recomputation.
+
+Concretely: changing the sort mode in ThumbnailGridView reorders the displayed
+`entries` array. It does **not** re-call `listImageEntries()`, does **not**
+re-trigger `prefetchAllThumbnails`, does **not** invalidate any TileSheet, and
+does **not** affect the path-based lookup chain
+(`ArchiveManager.thumbnail(for:)` → `CacheManager.getThumbnail`).
+
+This is enforced by the path-based lookup contract: every cached thumbnail is
+keyed by `entry.path`, never by display index. Source-layer storage may be
+internally ordered (e.g. TileSheetCache sorts by `entryPath` for deterministic
+packing), but that order is an internal implementation detail of the build
+path, not a property exposed to or depended on by the View layer.
+
+### Why this matters
+
+The classification above resolves several otherwise-ambiguous design
+questions:
+
+- **"Should sort change prefetch order?"** No. Prefetch order is the source's
+  natural ingestion order; the user's view selection does not propagate back.
+- **"Should RTL flip when sort is descending?"** No. RTL is intrinsic; sort
+  is a view choice. They occupy different axes.
+- **"Where does sort state live?"** View layer. Per-source persistence
+  (CacheManager today, possibly View Layer JSON in #268) is a serialization
+  detail; the conceptual ownership stays in View.
+- **"Can TileSheetCache break under non-name sort?"** No. Its order
+  invariant is internal to the build path. The View layer never observes it.
+
+---
 
 ## See Also
 

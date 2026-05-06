@@ -22,6 +22,7 @@ import ZIPFoundation
 class PDFManager: ImageSource {
     let url: URL
     let sourceType: ImageSourceType = .pdf
+    let supportsDateSort: Bool = false  // S132: PDF pages share document mtime
     
     /// Cached PDF document
     private var document: PDFDocument?
@@ -78,6 +79,8 @@ class PDFManager: ImageSource {
                     estimatedSize = 0
                 }
                 
+                // #267: modifiedDate intentionally nil — per-page modification date is undefined for PDF.
+                // Date sort will place all PDF pages at the end (nil-last fallback in EntrySorter).
                 let entry = ImageEntry(path: path, name: name, size: estimatedSize)
                 entries.append(entry)
             }
