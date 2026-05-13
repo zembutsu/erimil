@@ -3121,42 +3121,35 @@
         }
       }
     },
-    "grid.sort.menu.label" : {
-        "extractionState" : "manual",
-        "localizations" : {
-            "en" : { "stringUnit" : { "state" : "translated", "value" : "Sort" } },
-            "ja" : { "stringUnit" : { "state" : "translated", "value" : "並び替え" } }
-        }
-        },
-        "grid.sort.mode.name" : {
+"grid.sort.name" : {
         "extractionState" : "manual",
         "localizations" : {
             "en" : { "stringUnit" : { "state" : "translated", "value" : "Name" } },
             "ja" : { "stringUnit" : { "state" : "translated", "value" : "名前" } }
         }
         },
-        "grid.sort.mode.date" : {
+        "grid.sort.date" : {
         "extractionState" : "manual",
         "localizations" : {
             "en" : { "stringUnit" : { "state" : "translated", "value" : "Date" } },
             "ja" : { "stringUnit" : { "state" : "translated", "value" : "更新日" } }
         }
         },
-        "grid.sort.mode.size" : {
+        "grid.sort.size" : {
         "extractionState" : "manual",
         "localizations" : {
             "en" : { "stringUnit" : { "state" : "translated", "value" : "Size" } },
             "ja" : { "stringUnit" : { "state" : "translated", "value" : "サイズ" } }
         }
         },
-        "grid.sort.direction.ascending" : {
+        "grid.sort.ascending" : {
         "extractionState" : "manual",
         "localizations" : {
             "en" : { "stringUnit" : { "state" : "translated", "value" : "Ascending" } },
             "ja" : { "stringUnit" : { "state" : "translated", "value" : "昇順" } }
         }
         },
-        "grid.sort.direction.descending" : {
+        "grid.sort.descending" : {
         "extractionState" : "manual",
         "localizations" : {
             "en" : { "stringUnit" : { "state" : "translated", "value" : "Descending" } },
