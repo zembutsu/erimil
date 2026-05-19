@@ -18,11 +18,9 @@ class ErimilSplitViewController: NSSplitViewController {
         // overriding parent frame when content is small (placeholder state)
         let flexibleSplitView = FlexibleNSSplitView()
         flexibleSplitView.isVertical = true
+        flexibleSplitView.autosaveName = "ErimilMainSplit"
         self.splitView = flexibleSplitView
 
-        sidebarController = NSHostingController(rootView: sidebarView)
-        sidebarController.sizingOptions = []
-    
         sidebarController = NSHostingController(rootView: sidebarView)
         // S091: Prevent sidebar intrinsicContentSize from constraining split view height
         sidebarController.sizingOptions = []
@@ -55,6 +53,7 @@ class ErimilSplitViewController: NSSplitViewController {
         sidebarController.rootView = sidebarView
     }
 
+    
     func toggleSidebarCollapse() {
         guard let sidebarItem = splitViewItems.first else { return }
         NSAnimationContext.runAnimationGroup { context in
