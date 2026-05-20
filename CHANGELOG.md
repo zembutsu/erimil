@@ -5,6 +5,19 @@ All notable changes to Erimil will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] - 2026-05-18
+
+### Added
+- **Sort feature**: Sort thumbnails by name, date modified, or file size with ascending/descending toggle via menu (#267)
+- **Sort localization**: Japanese locale support for sort menu labels (名前 / 更新日 / サイズ / 昇順 / 降順)
+- **Source/View layer framework**: Design philosophy documentation for separating source data order from view presentation order (DESIGN-PHILOSOPHY.md)
+
+### Fixed
+- **xcstrings key alignment**: Corrected localization key names to match `String(localized:)` references, preventing silent English fallback in non-English locales
+
+### Known Issues
+- Bookmark divider may not display correctly under date or size sort (#276)
+
 ## [0.3.5] - 2026-04-25
 
 ### Added
@@ -198,6 +211,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Phase | Highlights |
 |---------|------|-------|------------|
+| 0.3.6 | 2026-05-18 | Phase 2.5 | Sort by name/date/size, Source/View layer framework |
 | 0.3.5 | 2026-04-25 | Phase 2.5 | i18n infrastructure, NSCollectionView migration, edge-click navigation, startup 24× faster |
 | 0.3.4 | 2026-03-21 | Phase 2.4 | Startup 8300×, Auto-Slide, GIF playback, tile cache, metadata inspector |
 | 0.3.3 | 2026-01-31 | Phase 2.3 | PDF support, Spread view, RTL, ViewerView |
@@ -206,7 +220,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | 0.2.0 | 2025-12-14 | Phase 2 | Folder viewer, settings, selection modes |
 | 0.1.0 | 2025-12-13 | Phase 1 | MVP - ZIP viewer and export |
 
-[Unreleased]: https://github.com/zembutsu/erimil/compare/v0.3.5...HEAD
+
+[Unreleased]: https://github.com/zembutsu/erimil/compare/v0.3.6...HEAD
+[0.3.6]: https://github.com/zembutsu/erimil/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/zembutsu/erimil/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/zembutsu/erimil/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/zembutsu/erimil/compare/v0.3.2...v0.3.3

@@ -25,6 +25,7 @@ and their metadata carries over to exported archives so you can build on previou
 
 - **Iterative Distillation**: ★ favorites with deletion protection and metadata carry-over on export
 - **Multi-Format Sources**: ZIP archives, folders, and PDFs — unified browsing
+- **Sort**: Sort thumbnails by name, date modified, or file size — ascending or descending
 - **Spread View**: Two-page display for books with RTL (right-to-left) support
 - **Auto-Slide Mode**: Automatic slideshow with multi-speed control and reverse playback
 - **Animated GIF Playback**: GIF files play in Viewer and Slide Modes with pause/loop control
