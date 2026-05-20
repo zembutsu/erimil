@@ -30,6 +30,26 @@ struct FolderNode: Identifiable, Hashable {
         self.children = nil
     }
     
+    /// #277: Check if directory contains any expandable children (directories, ZIP, or PDF).
+    /// Uses `contains` for short-circuit — stops at first match.
+    static func hasExpandableChildren(at url: URL) -> Bool {
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return false
+        }
+        return contents.contains { item in
+            var isDir: ObjCBool = false
+            fm.fileExists(atPath: item.path, isDirectory: &isDir)
+            return isDir.boolValue
+                || item.pathExtension.lowercased() == "zip"
+                || item.pathExtension.lowercased() == "pdf"
+        }
+    }
+
     static func loadChildren(of url: URL) -> [FolderNode] {
         let fm = FileManager.default
         guard let contents = try? fm.contentsOfDirectory(

@@ -39,10 +39,12 @@ class SidebarItem: NSObject {
         children = childNodes.map { SidebarItem(node: $0) }
     }
 
-    /// Directories (excluding ZIP/PDF) are expandable
-    var isExpandable: Bool {
-        isDirectory && !isZip && !isPdf
-    }
+    /// #277: Lazy filesystem check — disclosure triangle hidden for empty directories.
+    /// Evaluated once per item on first NSOutlineView query; cached thereafter.
+    lazy var isExpandable: Bool = {
+        guard isDirectory, !isZip, !isPdf else { return false }
+        return FolderNode.hasExpandableChildren(at: url)
+    }()
 
     var childCount: Int {
         children?.count ?? 0
